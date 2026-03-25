@@ -1,0 +1,180 @@
+// backend/prisma/schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  email     String   @unique
+  password  String
+  name      String
+  role      String   @default("manager")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Product {
+  id           Int       @id @default(autoincrement())
+  name         String
+  article      String?   @unique
+  category     String?
+  categoryId   Int?
+  cost_price   Float     @default(0)
+  retail_price Float     @default(0)
+  description  String?   @db.Text
+  stock        Int       @default(0)
+  min_stock    Int       @default(5)
+  image_url    String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  sales        Sale[]
+  productCategory Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  characteristics ProductCharacteristic[]
+  saleDocumentItems SaleDocumentItem[]
+}
+
+model Category {
+  id          Int       @id @default(autoincrement())
+  name        String    @unique
+  description String?   @db.Text
+  icon        String?
+  sortOrder   Int       @default(0)
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  products    Product[]
+  fields      CategoryField[]
+}
+
+model CategoryField {
+  id          Int       @id @default(autoincrement())
+  categoryId  Int
+  name        String
+  fieldType   String
+  isRequired  Boolean   @default(false)
+  sortOrder   Int       @default(0)
+  options     String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  category    Category  @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  values      ProductCharacteristic[]
+}
+
+model ProductCharacteristic {
+  id         Int           @id @default(autoincrement())
+  productId  Int
+  fieldId    Int
+  value      String
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+  product    Product       @relation(fields: [productId], references: [id], onDelete: Cascade)
+  field      CategoryField @relation(fields: [fieldId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, fieldId])
+}
+
+model Sale {
+  id             Int          @id @default(autoincrement())
+  productId      Int
+  quantity       Int
+  selling_price  Float
+  total_cost     Float
+  total_revenue  Float
+  profit         Float
+  customer_name  String?
+  customer_phone String?
+  sale_date      DateTime     @default(now())
+  createdAt      DateTime     @default(now())
+  documentId     Int?
+  product        Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  document       SaleDocument? @relation(fields: [documentId], references: [id], onDelete: SetNull)
+}
+
+model Expense {
+  id          Int      @id @default(autoincrement())
+  name        String
+  amount      Float
+  category    String
+  description String?  @db.Text
+  expense_date DateTime @default(now())
+  createdAt   DateTime @default(now())
+}
+
+model Client {
+  id          Int       @id @default(autoincrement())
+  firstName   String
+  lastName    String?
+  middleName  String?
+  phone       String    @unique
+  email       String?
+  birthDate   DateTime?
+  address     String?
+  city        String?
+  passport    String?
+  driverLicense String?
+  carModel    String?
+  carYear     Int?
+  carVin      String?
+  carNumber   String?
+  notes       String?   @db.Text
+  totalOrders Int       @default(0)
+  totalSpent  Float     @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  
+  orders      SaleDocument[]
+}
+
+model SaleDocument {
+  id             Int              @id @default(autoincrement())
+  documentNumber String           @unique
+  documentType   String           // 'order', 'receipt', 'invoice'
+  
+  // Связь с клиентом
+  clientId       Int?
+  client         Client?          @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  
+  // Дублируем данные клиента для быстрого доступа и поиска
+  clientName     String?          // Полное имя клиента
+  clientPhone    String?          // Телефон клиента
+  
+  // Данные покупателя (если не выбран клиент из БД)
+  customerName   String?
+  customerPhone  String?
+  customerEmail  String?
+  customerAddress String?
+  
+  subtotal       Float
+  discount       Float            @default(0)
+  total          Float
+  tax            Float            @default(0)
+  paymentMethod  String?
+  paymentStatus  String           @default("unpaid")
+  saleDate       DateTime         @default(now())
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  
+  items          SaleDocumentItem[]
+  sales          Sale[]
+}
+
+model SaleDocumentItem {
+  id             Int          @id @default(autoincrement())
+  documentId     Int
+  document       SaleDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  productId      Int
+  product        Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  productName    String       // Сохраняем название на момент продажи
+  productArticle String
+  quantity       Int
+  price          Float        // Цена за единицу (продажная)
+  cost_price     Float        @default(0) // 👈 ДОБАВЛЯЕМ поле себестоимости
+  total          Float        // Итого по товару
+  createdAt      DateTime     @default(now())
+}
