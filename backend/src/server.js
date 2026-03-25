@@ -44,7 +44,7 @@ app.listen(PORT, HOST, () => {
   console.log('📍 Доступные адреса:');
   console.log(`   📱 Локальный:    http://localhost:${PORT}`);
   console.log(`   🌐 Локальная сеть: http://192.168.2.27:${PORT}`);
-  console.log(`   🌍 Интернет:     http://10.50.85.247:${PORT}`);
+  console.log(`   🌍 Интернет:     http://91.240.103.226:${PORT}`);
   
   // Показываем все сетевые интерфейсы
   console.log('\n🔍 Все сетевые интерфейсы:');
