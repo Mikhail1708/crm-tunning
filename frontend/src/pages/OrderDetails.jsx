@@ -5,13 +5,13 @@ import { saleDocumentsApi } from '../api/saleDocuments';
 import { Button } from '../components/ui/Button';
 import { Table, Thead, Tbody, Tr, Th, Td } from '../components/ui/Table';
 import { formatPrice, formatDate } from '../utils/formatters';
+import { PrintDocument } from '../components/ui/PrintDocument';
 import { 
   ArrowLeft, 
   Printer, 
   FileText, 
   Receipt, 
   CreditCard,
-  Download,
   Mail,
   Phone,
   MapPin,
@@ -37,8 +37,8 @@ export const OrderDetails = () => {
   const loadOrder = async () => {
     try {
       setLoading(true);
-      const { data } = await saleDocumentsApi.getById(id);
-      setOrder(data);
+      const response = await saleDocumentsApi.getById(id);
+      setOrder(response.data);
     } catch (error) {
       console.error('Error loading order:', error);
       toast.error('Ошибка загрузки заказа');
@@ -48,29 +48,31 @@ export const OrderDetails = () => {
     }
   };
 
-  // Генерация чека
-  const generateReceipt = async () => {
+  // frontend/src/pages/OrderDetails.jsx
+// Остальной код такой же, меняем только функции:
+
+  // Генерация и печать чека
+  const handlePrintReceipt = async () => {
     setGenerating(true);
     try {
-      // Обновляем статус оплаты
+      // Обновляем статус оплаты (используем PUT /:id/payment)
       await saleDocumentsApi.updatePaymentStatus(order.id, 'paid');
       
-      // Создаем чек (обновляем тип документа)
-      const receiptData = {
-        ...order,
-        documentType: 'receipt',
-        paymentStatus: 'paid'
-      };
+      // Обновляем тип документа
+      await saleDocumentsApi.update(order.id, { documentType: 'receipt' });
       
-      // Здесь можно вызвать API для обновления документа
-      await saleDocumentsApi.update(order.id, receiptData);
+      // Обновляем локальный state
+      const updatedOrder = { ...order, paymentStatus: 'paid', documentType: 'receipt' };
+      setOrder(updatedOrder);
       
       toast.success('Чек сформирован');
-      loadOrder(); // Перезагружаем заказ
       
       // Печатаем чек
-      printDocument('receipt');
-      
+      const printWindow = window.open('', '_blank');
+      const { renderHTML } = PrintDocument({ order: updatedOrder, type: 'receipt' });
+      printWindow.document.write(renderHTML());
+      printWindow.document.close();
+      printWindow.print();
     } catch (error) {
       console.error('Error generating receipt:', error);
       toast.error('Ошибка формирования чека');
@@ -79,23 +81,25 @@ export const OrderDetails = () => {
     }
   };
 
-  // Генерация счета
-  const generateInvoice = async () => {
+  // Генерация и печать счета
+  const handlePrintInvoice = async () => {
     setGenerating(true);
     try {
-      const invoiceData = {
-        ...order,
-        documentType: 'invoice'
-      };
+      // Обновляем тип документа
+      await saleDocumentsApi.update(order.id, { documentType: 'invoice' });
       
-      await saleDocumentsApi.update(order.id, invoiceData);
+      // Обновляем локальный state
+      const updatedOrder = { ...order, documentType: 'invoice' };
+      setOrder(updatedOrder);
       
       toast.success('Счет сформирован');
-      loadOrder();
       
       // Печатаем счет
-      printDocument('invoice');
-      
+      const printWindow = window.open('', '_blank');
+      const { renderHTML } = PrintDocument({ order: updatedOrder, type: 'invoice' });
+      printWindow.document.write(renderHTML());
+      printWindow.document.close();
+      printWindow.print();
     } catch (error) {
       console.error('Error generating invoice:', error);
       toast.error('Ошибка формирования счета');
@@ -104,96 +108,16 @@ export const OrderDetails = () => {
     }
   };
 
-  // Печать документа
-  const printDocument = (type) => {
+  // Просто печать текущего документа
+  const handlePrint = () => {
+    if (!order) return;
+    
+    const type = order.documentType === 'receipt' ? 'receipt' : 'invoice';
     const printWindow = window.open('', '_blank');
-    printWindow.document.write(renderDocumentHTML(type));
+    const { renderHTML } = PrintDocument({ order, type });
+    printWindow.document.write(renderHTML());
     printWindow.document.close();
     printWindow.print();
-  };
-
-  // Рендер HTML для печати
-  const renderDocumentHTML = (type) => {
-    const isReceipt = type === 'receipt';
-    return `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>${isReceipt ? 'Чек' : 'Счет'} №${order.documentNumber}</title>
-        <style>
-          body { font-family: Arial, sans-serif; padding: 20px; }
-          .header { text-align: center; margin-bottom: 30px; }
-          .title { font-size: 24px; font-weight: bold; }
-          .company { font-size: 12px; color: #666; margin-top: 5px; }
-          .info { margin: 20px 0; padding: 15px; background: #f9f9f9; border-radius: 8px; }
-          .info-row { display: flex; justify-content: space-between; margin: 5px 0; }
-          table { width: 100%; border-collapse: collapse; margin: 20px 0; }
-          th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
-          th { background-color: #f2f2f2; }
-          .totals { margin-top: 20px; text-align: right; }
-          .footer { margin-top: 50px; text-align: center; font-size: 12px; color: #666; }
-          .status-paid { color: green; font-weight: bold; }
-          .status-unpaid { color: red; font-weight: bold; }
-        </style>
-      </head>
-      <body>
-        <div class="header">
-          <div class="title">${isReceipt ? 'ЧЕК' : 'СЧЕТ НА ОПЛАТУ'}</div>
-          <div class="company">ООО "CRM TUNING"</div>
-          <div>ИНН: 1234567890 / КПП: 123456789</div>
-          <div>г. Москва, ул. Примерная, д. 1</div>
-        </div>
-        
-        <div class="info">
-          <div class="info-row"><strong>№ документа:</strong> ${order.documentNumber}</div>
-          <div class="info-row"><strong>Дата:</strong> ${formatDate(order.saleDate)}</div>
-          ${order.customerName ? `<div class="info-row"><strong>Покупатель:</strong> ${order.customerName}</div>` : ''}
-          ${order.customerPhone ? `<div class="info-row"><strong>Телефон:</strong> ${order.customerPhone}</div>` : ''}
-          ${order.customerEmail ? `<div class="info-row"><strong>Email:</strong> ${order.customerEmail}</div>` : ''}
-          ${order.customerAddress ? `<div class="info-row"><strong>Адрес:</strong> ${order.customerAddress}</div>` : ''}
-        </div>
-        
-        <table>
-          <thead>
-            <tr>
-              <th>№</th>
-              <th>Товар</th>
-              <th>Артикул</th>
-              <th>Кол-во</th>
-              <th>Цена</th>
-              <th>Сумма</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${order.items.map((item, idx) => `
-              <tr>
-                <td>${idx + 1}</td>
-                <td>${item.productName}</td>
-                <td>${item.productArticle}</td>
-                <td>${item.quantity} шт.</td>
-                <td>${item.price.toLocaleString()} ₽</td>
-                <td>${item.total.toLocaleString()} ₽</td>
-              </tr>
-            `).join('')}
-          </tbody>
-        </table>
-        
-        <div class="totals">
-          <div><strong>Сумма:</strong> ${order.subtotal.toLocaleString()} ₽</div>
-          ${order.discount > 0 ? `<div><strong>Скидка:</strong> ${order.discount.toLocaleString()} ₽</div>` : ''}
-          <div><strong>Итого к оплате:</strong> ${order.total.toLocaleString()} ₽</div>
-          <div class="${order.paymentStatus === 'paid' ? 'status-paid' : 'status-unpaid'}">
-            <strong>Статус:</strong> ${order.paymentStatus === 'paid' ? 'Оплачено' : 'Не оплачено'}
-          </div>
-        </div>
-        
-        <div class="footer">
-          <p>${isReceipt ? 'Спасибо за покупку!' : 'Оплата по счету в течение 5 банковских дней'}</p>
-          <p>${isReceipt ? 'Данный документ является фискальным чеком' : 'Данный документ является основанием для оплаты'}</p>
-        </div>
-      </body>
-      </html>
-    `;
   };
 
   if (loading) {
@@ -204,7 +128,18 @@ export const OrderDetails = () => {
     );
   }
 
-  if (!order) return null;
+  if (!order) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <div className="text-center">
+          <p className="text-gray-500 mb-4">Заказ не найден</p>
+          <Button onClick={() => navigate('/sales')} variant="primary">
+            Вернуться к списку
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -228,16 +163,16 @@ export const OrderDetails = () => {
         </div>
         <div className="flex gap-2">
           <Button
-            onClick={generateReceipt}
-            disabled={generating || order.documentType === 'receipt'}
+            onClick={handlePrintReceipt}
+            disabled={generating}
             icon={Receipt}
             variant="success"
           >
             Чек
           </Button>
           <Button
-            onClick={generateInvoice}
-            disabled={generating || order.documentType === 'invoice'}
+            onClick={handlePrintInvoice}
+            disabled={generating}
             icon={FileText}
             variant="primary"
           >
@@ -276,7 +211,7 @@ export const OrderDetails = () => {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Информация о покупателе */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
           <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
@@ -284,16 +219,16 @@ export const OrderDetails = () => {
             Информация о покупателе
           </h2>
           <div className="space-y-3">
-            {order.customerName && (
+            {(order.customerName || order.clientName) && (
               <div className="flex items-center gap-2 text-gray-600">
                 <User size={16} />
-                <span>{order.customerName}</span>
+                <span>{order.customerName || order.clientName}</span>
               </div>
             )}
-            {order.customerPhone && (
+            {(order.customerPhone || order.clientPhone) && (
               <div className="flex items-center gap-2 text-gray-600">
                 <Phone size={16} />
-                <span>{order.customerPhone}</span>
+                <span>{order.customerPhone || order.clientPhone}</span>
               </div>
             )}
             {order.customerEmail && (
@@ -308,39 +243,9 @@ export const OrderDetails = () => {
                 <span>{order.customerAddress}</span>
               </div>
             )}
-            {!order.customerName && !order.customerPhone && (
+            {!order.customerName && !order.clientName && !order.customerPhone && (
               <p className="text-gray-500 text-sm">Данные не указаны</p>
             )}
-          </div>
-        </div>
-
-        {/* Информация о заказе */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-            <Package size={20} />
-            Информация о заказе
-          </h2>
-          <div className="space-y-3">
-            <div className="flex justify-between">
-              <span className="text-gray-600">Номер заказа:</span>
-              <span className="font-medium">{order.documentNumber}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-gray-600">Дата создания:</span>
-              <span>{formatDate(order.saleDate)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-gray-600">Способ оплаты:</span>
-              <span className="capitalize">
-                {order.paymentMethod === 'cash' ? 'Наличные' : 
-                 order.paymentMethod === 'card' ? 'Банковская карта' : 
-                 'Безналичный перевод'}
-              </span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-gray-600">Количество товаров:</span>
-              <span>{order.items?.length || 0} шт.</span>
-            </div>
           </div>
         </div>
 
@@ -365,6 +270,12 @@ export const OrderDetails = () => {
               <span>Итого:</span>
               <span className="text-primary-600">{formatPrice(order.total)}</span>
             </div>
+            <div className="flex justify-between pt-2">
+              <span className="text-gray-600">Статус оплаты:</span>
+              <span className={order.paymentStatus === 'paid' ? 'text-green-600 font-medium' : 'text-yellow-600 font-medium'}>
+                {order.paymentStatus === 'paid' ? 'Оплачено' : 'Не оплачено'}
+              </span>
+            </div>
           </div>
         </div>
       </div>
@@ -372,31 +283,40 @@ export const OrderDetails = () => {
       {/* Список товаров */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
         <div className="p-6 border-b border-gray-200">
-          <h2 className="text-lg font-semibold text-gray-900">Состав заказа</h2>
+          <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+            <Package size={20} />
+            Состав заказа
+          </h2>
         </div>
         <div className="overflow-x-auto">
           <Table>
             <Thead>
               <Tr>
                 <Th>№</Th>
-                <Th>Товар</Th>
-                <Th>Артикул</Th>
+                <Th>Наименование</Th>
                 <Th>Кол-во</Th>
                 <Th>Цена</Th>
                 <Th>Сумма</Th>
               </Tr>
             </Thead>
             <Tbody>
-              {order.items?.map((item, idx) => (
-                <Tr key={idx}>
-                  <Td>{idx + 1}</Td>
-                  <Td className="font-medium">{item.productName}</Td>
-                  <Td className="text-xs text-gray-500">{item.productArticle}</Td>
-                  <Td>{item.quantity} шт.</Td>
-                  <Td>{formatPrice(item.price)}</Td>
-                  <Td className="font-semibold">{formatPrice(item.total)}</Td>
+              {order.items && order.items.length > 0 ? (
+                order.items.map((item, idx) => (
+                  <Tr key={idx}>
+                    <Td>{idx + 1}</Td>
+                    <Td className="font-medium">{item.productName}</Td>
+                    <Td>{item.quantity} {item.isWork ? 'н/ч' : 'шт'}</Td>
+                    <Td>{formatPrice(item.price)}</Td>
+                    <Td className="font-semibold">{formatPrice(item.total)}</Td>
+                  </Tr>
+                ))
+              ) : (
+                <Tr>
+                  <Td colSpan="5" className="text-center text-gray-500 py-8">
+                    Нет товаров в заказе
+                  </Td>
                 </Tr>
-              ))}
+              )}
             </Tbody>
           </Table>
         </div>
@@ -404,20 +324,23 @@ export const OrderDetails = () => {
 
       {/* Кнопки действий */}
       <div className="flex justify-end gap-3">
-        <Button
-          onClick={() => printDocument(order.documentType || 'receipt')}
-          icon={Printer}
-          variant="secondary"
-        >
-          Распечатать
-        </Button>
+        {(order.documentType === 'receipt' || order.documentType === 'invoice') && (
+          <Button
+            onClick={handlePrint}
+            icon={Printer}
+            variant="secondary"
+          >
+            Распечатать
+          </Button>
+        )}
         {order.paymentStatus !== 'paid' && (
           <Button
-            onClick={generateReceipt}
+            onClick={handlePrintReceipt}
             icon={CreditCard}
             variant="success"
+            disabled={generating}
           >
-            Отметить как оплаченный
+            {generating ? 'Обработка...' : 'Отметить как оплаченный'}
           </Button>
         )}
       </div>

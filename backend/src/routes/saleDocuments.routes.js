@@ -7,14 +7,14 @@ const { authMiddleware } = require('../middleware/auth.middleware');
 // Все маршруты требуют аутентификации
 router.use(authMiddleware);
 
-// Маршруты
+// Маршруты (порядок важен: специфичные сначала)
 router.get('/', saleDocumentsController.getSaleDocuments);
 router.get('/client/:clientId', saleDocumentsController.getDocumentsByClient);
 router.get('/statistics/clients', saleDocumentsController.getClientStatistics);
 router.get('/:id', saleDocumentsController.getSaleDocumentById);
 router.post('/', saleDocumentsController.createSaleDocument);
 router.put('/:id', saleDocumentsController.updateSaleDocument);
-router.put('/:id/payment', saleDocumentsController.updatePaymentStatus);
+router.put('/:id/payment', saleDocumentsController.updatePaymentStatus);  
 router.delete('/:id', saleDocumentsController.deleteSaleDocument);
 
 module.exports = router;

@@ -7,6 +7,7 @@ import { Card, CardBody } from '../components/ui/Card';
 import { Modal } from '../components/ui/Modal';
 import { Input } from '../components/ui/Input';
 import { Table, Thead, Tbody, Tr, Th, Td } from '../components/ui/Table';
+import { CostBreakdownEditor } from '../components/ui/CostBreakdownEditor';
 import { formatPrice, getStockStatus, getMarginColor } from '../utils/formatters';
 import { 
   Plus, 
@@ -43,6 +44,7 @@ export const Products = () => {
     min_stock: '',
     categoryId: '',
     description: '',
+    costBreakdown: []
   });
   const [characteristics, setCharacteristics] = useState({});
 
@@ -73,22 +75,15 @@ export const Products = () => {
     }
   };
 
-  // Расширенная функция поиска
   const filterProducts = (product) => {
     const searchLower = searchTerm.toLowerCase().trim();
     
     if (!searchLower) return true;
     
-    // Поиск по названию
     if (product.name?.toLowerCase().includes(searchLower)) return true;
-    
-    // Поиск по артикулу
     if (product.article?.toLowerCase().includes(searchLower)) return true;
-    
-    // Поиск по категории
     if (product.productCategory?.name?.toLowerCase().includes(searchLower)) return true;
     
-    // Поиск по характеристикам
     if (product.characteristics) {
       for (const [key, value] of Object.entries(product.characteristics)) {
         const stringValue = Array.isArray(value) ? value.join(' ') : String(value);
@@ -101,7 +96,6 @@ export const Products = () => {
     return false;
   };
 
-  // Фильтрация по категории
   const filterByCategory = (product) => {
     if (!selectedCategoryFilter) return true;
     return product.categoryId === parseInt(selectedCategoryFilter);
@@ -123,9 +117,9 @@ export const Products = () => {
         min_stock: product.min_stock || '',
         categoryId: product.categoryId || '',
         description: product.description || '',
+        costBreakdown: product.costBreakdown || []
       });
       
-      // Загружаем характеристики для категории товара
       if (product.categoryId) {
         const category = categories.find(c => c.id === product.categoryId);
         if (category && category.fields) {
@@ -150,6 +144,7 @@ export const Products = () => {
         min_stock: '',
         categoryId: '',
         description: '',
+        costBreakdown: []
       });
       setSelectedCategoryFields([]);
       setCharacteristics({});
@@ -187,6 +182,17 @@ export const Products = () => {
     });
   };
 
+  const handleCostBreakdownChange = (items) => {
+    // Автоматически пересчитываем себестоимость
+    const totalCost = items.reduce((sum, item) => sum + (item.amount || 0), 0);
+    
+    setFormData(prev => ({
+      ...prev,
+      costBreakdown: items,
+      cost_price: totalCost
+    }));
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
@@ -197,7 +203,8 @@ export const Products = () => {
         stock: parseInt(formData.stock),
         min_stock: parseInt(formData.min_stock),
         categoryId: formData.categoryId ? parseInt(formData.categoryId) : null,
-        characteristics: characteristics
+        characteristics: characteristics,
+        costBreakdown: formData.costBreakdown
       };
 
       if (editingProduct) {
@@ -648,6 +655,7 @@ export const Products = () => {
               required
               placeholder="0"
               step="0.01"
+              disabled={formData.costBreakdown && formData.costBreakdown.length > 0}
             />
             <Input
               label="Розничная цена (₽)"
@@ -700,6 +708,15 @@ export const Products = () => {
                 Нет категорий. Сначала создайте категорию в разделе "Категории"
               </p>
             )}
+          </div>
+          
+          {/* Калькуляция себестоимости - ТЕПЕРЬ РАЗРЕШЕНО РЕДАКТИРОВАНИЕ */}
+          <div className="border-t border-gray-200 pt-4">
+            <CostBreakdownEditor
+              value={formData.costBreakdown}
+              onChange={handleCostBreakdownChange}
+              disabled={false}  
+            />
           </div>
           
           {renderCharacteristicsForm()}

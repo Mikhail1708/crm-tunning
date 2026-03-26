@@ -23,9 +23,43 @@ import {
   Package,
   Users,
   X,
-  Percent
+  Percent,
+  AlertCircle,
+  CheckCircle,
+  MapPin,
+  Building2
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+
+// Функция валидации телефона
+const validatePhone = (phone) => {
+  if (!phone) return 'Телефон обязателен';
+  
+  // Удаляем все нецифровые символы для проверки
+  const digits = phone.replace(/\D/g, '');
+  
+  if (digits.length === 0) return 'Введите номер телефона';
+  if (digits.length < 10) return 'Номер телефона должен содержать минимум 10 цифр';
+  if (digits.length > 12) return 'Номер телефона слишком длинный';
+  
+  return null;
+};
+
+// Функция форматирования телефона
+const formatPhone = (value) => {
+  // Удаляем все нецифровые символы
+  const digits = value.replace(/\D/g, '');
+  
+  if (digits.length === 0) return '';
+  
+  // Форматируем для России
+  if (digits.length <= 1) return `+7`;
+  if (digits.length <= 4) return `+7 (${digits.slice(1, 4)}`;
+  if (digits.length <= 7) return `+7 (${digits.slice(1, 4)}) ${digits.slice(4, 7)}`;
+  if (digits.length <= 9) return `+7 (${digits.slice(1, 4)}) ${digits.slice(4, 7)}-${digits.slice(7, 9)}`;
+  
+  return `+7 (${digits.slice(1, 4)}) ${digits.slice(4, 7)}-${digits.slice(7, 9)}-${digits.slice(9, 11)}`;
+};
 
 // Компонент поиска клиента
 const ClientSearch = ({ selectedClient, onSelect, onClear }) => {
@@ -80,6 +114,9 @@ const ClientSearch = ({ selectedClient, onSelect, onClear }) => {
           <div>
             <p className="font-medium text-gray-900">{fullName}</p>
             <p className="text-sm text-gray-600 mt-0.5">📞 {selectedClient.phone}</p>
+            {selectedClient.city && (
+              <p className="text-sm text-gray-600 mt-0.5">🏙️ {selectedClient.city}</p>
+            )}
             {selectedClient.carModel && (
               <p className="text-sm text-gray-600">🚗 {selectedClient.carModel}</p>
             )}
@@ -127,6 +164,9 @@ const ClientSearch = ({ selectedClient, onSelect, onClear }) => {
                 >
                   <div className="font-medium text-sm">{fullName}</div>
                   <div className="text-xs text-gray-500">{client.phone}</div>
+                  {client.city && (
+                    <div className="text-xs text-gray-400 mt-0.5">🏙️ {client.city}</div>
+                  )}
                 </div>
               );
             })
@@ -157,10 +197,22 @@ export const NewOrder = () => {
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [customerEmail, setCustomerEmail] = useState('');
+  const [customerCity, setCustomerCity] = useState('');
+  
+  // Состояния валидации телефона
+  const [phoneError, setPhoneError] = useState('');
   
   // Скидка в процентах
   const [discountPercent, setDiscountPercent] = useState(0);
   const [orderLoading, setOrderLoading] = useState(false);
+  
+  // Состояние для отслеживания, был ли клиент создан автоматически
+  const [autoCreatedClient, setAutoCreatedClient] = useState(null);
+
+  // Множество ID товаров в корзине для быстрой проверки
+  const cartProductIds = useMemo(() => {
+    return new Set(cartItems.map(item => item.id));
+  }, [cartItems]);
 
   useEffect(() => {
     loadProducts();
@@ -200,6 +252,8 @@ export const NewOrder = () => {
       setCustomerName([client.lastName, client.firstName, client.middleName].filter(Boolean).join(' ').trim() || client.firstName);
       setCustomerPhone(client.phone);
       setCustomerEmail(client.email || '');
+      setCustomerCity(client.city || '');
+      setPhoneError('');
     } catch (error) {
       console.error('Error loading client:', error);
     }
@@ -210,139 +264,98 @@ export const NewOrder = () => {
     setCustomerName([client.lastName, client.firstName, client.middleName].filter(Boolean).join(' ').trim() || client.firstName);
     setCustomerPhone(client.phone);
     setCustomerEmail(client.email || '');
+    setCustomerCity(client.city || '');
+    setAutoCreatedClient(null);
+    setPhoneError('');
     toast.success(`Выбран клиент: ${customerName || client.firstName}`);
   };
 
   const handleClearClient = () => {
     setSelectedClient(null);
-    setCustomerName('');
-    setCustomerPhone('');
-    setCustomerEmail('');
+    setAutoCreatedClient(null);
+    // Не очищаем поля, так как пользователь может ввести новые данные
   };
 
-  // Фильтрация товаров
-  const filteredProducts = useMemo(() => {
-    let filtered = products.filter(p => p.stock > 0);
+  // Обработчик изменения телефона с валидацией и форматированием
+  const handlePhoneChange = (e) => {
+    const rawValue = e.target.value;
+    const formattedValue = formatPhone(rawValue);
+    setCustomerPhone(formattedValue);
     
-    if (searchTerm) {
-      const searchLower = searchTerm.toLowerCase();
-      filtered = filtered.filter(p => 
-        p.name?.toLowerCase().includes(searchLower) ||
-        p.article?.toLowerCase().includes(searchLower)
+    const error = validatePhone(formattedValue);
+    setPhoneError(error || '');
+    
+    if (selectedClient) setSelectedClient(null);
+  };
+
+  // Функция автоматического создания клиента
+  const autoCreateClient = async () => {
+    if (!customerName || !customerPhone) return null;
+    
+    // Валидация телефона перед созданием
+    const phoneValidationError = validatePhone(customerPhone);
+    if (phoneValidationError) {
+      toast.error(phoneValidationError);
+      return null;
+    }
+    
+    if (selectedClient) return selectedClient;
+    
+    try {
+      // Очищаем телефон от форматирования для поиска
+      const cleanPhone = customerPhone.replace(/\D/g, '');
+      
+      // Проверяем, существует ли клиент с таким телефоном
+      const searchResponse = await clientsApi.search(cleanPhone);
+      const existingClient = searchResponse.data.clients.find(
+        c => c.phone.replace(/\D/g, '') === cleanPhone
       );
-    }
-    
-    if (selectedCategory) {
-      filtered = filtered.filter(p => p.categoryId === parseInt(selectedCategory));
-    }
-    
-    return filtered;
-  }, [products, searchTerm, selectedCategory]);
-
-  // Добавление товара в корзину
-  const addToCart = (product, quantity, price) => {
-    if (quantity < 1) {
-      toast.error('Количество должно быть больше 0');
-      return;
-    }
-    
-    if (quantity > product.stock) {
-      toast.error(`Доступно только ${product.stock} шт.`);
-      return;
-    }
-    
-    if (price < product.cost_price) {
-      toast.error(`Цена не может быть ниже себестоимости (${formatPrice(product.cost_price)})`);
-      return;
-    }
-    
-    const existingItem = cartItems.find(item => item.id === product.id);
-    
-    if (existingItem) {
-      const newQuantity = existingItem.quantity + quantity;
-      if (newQuantity > product.stock) {
-        toast.error(`Всего доступно ${product.stock} шт.`);
-        return;
+      
+      if (existingClient) {
+        // Если клиент существует, выбираем его
+        setSelectedClient(existingClient);
+        setCustomerName([existingClient.lastName, existingClient.firstName, existingClient.middleName].filter(Boolean).join(' ').trim() || existingClient.firstName);
+        setCustomerPhone(existingClient.phone);
+        setCustomerEmail(existingClient.email || '');
+        setCustomerCity(existingClient.city || '');
+        setPhoneError('');
+        toast.success(`Найден существующий клиент: ${existingClient.firstName}`);
+        return existingClient;
       }
-      setCartItems(cartItems.map(item =>
-        item.id === product.id
-          ? { ...item, quantity: newQuantity, selling_price: price }
-          : item
-      ));
-    } else {
-      setCartItems([...cartItems, {
-        id: product.id,
-        name: product.name,
-        article: product.article,
-        cost_price: product.cost_price,
-        selling_price: price,
-        quantity: quantity,
-        stock: product.stock
-      }]);
+      
+      // Создаем нового клиента
+      const nameParts = customerName.trim().split(' ');
+      const firstName = nameParts[0] || '';
+      const lastName = nameParts.slice(1).join(' ') || '';
+      
+      const newClientData = {
+        firstName: firstName,
+        lastName: lastName,
+        phone: customerPhone,
+        email: customerEmail || null,
+        city: customerCity || null
+      };
+      
+      const response = await clientsApi.create(newClientData);
+      const newClient = response.data;
+      
+      setSelectedClient(newClient);
+      setAutoCreatedClient(newClient);
+      toast.success(`Клиент "${customerName}" успешно добавлен в базу!`);
+      return newClient;
+      
+    } catch (error) {
+      console.error('Error auto creating client:', error);
+      if (error.response?.data?.error) {
+        toast.error(error.response.data.error);
+      } else {
+        toast.error('Ошибка при создании клиента');
+      }
+      return null;
     }
-    
-    toast.success(`${product.name} добавлен в заказ`);
   };
 
-  // Обновление количества в корзине
-  const updateCartQuantity = (itemId, newQuantity) => {
-    const item = cartItems.find(i => i.id === itemId);
-    if (!item) return;
-    
-    if (newQuantity < 1) {
-      removeFromCart(itemId);
-      return;
-    }
-    
-    if (newQuantity > item.stock) {
-      toast.error(`Доступно только ${item.stock} шт.`);
-      return;
-    }
-    
-    setCartItems(cartItems.map(item =>
-      item.id === itemId ? { ...item, quantity: newQuantity } : item
-    ));
-  };
-
-  // Обновление цены в корзине
-  const updateCartPrice = (itemId, newPrice) => {
-    const item = cartItems.find(i => i.id === itemId);
-    if (!item) return;
-    
-    if (newPrice < item.cost_price) {
-      toast.error(`Цена не может быть ниже себестоимости (${formatPrice(item.cost_price)})`);
-      return;
-    }
-    
-    setCartItems(cartItems.map(item =>
-      item.id === itemId ? { ...item, selling_price: newPrice } : item
-    ));
-  };
-
-  const removeFromCart = (itemId) => {
-    setCartItems(cartItems.filter(item => item.id !== itemId));
-    toast.success('Товар удален из заказа');
-  };
-
-  // Расчет итогов
-  const calculateTotals = () => {
-    const subtotal = cartItems.reduce((sum, item) => sum + (item.selling_price * item.quantity), 0);
-    const discountAmount = subtotal * (discountPercent / 100);
-    const totalWithDiscount = subtotal - discountAmount;
-    const totalProfit = cartItems.reduce((sum, item) => sum + ((item.selling_price - item.cost_price) * item.quantity), 0);
-    
-    return { 
-      subtotal, 
-      discountAmount, 
-      totalWithDiscount, 
-      totalProfit,
-      discountPercent
-    };
-  };
-
-  const totals = calculateTotals();
-
-  // Создание заказа
+  // Обновленная функция создания заказа с автоматическим созданием клиента
   const handleCreateOrder = async () => {
     if (cartItems.length === 0) {
       toast.error('Добавьте товары в заказ');
@@ -354,17 +367,32 @@ export const NewOrder = () => {
       return;
     }
     
-    if (!customerPhone) {
-      toast.error('Введите телефон покупателя');
+    // Валидация телефона
+    const phoneValidationError = validatePhone(customerPhone);
+    if (phoneValidationError) {
+      toast.error(phoneValidationError);
       return;
     }
     
     setOrderLoading(true);
     
     try {
+      let finalClientId = selectedClient?.id || null;
+      
+      // Если клиент не выбран, создаем его автоматически
+      if (!selectedClient) {
+        const newClient = await autoCreateClient();
+        if (newClient) {
+          finalClientId = newClient.id;
+        } else {
+          setOrderLoading(false);
+          return;
+        }
+      }
+      
       const orderData = {
         documentType: 'order',
-        clientId: selectedClient?.id || null,
+        clientId: finalClientId,
         customerName: customerName,
         customerPhone: customerPhone,
         customerEmail: customerEmail || null,
@@ -392,6 +420,132 @@ export const NewOrder = () => {
     }
   };
 
+  // Расчет итогов
+  const calculateTotals = () => {
+    const subtotal = cartItems.reduce((sum, item) => sum + (item.selling_price * item.quantity), 0);
+    const discountAmount = subtotal * (discountPercent / 100);
+    const totalWithDiscount = subtotal - discountAmount;
+    const totalProfit = cartItems.reduce((sum, item) => sum + ((item.selling_price - item.cost_price) * item.quantity), 0);
+    
+    return { 
+      subtotal, 
+      discountAmount, 
+      totalWithDiscount, 
+      totalProfit,
+      discountPercent
+    };
+  };
+
+  const totals = calculateTotals();
+
+  // Фильтрация товаров
+  const filteredProducts = useMemo(() => {
+    let filtered = products.filter(p => p.stock > 0);
+    
+    if (searchTerm) {
+      const searchLower = searchTerm.toLowerCase();
+      filtered = filtered.filter(p => 
+        p.name?.toLowerCase().includes(searchLower) ||
+        p.article?.toLowerCase().includes(searchLower)
+      );
+    }
+    
+    if (selectedCategory) {
+      filtered = filtered.filter(p => p.categoryId === parseInt(selectedCategory));
+    }
+    
+    return filtered;
+  }, [products, searchTerm, selectedCategory]);
+
+  // Добавление товара в корзину с проверкой на дубликаты
+  const addToCart = (product, quantity, price) => {
+    if (quantity < 1) {
+      toast.error('Количество должно быть больше 0');
+      return;
+    }
+    
+    if (quantity > product.stock) {
+      toast.error(`Доступно только ${product.stock} шт.`);
+      return;
+    }
+    
+    if (price < product.cost_price) {
+      toast.error(`Цена не может быть ниже себестоимости (${formatPrice(product.cost_price)})`);
+      return;
+    }
+    
+    const existingItem = cartItems.find(item => item.id === product.id);
+    
+    if (existingItem) {
+      toast.error(
+        <div className="flex flex-col gap-1">
+          <div className="font-medium">Товар уже в корзине!</div>
+          <div className="text-sm text-gray-600">
+            "{product.name}" уже добавлен в заказ.
+          </div>
+          <div className="text-xs text-gray-500 mt-1">
+            Вы можете изменить количество и цену прямо в корзине.
+          </div>
+        </div>,
+        {
+          duration: 4000,
+          icon: <AlertCircle className="text-yellow-500" size={20} />
+        }
+      );
+      return;
+    }
+    
+    setCartItems([...cartItems, {
+      id: product.id,
+      name: product.name,
+      article: product.article,
+      cost_price: product.cost_price,
+      selling_price: price,
+      quantity: quantity,
+      stock: product.stock
+    }]);
+    
+    toast.success(`${product.name} добавлен в заказ`);
+  };
+
+  const updateCartQuantity = (itemId, newQuantity) => {
+    const item = cartItems.find(i => i.id === itemId);
+    if (!item) return;
+    
+    if (newQuantity < 1) {
+      removeFromCart(itemId);
+      return;
+    }
+    
+    if (newQuantity > item.stock) {
+      toast.error(`Доступно только ${item.stock} шт.`);
+      return;
+    }
+    
+    setCartItems(cartItems.map(item =>
+      item.id === itemId ? { ...item, quantity: newQuantity } : item
+    ));
+  };
+
+  const updateCartPrice = (itemId, newPrice) => {
+    const item = cartItems.find(i => i.id === itemId);
+    if (!item) return;
+    
+    if (newPrice < item.cost_price) {
+      toast.error(`Цена не может быть ниже себестоимости (${formatPrice(item.cost_price)})`);
+      return;
+    }
+    
+    setCartItems(cartItems.map(item =>
+      item.id === itemId ? { ...item, selling_price: newPrice } : item
+    ));
+  };
+
+  const removeFromCart = (itemId) => {
+    setCartItems(cartItems.filter(item => item.id !== itemId));
+    toast.success('Товар удален из заказа');
+  };
+
   return (
     <div className="space-y-6 animate-fade-in">
       {/* Header */}
@@ -415,7 +569,6 @@ export const NewOrder = () => {
             <div className="p-4 border-b border-gray-200">
               <h2 className="text-lg font-semibold text-gray-900">Каталог товаров</h2>
               
-              {/* Поиск и фильтры */}
               <div className="flex flex-wrap gap-3 mt-3">
                 <div className="flex-1 min-w-[200px]">
                   <div className="relative">
@@ -442,7 +595,6 @@ export const NewOrder = () => {
               </div>
             </div>
 
-            {/* Таблица товаров */}
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead className="bg-gray-50 border-b border-gray-200">
@@ -472,6 +624,7 @@ export const NewOrder = () => {
                       <ProductRow
                         key={product.id}
                         product={product}
+                        isInCart={cartProductIds.has(product.id)}
                         onAddToCart={addToCart}
                       />
                     ))
@@ -490,7 +643,6 @@ export const NewOrder = () => {
               Корзина ({cartItems.reduce((sum, i) => sum + i.quantity, 0)} шт.)
             </h2>
 
-            {/* Список товаров в корзине */}
             <div className="max-h-80 overflow-y-auto mb-4 space-y-3">
               {cartItems.length === 0 ? (
                 <div className="text-center py-8 text-gray-500">
@@ -510,7 +662,6 @@ export const NewOrder = () => {
               )}
             </div>
 
-            {/* Итоги */}
             {cartItems.length > 0 && (
               <div className="border-t pt-3 space-y-2">
                 <div className="flex justify-between text-sm">
@@ -566,28 +717,39 @@ export const NewOrder = () => {
             {/* Данные покупателя */}
             <div className="space-y-3 mt-4">
               <h3 className="font-medium text-gray-900">Данные покупателя</h3>
+              
               <div className="relative">
                 <User className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
                 <input
                   type="text"
                   placeholder="Имя покупателя *"
                   value={customerName}
-                  onChange={(e) => setCustomerName(e.target.value)}
+                  onChange={(e) => {
+                    setCustomerName(e.target.value);
+                    if (selectedClient) setSelectedClient(null);
+                  }}
                   className="w-full pl-9 pr-3 py-2 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm"
                   required
                 />
               </div>
+              
               <div className="relative">
                 <Phone className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
                 <input
                   type="tel"
                   placeholder="Телефон *"
                   value={customerPhone}
-                  onChange={(e) => setCustomerPhone(e.target.value)}
-                  className="w-full pl-9 pr-3 py-2 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm"
+                  onChange={handlePhoneChange}
+                  className={`w-full pl-9 pr-3 py-2 rounded-lg border ${
+                    phoneError ? 'border-red-500' : 'border-gray-200'
+                  } focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm`}
                   required
                 />
               </div>
+              {phoneError && (
+                <p className="text-xs text-red-500 -mt-2">{phoneError}</p>
+              )}
+              
               <div className="relative">
                 <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
                 <input
@@ -598,12 +760,26 @@ export const NewOrder = () => {
                   className="w-full pl-9 pr-3 py-2 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm"
                 />
               </div>
+              
+              <div className="relative">
+                <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+                <input
+                  type="text"
+                  placeholder="Город"
+                  value={customerCity}
+                  onChange={(e) => {
+                    setCustomerCity(e.target.value);
+                    if (selectedClient) setSelectedClient(null);
+                  }}
+                  className="w-full pl-9 pr-3 py-2 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm"
+                />
+              </div>
             </div>
 
             {/* Кнопка создания */}
             <Button
               onClick={handleCreateOrder}
-              disabled={cartItems.length === 0 || orderLoading || !customerName || !customerPhone}
+              disabled={cartItems.length === 0 || orderLoading || !customerName || !customerPhone || !!phoneError}
               fullWidth
               icon={Save}
               className="mt-4"
@@ -619,7 +795,7 @@ export const NewOrder = () => {
 };
 
 // Компонент строки товара в каталоге
-const ProductRow = ({ product, onAddToCart }) => {
+const ProductRow = ({ product, isInCart, onAddToCart }) => {
   const [quantity, setQuantity] = useState(1);
   const [price, setPrice] = useState(product.retail_price);
   const [quantityError, setQuantityError] = useState('');
@@ -677,9 +853,17 @@ const ProductRow = ({ product, onAddToCart }) => {
   const margin = ((product.retail_price - product.cost_price) / product.cost_price) * 100;
 
   return (
-    <tr className="hover:bg-gray-50">
+    <tr className={`hover:bg-gray-50 ${isInCart ? 'bg-green-50' : ''}`}>
       <td className="px-4 py-3">
-        <div className="font-medium text-gray-900">{product.name}</div>
+        <div className="flex items-center gap-2">
+          <div className="font-medium text-gray-900">{product.name}</div>
+          {isInCart && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs bg-green-100 text-green-700 rounded-full">
+              <CheckCircle size={10} />
+              В корзине
+            </span>
+          )}
+        </div>
         <div className="text-xs text-gray-500 mt-0.5">
           Маржа: {margin.toFixed(1)}%
         </div>
@@ -695,37 +879,43 @@ const ProductRow = ({ product, onAddToCart }) => {
         </span>
       </td>
       <td className="px-4 py-3">
-        <div className="flex flex-col gap-2">
-          <div className="flex gap-2">
-            <input
-              type="number"
-              value={quantity}
-              onChange={handleQuantityChange}
-              className="w-16 px-2 py-1 text-sm rounded border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-500"
-              min="1"
-              max={product.stock}
-            />
-            <input
-              type="number"
-              value={price}
-              onChange={handlePriceChange}
-              className="w-24 px-2 py-1 text-sm rounded border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-500"
-              step="0.01"
-            />
-            <button
-              onClick={handleAdd}
-              disabled={quantityError || priceError || product.stock === 0}
-              className="p-1 text-primary-600 hover:bg-primary-50 rounded transition-colors disabled:opacity-50"
-            >
-              <Plus size={18} />
-            </button>
-          </div>
-          {(quantityError || priceError) && (
-            <div className="text-xs text-red-500">
-              {quantityError || priceError}
+        {!isInCart ? (
+          <div className="flex flex-col gap-2">
+            <div className="flex gap-2">
+              <input
+                type="number"
+                value={quantity}
+                onChange={handleQuantityChange}
+                className="w-16 px-2 py-1 text-sm rounded border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                min="1"
+                max={product.stock}
+              />
+              <input
+                type="number"
+                value={price}
+                onChange={handlePriceChange}
+                className="w-24 px-2 py-1 text-sm rounded border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                step="0.01"
+              />
+              <button
+                onClick={handleAdd}
+                disabled={quantityError || priceError || product.stock === 0}
+                className="p-1 text-primary-600 hover:bg-primary-50 rounded transition-colors disabled:opacity-50"
+              >
+                <Plus size={18} />
+              </button>
             </div>
-          )}
-        </div>
+            {(quantityError || priceError) && (
+              <div className="text-xs text-red-500">
+                {quantityError || priceError}
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="text-center text-sm text-green-600 font-medium">
+            В корзине
+          </div>
+        )}
       </td>
     </tr>
   );

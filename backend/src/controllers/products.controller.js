@@ -37,7 +37,7 @@ const getProducts = async (req, res) => {
         id: product.id,
         name: product.name,
         article: product.article,
-        category: product.category, // старое поле для обратной совместимости
+        category: product.category,
         categoryId: product.categoryId,
         cost_price: product.cost_price,
         retail_price: product.retail_price,
@@ -45,6 +45,7 @@ const getProducts = async (req, res) => {
         stock: product.stock,
         min_stock: product.min_stock,
         image_url: product.image_url,
+        costBreakdown: product.costBreakdown || [],
         createdAt: product.createdAt,
         updatedAt: product.updatedAt,
         productCategory: product.productCategory,
@@ -104,6 +105,7 @@ const getProductById = async (req, res) => {
       stock: product.stock,
       min_stock: product.min_stock,
       image_url: product.image_url,
+      costBreakdown: product.costBreakdown || [],
       createdAt: product.createdAt,
       updatedAt: product.updatedAt,
       productCategory: product.productCategory,
@@ -127,7 +129,8 @@ const createProduct = async (req, res) => {
       min_stock, 
       description, 
       categoryId, 
-      characteristics 
+      characteristics,
+      costBreakdown
     } = req.body;
     
     // Проверка обязательных полей
@@ -157,7 +160,8 @@ const createProduct = async (req, res) => {
           stock: parseInt(stock),
           min_stock: parseInt(min_stock) || 5,
           description: description || null,
-          categoryId: categoryId ? parseInt(categoryId) : null
+          categoryId: categoryId ? parseInt(categoryId) : null,
+          costBreakdown: costBreakdown || []
         }
       });
       
@@ -206,7 +210,8 @@ const updateProduct = async (req, res) => {
       min_stock, 
       description, 
       categoryId, 
-      characteristics 
+      characteristics,
+      costBreakdown
     } = req.body;
     
     const result = await prisma.$transaction(async (prisma) => {
@@ -244,7 +249,8 @@ const updateProduct = async (req, res) => {
           stock: stock !== undefined ? parseInt(stock) : existingProduct.stock,
           min_stock: min_stock !== undefined ? parseInt(min_stock) : existingProduct.min_stock,
           description: description !== undefined ? description : existingProduct.description,
-          categoryId: categoryId !== undefined ? (categoryId ? parseInt(categoryId) : null) : existingProduct.categoryId
+          categoryId: categoryId !== undefined ? (categoryId ? parseInt(categoryId) : null) : existingProduct.categoryId,
+          costBreakdown: costBreakdown !== undefined ? costBreakdown : existingProduct.costBreakdown
         }
       });
       
@@ -341,6 +347,7 @@ const getLowStockProducts = async (req, res) => {
       retail_price: product.retail_price,
       stock: product.stock,
       min_stock: product.min_stock,
+      costBreakdown: product.costBreakdown || [],
       productCategory: product.productCategory
     }));
     

@@ -1,7 +1,7 @@
 // frontend/src/pages/Clients.jsx
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Search, Edit2, Trash2, User, Phone, Mail, Car, ChevronLeft, ChevronRight, Calendar } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, User, Phone, Mail, Car, ChevronLeft, ChevronRight, Calendar, MapPin } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { clientsApi } from '../api/clients';
 import { Button } from '../components/ui/Button';
@@ -31,6 +31,7 @@ const Clients = () => {
     phone: '',
     email: '',
     birthDate: '',
+    city: '',           // 👈 ДОБАВЛЯЕМ ПОЛЕ "ГОРОД"
     carModel: '',
     carYear: '',
     carNumber: '',
@@ -126,7 +127,7 @@ const Clients = () => {
       setCarYearError('');
       setFormData({
         firstName: '', lastName: '', middleName: '', phone: '', email: '',
-        birthDate: '', carModel: '', carYear: '', carNumber: '', notes: ''
+        birthDate: '', city: '', carModel: '', carYear: '', carNumber: '', notes: ''
       });
       fetchClients();
       fetchStats();
@@ -145,6 +146,7 @@ const Clients = () => {
       phone: client.phone || '',
       email: client.email || '',
       birthDate: client.birthDate ? client.birthDate.split('T')[0] : '',
+      city: client.city || '',                    // 👈 ДОБАВЛЯЕМ ЗАГРУЗКУ ГОРОДА
       carModel: client.carModel || '',
       carYear: client.carYear || '',
       carNumber: client.carNumber || '',
@@ -170,7 +172,7 @@ const Clients = () => {
           setCarYearError('');
           setFormData({
             firstName: '', lastName: '', middleName: '', phone: '', email: '',
-            birthDate: '', carModel: '', carYear: '', carNumber: '', notes: ''
+            birthDate: '', city: '', carModel: '', carYear: '', carNumber: '', notes: ''
           });
           setShowClientModal(true);
         }}>
@@ -207,7 +209,7 @@ const Clients = () => {
       <div className="flex flex-wrap gap-4 mb-6">
         <div className="flex-1 min-w-[200px]">
           <Input
-            placeholder="Поиск по имени, телефону, авто..."
+            placeholder="Поиск по имени, телефону, городу, авто..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             icon={Search}
@@ -222,6 +224,7 @@ const Clients = () => {
           <option value="totalSpent">Сумма покупок</option>
           <option value="totalOrders">Количество заказов</option>
           <option value="lastName">Фамилия</option>
+          <option value="city">Город</option>
         </select>
         <select
           className="px-3 py-2 border rounded-lg"
@@ -241,17 +244,18 @@ const Clients = () => {
               <tr>
                 <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Клиент</th>
                 <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Контакты</th>
+                <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Город</th>
                 <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Автомобиль</th>
                 <th className="px-4 py-3 text-right text-sm font-medium text-gray-600">Заказов</th>
                 <th className="px-4 py-3 text-right text-sm font-medium text-gray-600">На сумму</th>
                 <th className="px-4 py-3 text-right text-sm font-medium text-gray-600">Действия</th>
-               </tr>
+              </tr>
             </thead>
             <tbody className="divide-y">
               {loading ? (
-                <tr><td colSpan="6" className="text-center py-8">Загрузка...</td></tr>
+                <tr><td colSpan="7" className="text-center py-8">Загрузка...</td></tr>
               ) : clients.length === 0 ? (
-                <tr><td colSpan="6" className="text-center py-8 text-gray-500">Нет клиентов</td></tr>
+                <tr><td colSpan="7" className="text-center py-8 text-gray-500">Нет клиентов</td></tr>
               ) : (
                 clients.map(client => (
                   <tr
@@ -272,6 +276,16 @@ const Clients = () => {
                           <Mail className="w-3 h-3" />
                           <span>{client.email}</span>
                         </div>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      {client.city ? (
+                        <div className="flex items-center gap-1 text-sm">
+                          <MapPin className="w-3 h-3 text-gray-400" />
+                          <span>{client.city}</span>
+                        </div>
+                      ) : (
+                        <span className="text-gray-400 text-sm">—</span>
                       )}
                     </td>
                     <td className="px-4 py-3">
@@ -407,7 +421,17 @@ const Clients = () => {
               type="date"
               value={formData.birthDate}
               onChange={(e) => setFormData({ ...formData, birthDate: e.target.value })}
+              icon={Calendar}
             />
+            <div className="md:col-span-2">
+              <Input
+                label="Город"
+                value={formData.city}
+                onChange={(e) => setFormData({ ...formData, city: e.target.value })}
+                icon={MapPin}
+                placeholder="Например: Москва, Санкт-Петербург"
+              />
+            </div>
           </div>
           
           <div className="mt-4">
