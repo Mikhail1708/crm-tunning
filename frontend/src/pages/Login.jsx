@@ -7,8 +7,8 @@ import { Card, CardBody } from '../components/ui/Card';
 import { Mail, Lock, LogIn } from 'lucide-react';
 
 export const Login = () => {
-  const [email, setEmail] = useState('admin@crm.ru');
-  const [password, setPassword] = useState('admin123');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const { login } = useAuth();
   const navigate = useNavigate();
@@ -45,7 +45,7 @@ export const Login = () => {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               icon={Mail}
-              placeholder="admin@crm.ru"
+              placeholder="Ваш логин"
               required
             />
             <Input
@@ -54,7 +54,7 @@ export const Login = () => {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               icon={Lock}
-              placeholder="••••••••"
+              placeholder="Ваш пароль"
               required
             />
             <Button

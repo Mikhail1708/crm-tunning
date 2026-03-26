@@ -23,18 +23,28 @@ const saleRoutes = require('./routes/sales.routes');
 const reportRoutes = require('./routes/reports.routes');
 const saleDocumentRoutes = require('./routes/saleDocuments.routes');
 const clientRoutes = require('./routes/clients.routes');
+const auditRoutes = require('./routes/audit.routes');
+const { auditLog } = require('./middleware/audit.middleware');
+const { authMiddleware } = require('./middleware/auth.middleware');
 
+// Публичные маршруты (не требуют аутентификации)
 app.use('/api/auth', authRoutes);
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'OK', timestamp: new Date().toISOString() });
+});
+
+// Middleware аутентификации (применяется ко всем защищенным маршрутам)
+app.use(authMiddleware);
+app.use(auditLog);
+
+// Защищенные маршруты (требуют аутентификации)
+app.use('/api/audit', auditRoutes);
 app.use('/api/products', productRoutes);
 app.use('/api/categories', categoryRoutes);
 app.use('/api/sales', saleRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/sale-documents', saleDocumentRoutes);
 app.use('/api/clients', clientRoutes);
-
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'OK', timestamp: new Date().toISOString() });
-});
 
 const PORT = process.env.PORT || 5000;
 const HOST = '0.0.0.0';

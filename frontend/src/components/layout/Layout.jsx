@@ -10,20 +10,22 @@ import {
   Tag,  
   LogOut,
   Menu,
-  X,
   User,
   Users,
-  Settings // Добавляем иконку настроек
+  Settings,
+  History
 } from 'lucide-react';
 
+// Навигация с указанием доступных ролей
 const navigation = [
-  { name: 'Дашборд', href: '/dashboard', icon: LayoutDashboard },
-  { name: 'Товары', href: '/products', icon: Package },
-  { name: 'Категории', href: '/categories', icon: Tag },
-  { name: 'Клиенты', href: '/clients', icon: Users },
-  { name: 'Продажи', href: '/sales', icon: ShoppingCart },
-  { name: 'Аналитика', href: '/reports', icon: BarChart3 },
-  { name: 'Настройки', href: '/settings', icon: Settings }, // Добавляем пункт меню
+  { name: 'Дашборд', href: '/dashboard', icon: LayoutDashboard, roles: ['admin', 'manager'] },
+  { name: 'Товары', href: '/products', icon: Package, roles: ['admin', 'manager'] },
+  { name: 'Категории', href: '/categories', icon: Tag, roles: ['admin', 'manager'] },
+  { name: 'Клиенты', href: '/clients', icon: Users, roles: ['admin', 'manager'] },
+  { name: 'Продажи', href: '/sales', icon: ShoppingCart, roles: ['admin', 'manager'] },
+  { name: 'Аналитика', href: '/reports', icon: BarChart3, roles: ['admin', 'manager'] },
+  { name: 'Журнал действий', href: '/audit', icon: History, roles: ['admin'] }, // Только админ
+  { name: 'Настройки', href: '/settings', icon: Settings, roles: ['admin'] }, // Только админ
 ];
 
 export const Layout = () => {
@@ -40,6 +42,12 @@ export const Layout = () => {
   const isActive = (path) => {
     return location.pathname === path;
   };
+
+  // Фильтруем навигацию по роли пользователя
+  const userRole = user?.role || 'manager';
+  const filteredNavigation = navigation.filter(item => 
+    item.roles.includes(userRole)
+  );
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
@@ -67,8 +75,8 @@ export const Layout = () => {
           </div>
 
           {/* Navigation */}
-          <nav className="flex-1 p-4 space-y-2">
-            {navigation.map((item) => (
+          <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
+            {filteredNavigation.map((item) => (
               <a
                 key={item.name}
                 href={item.href}
@@ -106,6 +114,7 @@ export const Layout = () => {
               <button
                 onClick={handleLogout}
                 className="p-2 hover:bg-gray-700 rounded-lg transition-colors"
+                title="Выйти"
               >
                 <LogOut size={18} className="text-gray-400" />
               </button>

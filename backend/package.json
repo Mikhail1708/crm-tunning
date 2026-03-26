@@ -1,29 +1,31 @@
 {
   "name": "crm-backend",
   "version": "1.0.0",
-  "description": "CRM система для продажи тюнинга и запчастей",
+  "description": "CRM System Backend",
   "main": "src/server.js",
   "scripts": {
+    "dev": "nodemon src/server.js",
     "start": "node src/server.js",
-    "dev": "nodemon src/server.js"
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:studio": "prisma studio",
+    "seed": "node prisma/seed.js",
+    "db:seed": "prisma db seed"
   },
-  "keywords": [
-    "crm",
-    "tuning",
-    "parts"
-  ],
-  "author": "",
-  "license": "ISC",
+  "prisma": {
+    "seed": "node prisma/seed.js"
+  },
   "dependencies": {
-    "@prisma/client": "^5.22.0",
+    "@prisma/client": "^5.0.0",
+    "bcrypt": "^5.1.1",
     "bcryptjs": "^3.0.3",
-    "cors": "^2.8.6",
-    "dotenv": "^17.3.1",
-    "express": "^5.2.1",
-    "jsonwebtoken": "^9.0.3",
-    "prisma": "^5.22.0"
+    "cors": "^2.8.5",
+    "dotenv": "^16.0.3",
+    "express": "^4.18.2",
+    "jsonwebtoken": "^9.0.0"
   },
   "devDependencies": {
-    "nodemon": "^3.1.14"
+    "nodemon": "^3.0.0",
+    "prisma": "^5.0.0"
   }
 }
