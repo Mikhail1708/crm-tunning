@@ -1,5 +1,5 @@
 // frontend/src/pages/Dashboard.jsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { reportsApi } from '../api/reports';
 import { productsApi } from '../api/products';
 import { clientsApi } from '../api/clients';
@@ -14,15 +14,19 @@ import {
   Loader,
   DollarSign,
   Users,
-  Calendar,
   ArrowRight,
   CheckCircle,
-  XCircle
+  XCircle,
+  MapPin,
+  RefreshCw,
+  Calendar
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 export const Dashboard = () => {
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [lastUpdate, setLastUpdate] = useState(null);
   const [summary, setSummary] = useState({
     totalRevenue: 0,
     totalProfit: 0,
@@ -33,123 +37,149 @@ export const Dashboard = () => {
     lowStockCount: 0,
     totalClients: 0,
     totalStock: 0,
-    // Добавляем статистику по оплаченным заказам
-    paidSales: 0,
+    averageCheck: 0,
     unpaidSales: 0,
-    unpaidTotal: 0,
-    averageCheck: 0
+    unpaidTotal: 0
   });
   const [lowStockProducts, setLowStockProducts] = useState([]);
   const [topProducts, setTopProducts] = useState([]);
   const [recentSales, setRecentSales] = useState([]);
   const [recentClients, setRecentClients] = useState([]);
 
-  useEffect(() => {
-    loadDashboardData();
-  }, []);
-
-  const loadDashboardData = async () => {
+  const loadDashboardData = useCallback(async (force = false) => {
     try {
       setLoading(true);
       
+      console.log('🔄 Loading dashboard data...', force ? '(force refresh)' : '');
+      
       // Получаем все данные параллельно
-      const [summaryRes, profitRes, lowStockRes, clientsRes, salesRes] = await Promise.all([
-        reportsApi.getSummary(),
-        reportsApi.getProfitByProduct(),
+      const [productsRes, lowStockRes, clientsRes, salesRes] = await Promise.all([
+        productsApi.getAll(),
         productsApi.getLowStock(),
-        clientsApi.getAll({ limit: 5, sortBy: 'createdAt', sortOrder: 'desc' }),
+        clientsApi.getAll({ limit: 1000, sortBy: 'createdAt', sortOrder: 'desc' }),
         saleDocumentsApi.getAll()
       ]);
       
-      console.log('=== DASHBOARD DATA ===');
-      console.log('Summary:', summaryRes.data);
-      console.log('Products:', profitRes.data);
-      console.log('Low stock:', lowStockRes.data);
-      console.log('Clients:', clientsRes.data);
-      console.log('Sales:', salesRes.data);
-      
-      // Парсим данные из summary
-      const summaryData = summaryRes.data || {};
-      const total = summaryData.total || { revenue: 0, cost: 0, profit: 0 };
-      const products = summaryData.products || { total: 0, low_stock: 0 };
-      const topProductsList = summaryData.top_products || [];
-      
-      // Получаем все заказы
+      const allProducts = productsRes.data || [];
       const allSales = salesRes.data || [];
+      const lowStockData = lowStockRes.data || [];
+      const clients = clientsRes.data?.clients || [];
+      const totalClients = clientsRes.data?.total || 0;
       
-      // Разделяем на оплаченные и неоплаченные
-      const paidSales = allSales.filter(sale => sale.paymentStatus === 'paid' || sale.paymentStatus === 'PAID');
-      const unpaidSales = allSales.filter(sale => sale.paymentStatus !== 'paid' && sale.paymentStatus !== 'PAID');
+      console.log('📊 Data loaded:', {
+        products: allProducts.length,
+        sales: allSales.length,
+        lowStock: lowStockData.length,
+        clients: totalClients
+      });
+      
+      // 🔥 Фильтруем ТОЛЬКО ОПЛАЧЕННЫЕ заказы
+      const paidSales = allSales.filter(sale => {
+        const status = (sale.paymentStatus || '').toLowerCase();
+        return status === 'paid' || status === 'оплачен' || status === 'payed' || status === true;
+      });
+      
+      const unpaidSales = allSales.filter(sale => {
+        const status = (sale.paymentStatus || '').toLowerCase();
+        return status !== 'paid' && status !== 'оплачен' && status !== 'payed' && status !== true;
+      });
+      
+      console.log('💰 Paid sales:', paidSales.length);
+      console.log('💸 Unpaid sales:', unpaidSales.length);
       
       // Рассчитываем статистику ТОЛЬКО по оплаченным заказам
-      const paidRevenue = paidSales.reduce((sum, sale) => sum + (sale.total || 0), 0);
-      const paidCost = paidSales.reduce((sum, sale) => {
-        // Если есть items, считаем себестоимость по товарам
+      let totalRevenue = 0;
+      let totalCost = 0;
+      let totalProfit = 0;
+      
+      paidSales.forEach(sale => {
+        const saleTotal = sale.total || 0;
+        totalRevenue += saleTotal;
+        
+        // Рассчитываем себестоимость из товаров в заказе
+        let saleCost = 0;
         if (sale.items && sale.items.length > 0) {
-          return sum + sale.items.reduce((itemSum, item) => itemSum + (item.cost_price || 0) * (item.quantity || 0), 0);
+          sale.items.forEach(item => {
+            const costPrice = item.cost_price || 0;
+            const quantity = item.quantity || 0;
+            saleCost += costPrice * quantity;
+          });
+        } else if (sale.saleItems && sale.saleItems.length > 0) {
+          // Альтернативное название поля
+          sale.saleItems.forEach(item => {
+            const costPrice = item.cost_price || 0;
+            const quantity = item.quantity || 0;
+            saleCost += costPrice * quantity;
+          });
         }
-        // Иначе используем приблизительную себестоимость (примерно 30% от выручки для демо)
-        return sum + (sale.total || 0) * 0.3;
-      }, 0);
-      const paidProfit = paidRevenue - paidCost;
-      const paidMargin = paidRevenue > 0 ? (paidProfit / paidRevenue) * 100 : 0;
-      const averageCheck = paidSales.length > 0 ? paidRevenue / paidSales.length : 0;
+        totalCost += saleCost;
+      });
+      
+      totalProfit = totalRevenue - totalCost;
+      const margin = totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0;
+      const totalSalesCount = paidSales.length;
+      const averageCheck = totalSalesCount > 0 ? totalRevenue / totalSalesCount : 0;
       
       // Неоплаченные заказы
       const unpaidTotal = unpaidSales.reduce((sum, sale) => sum + (sale.total || 0), 0);
       
       // Подсчет общего количества товаров на складе
-      const allProducts = profitRes.data || [];
       const totalStock = allProducts.reduce((sum, p) => sum + (p.stock || 0), 0);
       
-      // Получаем клиентов
-      const clients = clientsRes.data?.clients || [];
-      const totalClients = clientsRes.data?.total || 0;
+      // Подсчет товаров с низким остатком
+      const lowStockProductsList = lowStockData.length > 0 ? lowStockData : allProducts.filter(p => p.stock <= (p.min_stock || 5));
       
-      setSummary({
-        // Основные показатели ТОЛЬКО по оплаченным
-        totalRevenue: paidRevenue,
-        totalProfit: paidProfit,
-        totalCost: paidCost,
-        margin: paidMargin,
-        totalSales: paidSales.length,
-        // Общие показатели
-        totalProducts: products.total || 0,
-        lowStockCount: products.low_stock || 0,
-        totalClients: totalClients,
-        totalStock: totalStock,
-        averageCheck: averageCheck,
-        // Дополнительно: неоплаченные
+      const newSummary = {
+        totalRevenue,
+        totalProfit,
+        totalCost,
+        margin,
+        totalSales: totalSalesCount,
+        totalProducts: allProducts.length,
+        lowStockCount: lowStockProductsList.length,
+        totalClients,
+        totalStock,
+        averageCheck,
         unpaidSales: unpaidSales.length,
-        unpaidTotal: unpaidTotal
-      });
+        unpaidTotal
+      };
       
-      setLowStockProducts(lowStockRes.data || []);
+      console.log('📈 Summary calculated:', newSummary);
+      setSummary(newSummary);
+      setLowStockProducts(lowStockProductsList);
+      setLastUpdate(new Date());
       
-      // Форматируем популярные товары (топ 5 по продажам - ТОЛЬКО из оплаченных заказов)
-      const salesItemsMap = new Map();
+      // Формируем популярные товары из оплаченных заказов
+      const productSalesMap = new Map();
       
       paidSales.forEach(sale => {
-        if (sale.items && sale.items.length > 0) {
-          sale.items.forEach(item => {
+        const items = sale.items || sale.saleItems || [];
+        if (items.length > 0) {
+          items.forEach(item => {
             const productId = item.productId;
-            if (!salesItemsMap.has(productId)) {
-              salesItemsMap.set(productId, {
+            const productName = item.productName || item.name;
+            const quantity = item.quantity || 0;
+            const total = item.total || (item.price * quantity);
+            
+            if (!productSalesMap.has(productId)) {
+              productSalesMap.set(productId, {
                 id: productId,
-                name: item.productName,
+                name: productName,
+                article: item.productArticle,
                 total_sold: 0,
-                total_revenue: 0
+                total_revenue: 0,
+                retail_price: item.price || 0
               });
             }
-            const product = salesItemsMap.get(productId);
-            product.total_sold += item.quantity || 0;
-            product.total_revenue += item.total || 0;
+            const product = productSalesMap.get(productId);
+            product.total_sold += quantity;
+            product.total_revenue += total;
           });
         }
       });
       
-      // Добавляем цены из каталога
-      const formattedTopProducts = Array.from(salesItemsMap.values())
+      // Добавляем данные из каталога
+      const formattedTopProducts = Array.from(productSalesMap.values())
         .filter(p => p.total_sold > 0)
         .sort((a, b) => b.total_sold - a.total_sold)
         .slice(0, 5)
@@ -158,8 +188,8 @@ export const Dashboard = () => {
           return {
             id: product.id,
             name: product.name || 'Без названия',
-            article: catalogProduct?.article || '—',
-            retail_price: catalogProduct?.retail_price || 0,
+            article: catalogProduct?.article || product.article || '—',
+            retail_price: product.retail_price || catalogProduct?.retail_price || 0,
             total_sold: product.total_sold,
             total_revenue: product.total_revenue,
             profit_margin: catalogProduct?.retail_price && catalogProduct?.cost_price 
@@ -169,27 +199,47 @@ export const Dashboard = () => {
         });
       setTopProducts(formattedTopProducts);
       
-      // Последние 5 продаж (все заказы, но с указанием статуса оплаты)
+      // Последние 5 заказов (все заказы)
       const recentSalesData = allSales
-        .filter(sale => sale.documentType === 'order' || sale.documentType === 'receipt')
         .sort((a, b) => new Date(b.saleDate) - new Date(a.saleDate))
         .slice(0, 5)
-        .map(sale => ({
-          id: sale.id,
-          documentNumber: sale.documentNumber,
-          saleDate: sale.saleDate,
-          customerName: sale.customerName || sale.clientName || '-',
-          total: sale.total || 0,
-          documentType: sale.documentType === 'receipt' ? 'Чек' : 'Заказ',
-          paymentStatus: sale.paymentStatus === 'paid' ? 'Оплачен' : 'Не оплачен',
-          isPaid: sale.paymentStatus === 'paid'
-        }));
+        .map(sale => {
+          // Рассчитываем прибыль для заказа
+          let orderCost = 0;
+          const items = sale.items || sale.saleItems || [];
+          items.forEach(item => {
+            orderCost += (item.cost_price || 0) * (item.quantity || 0);
+          });
+          const orderProfit = (sale.total || 0) - orderCost;
+          
+          // Определяем тип документа
+          let docType = 'Заказ';
+          if (sale.documentType === 'receipt') docType = 'Чек';
+          else if (sale.documentType === 'invoice') docType = 'Счет';
+          
+          const isPaid = (sale.paymentStatus || '').toLowerCase() === 'paid' || 
+                         (sale.paymentStatus || '').toLowerCase() === 'оплачен' ||
+                         sale.paymentStatus === true;
+          
+          return {
+            id: sale.id,
+            documentNumber: sale.documentNumber,
+            saleDate: sale.saleDate,
+            customerName: sale.customerName || sale.clientName || '-',
+            customerCity: sale.client?.city || sale.customerCity || '-',
+            total: sale.total || 0,
+            profit: orderProfit,
+            documentType: docType,
+            paymentStatus: isPaid ? 'Оплачен' : 'Не оплачен',
+            isPaid: isPaid
+          };
+        });
       setRecentSales(recentSalesData);
       
       // Последние 5 клиентов
       const recentClientsData = clients.slice(0, 5).map(client => ({
         id: client.id,
-        name: [client.lastName, client.firstName, client.middleName].filter(Boolean).join(' ') || client.firstName || 'Без имени',
+        name: [client.lastName, client.firstName, client.middleName].filter(Boolean).join(' ') || client.firstName || client.name || 'Без имени',
         phone: client.phone,
         city: client.city,
         createdAt: client.createdAt,
@@ -198,11 +248,29 @@ export const Dashboard = () => {
       setRecentClients(recentClientsData);
       
     } catch (error) {
-      console.error('Error loading dashboard:', error);
-      toast.error('Ошибка загрузки данных');
+      console.error('❌ Error loading dashboard:', error);
+      toast.error('Ошибка загрузки данных: ' + (error.response?.data?.error || error.message));
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
+  }, []);
+
+  useEffect(() => {
+    loadDashboardData();
+    
+    // Автоматическое обновление каждые 30 секунд
+    const interval = setInterval(() => {
+      loadDashboardData(true);
+    }, 30000);
+    
+    return () => clearInterval(interval);
+  }, [loadDashboardData]);
+
+  const handleRefresh = () => {
+    setRefreshing(true);
+    loadDashboardData(true);
+    toast.success('Данные обновлены');
   };
 
   if (loading) {
@@ -220,8 +288,7 @@ export const Dashboard = () => {
       icon: ShoppingBag,
       bg: 'bg-blue-100',
       color: 'text-blue-600',
-      description: 'оплаченных заказов',
-      tooltip: 'Только оплаченные заказы'
+      description: 'оплаченных заказов'
     },
     {
       title: 'Выручка',
@@ -229,8 +296,7 @@ export const Dashboard = () => {
       icon: DollarSign,
       bg: 'bg-green-100',
       color: 'text-green-600',
-      description: 'от оплаченных заказов',
-      tooltip: 'Только оплаченные заказы'
+      description: 'от оплаченных заказов'
     },
     {
       title: 'Прибыль',
@@ -238,8 +304,7 @@ export const Dashboard = () => {
       icon: TrendingUp,
       bg: 'bg-purple-100',
       color: 'text-purple-600',
-      description: 'чистая прибыль',
-      tooltip: 'Только оплаченные заказы'
+      description: 'чистая прибыль'
     },
     {
       title: 'Клиенты',
@@ -269,32 +334,50 @@ export const Dashboard = () => {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold text-gray-900">Дашборд</h1>
-        <p className="text-gray-500 mt-1">Обзор состояния бизнеса</p>
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900">Дашборд</h1>
+          <p className="text-gray-500 mt-1">Обзор состояния бизнеса</p>
+          {lastUpdate && (
+            <p className="text-xs text-gray-400 mt-1 flex items-center gap-1">
+              <Calendar size={12} />
+              Последнее обновление: {formatDate(lastUpdate)} {lastUpdate.toLocaleTimeString()}
+            </p>
+          )}
+        </div>
+        <button
+          onClick={handleRefresh}
+          disabled={refreshing}
+          className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50"
+        >
+          <RefreshCw size={18} className={refreshing ? 'animate-spin' : ''} />
+          <span className="text-sm">Обновить</span>
+        </button>
       </div>
 
       {/* Предупреждение о неоплаченных заказах */}
       {summary.unpaidSales > 0 && (
-        <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded-lg">
-          <div className="flex items-center">
-            <AlertCircle className="text-yellow-400 mr-3" size={20} />
+        <div className="bg-yellow-50 border-l-4 border-yellow-400 rounded-lg p-4">
+          <div className="flex items-start gap-3">
+            <AlertCircle className="text-yellow-400 flex-shrink-0 mt-0.5" size={20} />
             <div>
-              <p className="text-yellow-700 font-medium">
+              <p className="text-yellow-800 font-medium">
                 Внимание: {summary.unpaidSales} неоплаченных заказов на сумму {formatPrice(summary.unpaidTotal)}
               </p>
-              <p className="text-yellow-600 text-sm mt-1">
-                В статистике дашборда учитываются только оплаченные заказы. Неоплаченные заказы не влияют на выручку и прибыль.
+              <p className="text-yellow-700 text-sm mt-1">
+                В статистике дашборда учитываются только оплаченные заказы. 
+                Неоплаченные заказы не влияют на выручку, прибыль и средний чек.
               </p>
             </div>
           </div>
         </div>
       )}
 
-      {/* Stats Cards - 6 карточек */}
+      {/* Stats Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
         {stats.map((stat, index) => (
-          <div key={index} className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 hover:shadow-md transition-shadow group relative">
+          <div key={index} className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 hover:shadow-md transition-all group relative">
             <div className="flex items-center justify-between mb-2">
               <div className={`w-10 h-10 rounded-xl ${stat.bg} flex items-center justify-center`}>
                 <stat.icon size={20} className={stat.color} />
@@ -303,17 +386,13 @@ export const Dashboard = () => {
             </div>
             <p className="text-2xl font-bold text-gray-900">{stat.value}</p>
             <p className="text-xs text-gray-500 mt-1">{stat.title}</p>
-            {stat.tooltip && (
-              <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-2 py-1 bg-gray-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
-                {stat.tooltip}
-              </div>
-            )}
           </div>
         ))}
       </div>
 
+      {/* Two column layout */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Низкий остаток */}
+        {/* Low Stock Products */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-200">
           <div className="p-5 border-b border-gray-200">
             <div className="flex items-center justify-between">
@@ -341,12 +420,12 @@ export const Dashboard = () => {
                   <div key={product.id} className="flex items-center justify-between p-3 bg-yellow-50 rounded-lg">
                     <div className="flex-1">
                       <p className="font-medium text-gray-900">{product.name}</p>
-                      <p className="text-xs text-gray-500">Артикул: {product.article}</p>
+                      <p className="text-xs text-gray-500">Артикул: {product.article || '-'}</p>
                     </div>
                     <div className="text-right">
                       <p className="text-xs text-gray-500">Остаток</p>
                       <p className="font-bold text-yellow-600">{product.stock} шт.</p>
-                      <p className="text-xs text-gray-500">Мин: {product.min_stock} шт.</p>
+                      <p className="text-xs text-gray-500">Мин: {product.min_stock || 5} шт.</p>
                     </div>
                   </div>
                 ))}
@@ -355,13 +434,15 @@ export const Dashboard = () => {
           </div>
         </div>
 
-        {/* Популярные товары */}
+        {/* Top Products */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-200">
           <div className="p-5 border-b border-gray-200">
-            <div className="flex items-center gap-2">
-              <TrendingUp size={20} className="text-primary-600" />
-              <h2 className="text-lg font-semibold text-gray-900">Популярные товары</h2>
-              <span className="text-xs text-gray-400 ml-auto">Топ по продажам</span>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <TrendingUp size={20} className="text-primary-600" />
+                <h2 className="text-lg font-semibold text-gray-900">Популярные товары</h2>
+              </div>
+              <span className="text-xs text-gray-400">Топ по продажам (оплаченные)</span>
             </div>
           </div>
           <div className="p-5">
@@ -404,8 +485,9 @@ export const Dashboard = () => {
         </div>
       </div>
 
+      {/* Second row */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Последние продажи */}
+        {/* Recent Orders */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-200">
           <div className="p-5 border-b border-gray-200">
             <div className="flex items-center justify-between">
@@ -431,10 +513,13 @@ export const Dashboard = () => {
             ) : (
               <div className="space-y-3">
                 {recentSales.map((sale) => (
-                  <div key={sale.id} className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg transition-colors cursor-pointer" 
-                       onClick={() => window.location.href = `/sales/${sale.id}`}>
+                  <div 
+                    key={sale.id} 
+                    className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg transition-colors cursor-pointer" 
+                    onClick={() => window.location.href = `/sales/${sale.id}`}
+                  >
                     <div className="flex-1">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <p className="font-medium text-gray-900 text-sm">{sale.documentNumber}</p>
                         <span className={`px-2 py-0.5 text-xs rounded-full flex items-center gap-1 ${
                           sale.isPaid ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
@@ -443,14 +528,26 @@ export const Dashboard = () => {
                           {sale.paymentStatus}
                         </span>
                         <span className={`px-2 py-0.5 text-xs rounded-full ${
-                          sale.documentType === 'Чек' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'
+                          sale.documentType === 'Чек' ? 'bg-green-100 text-green-700' : 
+                          sale.documentType === 'Счет' ? 'bg-blue-100 text-blue-700' : 
+                          'bg-purple-100 text-purple-700'
                         }`}>
                           {sale.documentType}
                         </span>
                       </div>
-                      <p className="text-xs text-gray-500 mt-1">
-                        {sale.customerName} • {formatDate(sale.saleDate)}
-                      </p>
+                      <div className="flex items-center gap-2 mt-1 flex-wrap">
+                        <p className="text-xs text-gray-500">
+                          {sale.customerName}
+                        </p>
+                        {sale.customerCity && sale.customerCity !== '-' && (
+                          <span className="flex items-center gap-1 text-xs text-gray-400">
+                            <MapPin size={10} />
+                            {sale.customerCity}
+                          </span>
+                        )}
+                        <span className="text-xs text-gray-400">•</span>
+                        <p className="text-xs text-gray-500">{formatDate(sale.saleDate)}</p>
+                      </div>
                     </div>
                     <div className="text-right">
                       <p className={`font-semibold ${sale.isPaid ? 'text-green-600' : 'text-gray-400'}`}>
@@ -458,6 +555,9 @@ export const Dashboard = () => {
                       </p>
                       {!sale.isPaid && (
                         <p className="text-xs text-gray-400">ожидает оплаты</p>
+                      )}
+                      {sale.isPaid && sale.profit > 0 && (
+                        <p className="text-xs text-green-600">+{formatPrice(sale.profit)}</p>
                       )}
                     </div>
                   </div>
@@ -467,7 +567,7 @@ export const Dashboard = () => {
           </div>
         </div>
 
-        {/* Новые клиенты */}
+        {/* New Clients */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-200">
           <div className="p-5 border-b border-gray-200">
             <div className="flex items-center justify-between">
@@ -493,14 +593,22 @@ export const Dashboard = () => {
             ) : (
               <div className="space-y-3">
                 {recentClients.map((client) => (
-                  <div key={client.id} className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg transition-colors cursor-pointer"
-                       onClick={() => window.location.href = `/clients/${client.id}`}>
+                  <div 
+                    key={client.id} 
+                    className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg transition-colors cursor-pointer"
+                    onClick={() => window.location.href = `/clients/${client.id}`}
+                  >
                     <div className="flex-1">
                       <p className="font-medium text-gray-900 text-sm">{client.name}</p>
-                      <p className="text-xs text-gray-500">{client.phone}</p>
-                      {client.city && (
-                        <p className="text-xs text-gray-400 mt-0.5">{client.city}</p>
-                      )}
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <p className="text-xs text-gray-500">{client.phone}</p>
+                        {client.city && (
+                          <span className="flex items-center gap-1 text-xs text-gray-400">
+                            <MapPin size={10} />
+                            {client.city}
+                          </span>
+                        )}
+                      </div>
                     </div>
                     <div className="text-right">
                       <p className="text-xs text-gray-500">Дата регистрации</p>
@@ -517,14 +625,14 @@ export const Dashboard = () => {
         </div>
       </div>
 
-      {/* Ключевые показатели */}
+      {/* Key Metrics */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200">
         <div className="p-5 border-b border-gray-200">
           <h2 className="text-lg font-semibold text-gray-900">Ключевые показатели</h2>
           <p className="text-xs text-gray-400 mt-1">* Данные только по оплаченным заказам</p>
         </div>
         <div className="p-5">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="text-center p-4 bg-gray-50 rounded-lg">
               <p className="text-sm text-gray-500 mb-2">Себестоимость</p>
               <p className="text-xl font-bold text-orange-600">{formatPrice(summary.totalCost)}</p>
