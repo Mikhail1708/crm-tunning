@@ -15,7 +15,9 @@ import {
   DollarSign,
   Users,
   Calendar,
-  ArrowRight
+  ArrowRight,
+  CheckCircle,
+  XCircle
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -30,7 +32,12 @@ export const Dashboard = () => {
     totalProducts: 0,
     lowStockCount: 0,
     totalClients: 0,
-    totalStock: 0
+    totalStock: 0,
+    // Добавляем статистику по оплаченным заказам
+    paidSales: 0,
+    unpaidSales: 0,
+    unpaidTotal: 0,
+    averageCheck: 0
   });
   const [lowStockProducts, setLowStockProducts] = useState([]);
   const [topProducts, setTopProducts] = useState([]);
@@ -67,11 +74,29 @@ export const Dashboard = () => {
       const products = summaryData.products || { total: 0, low_stock: 0 };
       const topProductsList = summaryData.top_products || [];
       
-      const revenue = total.revenue || 0;
-      const profit = total.profit || 0;
-      const cost = total.cost || 0;
-      const margin = revenue > 0 ? (profit / revenue) * 100 : 0;
-      const totalSales = salesRes.data?.length || 0;
+      // Получаем все заказы
+      const allSales = salesRes.data || [];
+      
+      // Разделяем на оплаченные и неоплаченные
+      const paidSales = allSales.filter(sale => sale.paymentStatus === 'paid' || sale.paymentStatus === 'PAID');
+      const unpaidSales = allSales.filter(sale => sale.paymentStatus !== 'paid' && sale.paymentStatus !== 'PAID');
+      
+      // Рассчитываем статистику ТОЛЬКО по оплаченным заказам
+      const paidRevenue = paidSales.reduce((sum, sale) => sum + (sale.total || 0), 0);
+      const paidCost = paidSales.reduce((sum, sale) => {
+        // Если есть items, считаем себестоимость по товарам
+        if (sale.items && sale.items.length > 0) {
+          return sum + sale.items.reduce((itemSum, item) => itemSum + (item.cost_price || 0) * (item.quantity || 0), 0);
+        }
+        // Иначе используем приблизительную себестоимость (примерно 30% от выручки для демо)
+        return sum + (sale.total || 0) * 0.3;
+      }, 0);
+      const paidProfit = paidRevenue - paidCost;
+      const paidMargin = paidRevenue > 0 ? (paidProfit / paidRevenue) * 100 : 0;
+      const averageCheck = paidSales.length > 0 ? paidRevenue / paidSales.length : 0;
+      
+      // Неоплаченные заказы
+      const unpaidTotal = unpaidSales.reduce((sum, sale) => sum + (sale.total || 0), 0);
       
       // Подсчет общего количества товаров на складе
       const allProducts = profitRes.data || [];
@@ -82,36 +107,70 @@ export const Dashboard = () => {
       const totalClients = clientsRes.data?.total || 0;
       
       setSummary({
-        totalRevenue: revenue,
-        totalProfit: profit,
-        totalCost: cost,
-        margin: margin,
-        totalSales: totalSales,
+        // Основные показатели ТОЛЬКО по оплаченным
+        totalRevenue: paidRevenue,
+        totalProfit: paidProfit,
+        totalCost: paidCost,
+        margin: paidMargin,
+        totalSales: paidSales.length,
+        // Общие показатели
         totalProducts: products.total || 0,
         lowStockCount: products.low_stock || 0,
         totalClients: totalClients,
-        totalStock: totalStock
+        totalStock: totalStock,
+        averageCheck: averageCheck,
+        // Дополнительно: неоплаченные
+        unpaidSales: unpaidSales.length,
+        unpaidTotal: unpaidTotal
       });
       
       setLowStockProducts(lowStockRes.data || []);
       
-      // Форматируем популярные товары (топ 5 по продажам)
-      const formattedTopProducts = (profitRes.data || [])
+      // Форматируем популярные товары (топ 5 по продажам - ТОЛЬКО из оплаченных заказов)
+      const salesItemsMap = new Map();
+      
+      paidSales.forEach(sale => {
+        if (sale.items && sale.items.length > 0) {
+          sale.items.forEach(item => {
+            const productId = item.productId;
+            if (!salesItemsMap.has(productId)) {
+              salesItemsMap.set(productId, {
+                id: productId,
+                name: item.productName,
+                total_sold: 0,
+                total_revenue: 0
+              });
+            }
+            const product = salesItemsMap.get(productId);
+            product.total_sold += item.quantity || 0;
+            product.total_revenue += item.total || 0;
+          });
+        }
+      });
+      
+      // Добавляем цены из каталога
+      const formattedTopProducts = Array.from(salesItemsMap.values())
         .filter(p => p.total_sold > 0)
         .sort((a, b) => b.total_sold - a.total_sold)
         .slice(0, 5)
-        .map(product => ({
-          id: product.id,
-          name: product.name || 'Без названия',
-          article: product.article || '—',
-          retail_price: product.retail_price || 0,
-          total_sold: product.total_sold || 0,
-          total_profit: product.total_profit || 0
-        }));
+        .map(product => {
+          const catalogProduct = allProducts.find(p => p.id === product.id);
+          return {
+            id: product.id,
+            name: product.name || 'Без названия',
+            article: catalogProduct?.article || '—',
+            retail_price: catalogProduct?.retail_price || 0,
+            total_sold: product.total_sold,
+            total_revenue: product.total_revenue,
+            profit_margin: catalogProduct?.retail_price && catalogProduct?.cost_price 
+              ? ((catalogProduct.retail_price - catalogProduct.cost_price) / catalogProduct.retail_price * 100).toFixed(1)
+              : 0
+          };
+        });
       setTopProducts(formattedTopProducts);
       
-      // Последние 5 продаж
-      const recentSalesData = (salesRes.data || [])
+      // Последние 5 продаж (все заказы, но с указанием статуса оплаты)
+      const recentSalesData = allSales
         .filter(sale => sale.documentType === 'order' || sale.documentType === 'receipt')
         .sort((a, b) => new Date(b.saleDate) - new Date(a.saleDate))
         .slice(0, 5)
@@ -121,7 +180,9 @@ export const Dashboard = () => {
           saleDate: sale.saleDate,
           customerName: sale.customerName || sale.clientName || '-',
           total: sale.total || 0,
-          documentType: sale.documentType === 'receipt' ? 'Чек' : 'Заказ'
+          documentType: sale.documentType === 'receipt' ? 'Чек' : 'Заказ',
+          paymentStatus: sale.paymentStatus === 'paid' ? 'Оплачен' : 'Не оплачен',
+          isPaid: sale.paymentStatus === 'paid'
         }));
       setRecentSales(recentSalesData);
       
@@ -130,6 +191,7 @@ export const Dashboard = () => {
         id: client.id,
         name: [client.lastName, client.firstName, client.middleName].filter(Boolean).join(' ') || client.firstName || 'Без имени',
         phone: client.phone,
+        city: client.city,
         createdAt: client.createdAt,
         totalSpent: client.totalSpent || 0
       }));
@@ -158,7 +220,8 @@ export const Dashboard = () => {
       icon: ShoppingBag,
       bg: 'bg-blue-100',
       color: 'text-blue-600',
-      description: 'всего заказов'
+      description: 'оплаченных заказов',
+      tooltip: 'Только оплаченные заказы'
     },
     {
       title: 'Выручка',
@@ -166,7 +229,8 @@ export const Dashboard = () => {
       icon: DollarSign,
       bg: 'bg-green-100',
       color: 'text-green-600',
-      description: 'общая сумма'
+      description: 'от оплаченных заказов',
+      tooltip: 'Только оплаченные заказы'
     },
     {
       title: 'Прибыль',
@@ -174,7 +238,8 @@ export const Dashboard = () => {
       icon: TrendingUp,
       bg: 'bg-purple-100',
       color: 'text-purple-600',
-      description: 'чистая прибыль'
+      description: 'чистая прибыль',
+      tooltip: 'Только оплаченные заказы'
     },
     {
       title: 'Клиенты',
@@ -194,11 +259,11 @@ export const Dashboard = () => {
     },
     {
       title: 'Средний чек',
-      value: formatPrice(summary.totalSales > 0 ? summary.totalRevenue / summary.totalSales : 0),
+      value: formatPrice(summary.averageCheck),
       icon: Receipt,
       bg: 'bg-yellow-100',
       color: 'text-yellow-600',
-      description: 'на один заказ'
+      description: 'на оплаченный заказ'
     },
   ];
 
@@ -209,10 +274,27 @@ export const Dashboard = () => {
         <p className="text-gray-500 mt-1">Обзор состояния бизнеса</p>
       </div>
 
+      {/* Предупреждение о неоплаченных заказах */}
+      {summary.unpaidSales > 0 && (
+        <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded-lg">
+          <div className="flex items-center">
+            <AlertCircle className="text-yellow-400 mr-3" size={20} />
+            <div>
+              <p className="text-yellow-700 font-medium">
+                Внимание: {summary.unpaidSales} неоплаченных заказов на сумму {formatPrice(summary.unpaidTotal)}
+              </p>
+              <p className="text-yellow-600 text-sm mt-1">
+                В статистике дашборда учитываются только оплаченные заказы. Неоплаченные заказы не влияют на выручку и прибыль.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Stats Cards - 6 карточек */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
         {stats.map((stat, index) => (
-          <div key={index} className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 hover:shadow-md transition-shadow">
+          <div key={index} className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 hover:shadow-md transition-shadow group relative">
             <div className="flex items-center justify-between mb-2">
               <div className={`w-10 h-10 rounded-xl ${stat.bg} flex items-center justify-center`}>
                 <stat.icon size={20} className={stat.color} />
@@ -221,6 +303,11 @@ export const Dashboard = () => {
             </div>
             <p className="text-2xl font-bold text-gray-900">{stat.value}</p>
             <p className="text-xs text-gray-500 mt-1">{stat.title}</p>
+            {stat.tooltip && (
+              <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-2 py-1 bg-gray-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
+                {stat.tooltip}
+              </div>
+            )}
           </div>
         ))}
       </div>
@@ -274,6 +361,7 @@ export const Dashboard = () => {
             <div className="flex items-center gap-2">
               <TrendingUp size={20} className="text-primary-600" />
               <h2 className="text-lg font-semibold text-gray-900">Популярные товары</h2>
+              <span className="text-xs text-gray-400 ml-auto">Топ по продажам</span>
             </div>
           </div>
           <div className="p-5">
@@ -299,11 +387,14 @@ export const Dashboard = () => {
                       <div className="flex-1">
                         <p className="font-medium text-gray-900 text-sm">{product.name}</p>
                         <p className="text-xs text-gray-500">Продано: {product.total_sold} шт.</p>
+                        {product.profit_margin > 0 && (
+                          <p className="text-xs text-green-600">Маржинальность: {product.profit_margin}%</p>
+                        )}
                       </div>
                     </div>
                     <div className="text-right">
                       <p className="text-sm font-semibold text-gray-900">{formatPrice(product.retail_price)}</p>
-                      <p className="text-xs text-green-600">+{formatPrice(product.total_profit)}</p>
+                      <p className="text-xs text-green-600">+{formatPrice(product.total_revenue)}</p>
                     </div>
                   </div>
                 ))}
@@ -320,13 +411,13 @@ export const Dashboard = () => {
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <ShoppingBag size={20} className="text-green-600" />
-                <h2 className="text-lg font-semibold text-gray-900">Последние продажи</h2>
+                <h2 className="text-lg font-semibold text-gray-900">Последние заказы</h2>
               </div>
               <button 
                 onClick={() => window.location.href = '/sales'}
                 className="text-xs text-primary-600 hover:text-primary-700 flex items-center gap-1"
               >
-                Все продажи <ArrowRight size={12} />
+                Все заказы <ArrowRight size={12} />
               </button>
             </div>
           </div>
@@ -334,7 +425,7 @@ export const Dashboard = () => {
             {recentSales.length === 0 ? (
               <div className="text-center py-8">
                 <Receipt size={48} className="mx-auto mb-3 text-gray-300" />
-                <p className="text-gray-500">Нет продаж</p>
+                <p className="text-gray-500">Нет заказов</p>
                 <p className="text-sm text-gray-400 mt-1">Создайте первый заказ</p>
               </div>
             ) : (
@@ -345,6 +436,12 @@ export const Dashboard = () => {
                     <div className="flex-1">
                       <div className="flex items-center gap-2">
                         <p className="font-medium text-gray-900 text-sm">{sale.documentNumber}</p>
+                        <span className={`px-2 py-0.5 text-xs rounded-full flex items-center gap-1 ${
+                          sale.isPaid ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
+                        }`}>
+                          {sale.isPaid ? <CheckCircle size={10} /> : <XCircle size={10} />}
+                          {sale.paymentStatus}
+                        </span>
                         <span className={`px-2 py-0.5 text-xs rounded-full ${
                           sale.documentType === 'Чек' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'
                         }`}>
@@ -356,7 +453,12 @@ export const Dashboard = () => {
                       </p>
                     </div>
                     <div className="text-right">
-                      <p className="font-semibold text-gray-900">{formatPrice(sale.total)}</p>
+                      <p className={`font-semibold ${sale.isPaid ? 'text-green-600' : 'text-gray-400'}`}>
+                        {formatPrice(sale.total)}
+                      </p>
+                      {!sale.isPaid && (
+                        <p className="text-xs text-gray-400">ожидает оплаты</p>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -396,10 +498,16 @@ export const Dashboard = () => {
                     <div className="flex-1">
                       <p className="font-medium text-gray-900 text-sm">{client.name}</p>
                       <p className="text-xs text-gray-500">{client.phone}</p>
+                      {client.city && (
+                        <p className="text-xs text-gray-400 mt-0.5">{client.city}</p>
+                      )}
                     </div>
                     <div className="text-right">
                       <p className="text-xs text-gray-500">Дата регистрации</p>
                       <p className="text-xs font-medium text-gray-600">{formatDate(client.createdAt)}</p>
+                      {client.totalSpent > 0 && (
+                        <p className="text-xs text-green-600 mt-1">+{formatPrice(client.totalSpent)}</p>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -413,6 +521,7 @@ export const Dashboard = () => {
       <div className="bg-white rounded-xl shadow-sm border border-gray-200">
         <div className="p-5 border-b border-gray-200">
           <h2 className="text-lg font-semibold text-gray-900">Ключевые показатели</h2>
+          <p className="text-xs text-gray-400 mt-1">* Данные только по оплаченным заказам</p>
         </div>
         <div className="p-5">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
