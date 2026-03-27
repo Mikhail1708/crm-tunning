@@ -66,21 +66,7 @@ const createSaleDocument = async (req, res) => {
       items,
       discount,
       paymentMethod,
-      paymentStatus,
-      // Данные автомобиля
-      carBrand,
-      carModel,
-      carYear,
-      carVin,
-      carNumber,
-      carColor,
-      carMileage,
-      engineNumber,
-      bodyNumber,
-      masterName,
-      workType,
-      reason,
-      recommendations
+      paymentStatus
     } = req.body;
     
     let finalClientName = customerName;
@@ -114,27 +100,15 @@ const createSaleDocument = async (req, res) => {
         data: {
           documentNumber,
           documentType: documentType || 'order',
-          clientId: clientId || null,
+          client: clientId ? {
+            connect: { id: clientId }
+          } : undefined,
           clientName: finalClientName,
           clientPhone: finalClientPhone,
           customerName: customerName || finalClientName,
           customerPhone: customerPhone || finalClientPhone,
           customerEmail,
           customerAddress,
-          // Данные автомобиля
-          carBrand,
-          carModel,
-          carYear: carYear ? parseInt(carYear) : null,
-          carVin,
-          carNumber,
-          carColor,
-          carMileage: carMileage ? parseInt(carMileage) : null,
-          engineNumber,
-          bodyNumber,
-          masterName,
-          workType,
-          reason,
-          recommendations,
           subtotal,
           discount: discount || 0,
           total,
@@ -154,7 +128,7 @@ const createSaleDocument = async (req, res) => {
           throw new Error(`Товар с ID ${item.productId} не найден`);
         }
         
-        if (product.stock < item.quantity && !item.isWork) {
+        if (product.stock < item.quantity) {
           throw new Error(`Недостаточно товара ${product.name} на складе`);
         }
         
@@ -162,6 +136,7 @@ const createSaleDocument = async (req, res) => {
         const itemTotalCost = itemCostPrice * item.quantity;
         const itemTotalRevenue = item.price * item.quantity;
         
+        // Создаем элемент документа без поля isWork
         await prisma.saleDocumentItem.create({
           data: {
             documentId: document.id,
@@ -171,9 +146,7 @@ const createSaleDocument = async (req, res) => {
             quantity: item.quantity,
             price: item.price,
             cost_price: itemCostPrice,
-            total: itemTotalRevenue,
-            isWork: item.isWork || false,
-            normHours: item.normHours || null
+            total: itemTotalRevenue
           }
         });
         
@@ -193,13 +166,11 @@ const createSaleDocument = async (req, res) => {
         
         sales.push(sale);
         
-        // Списание товара со склада только для запчастей (не для работ)
-        if (!item.isWork) {
-          await prisma.product.update({
-            where: { id: item.productId },
-            data: { stock: product.stock - item.quantity }
-          });
-        }
+        // Списание товара со склада
+        await prisma.product.update({
+          where: { id: item.productId },
+          data: { stock: product.stock - item.quantity }
+        });
       }
       
       if (client && client.id) {
@@ -233,20 +204,7 @@ const updateSaleDocument = async (req, res) => {
       customerName,
       customerPhone,
       customerEmail,
-      customerAddress,
-      carBrand,
-      carModel,
-      carYear,
-      carVin,
-      carNumber,
-      carColor,
-      carMileage,
-      engineNumber,
-      bodyNumber,
-      masterName,
-      workType,
-      reason,
-      recommendations
+      customerAddress
     } = req.body;
     
     const updateData = { 
@@ -255,25 +213,12 @@ const updateSaleDocument = async (req, res) => {
       customerName,
       customerPhone,
       customerEmail,
-      customerAddress,
-      carBrand,
-      carModel,
-      carYear: carYear ? parseInt(carYear) : null,
-      carVin,
-      carNumber,
-      carColor,
-      carMileage: carMileage ? parseInt(carMileage) : null,
-      engineNumber,
-      bodyNumber,
-      masterName,
-      workType,
-      reason,
-      recommendations
+      customerAddress
     };
     
     if (clientId !== undefined) {
       if (clientId === null) {
-        updateData.clientId = null;
+        updateData.client = { disconnect: true };
         updateData.clientName = null;
         updateData.clientPhone = null;
       } else {
@@ -281,7 +226,7 @@ const updateSaleDocument = async (req, res) => {
           where: { id: clientId }
         });
         if (client) {
-          updateData.clientId = clientId;
+          updateData.client = { connect: { id: clientId } };
           updateData.clientName = [client.lastName, client.firstName, client.middleName]
             .filter(Boolean)
             .join(' ')
@@ -332,7 +277,8 @@ const deleteSaleDocument = async (req, res) => {
         where: { id: documentId },
         include: { 
           sales: true,
-          items: true
+          items: true,
+          client: true
         }
       });
       
@@ -340,14 +286,12 @@ const deleteSaleDocument = async (req, res) => {
         throw new Error('Документ не найден');
       }
       
-      // Возвращаем товары на склад (только для запчастей, не для работ)
+      // Возвращаем товары на склад
       for (const item of document.items) {
-        if (!item.isWork) {
-          await prisma.product.update({
-            where: { id: item.productId },
-            data: { stock: { increment: item.quantity } }
-          });
-        }
+        await prisma.product.update({
+          where: { id: item.productId },
+          data: { stock: { increment: item.quantity } }
+        });
       }
       
       if (document.clientId) {

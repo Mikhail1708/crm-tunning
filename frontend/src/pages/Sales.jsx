@@ -14,7 +14,9 @@ import {
   Trash2,
   Search,
   Loader,
-  Plus
+  Plus,
+  Clock,
+  AlertCircle
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -43,7 +45,7 @@ export const Sales = () => {
   };
 
   const handleDelete = async (id, e) => {
-    e.stopPropagation(); // Останавливаем всплытие, чтобы не открывать заказ
+    e.stopPropagation();
     if (confirm('Удалить заказ? Все товары вернутся на склад')) {
       try {
         await saleDocumentsApi.delete(id);
@@ -80,11 +82,22 @@ export const Sales = () => {
 
   const filteredDocuments = documents.filter(filterDocuments);
 
+  // Подсчет статистики
+  const paidDocuments = documents.filter(doc => doc.paymentStatus === 'paid');
+  const unpaidDocuments = documents.filter(doc => doc.paymentStatus === 'unpaid');
+  
   const stats = {
     total: documents.length,
-    totalRevenue: documents.reduce((sum, d) => sum + (d.total || 0), 0),
-    totalProfit: documents.reduce((sum, d) => sum + (d.total || 0), 0),
-    averageCheck: documents.length > 0 ? documents.reduce((sum, d) => sum + (d.total || 0), 0) / documents.length : 0,
+    // Выручка только по оплаченным заказам
+    totalRevenue: paidDocuments.reduce((sum, d) => sum + (d.total || 0), 0),
+    // Количество неоплаченных заказов
+    unpaidCount: unpaidDocuments.length,
+    // Сумма неоплаченных заказов
+    unpaidAmount: unpaidDocuments.reduce((sum, d) => sum + (d.total || 0), 0),
+    // Средний чек (только по оплаченным)
+    averageCheck: paidDocuments.length > 0 
+      ? paidDocuments.reduce((sum, d) => sum + (d.total || 0), 0) / paidDocuments.length 
+      : 0,
   };
 
   if (loading) {
@@ -114,8 +127,9 @@ export const Sales = () => {
         </Button>
       </div>
 
-      {/* Stats Cards */}
+      {/* Stats Cards - 4 карточки */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        {/* 1. Всего заказов */}
         <Card>
           <CardBody className="p-4">
             <div className="flex items-center justify-between">
@@ -127,40 +141,68 @@ export const Sales = () => {
             </div>
           </CardBody>
         </Card>
+
+        {/* 2. Выручка (только оплаченные) */}
         <Card>
           <CardBody className="p-4">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-gray-500">Общая выручка</p>
-                <p className="text-2xl font-bold text-gray-900">{formatPrice(stats.totalRevenue)}</p>
+                <p className="text-2xl font-bold text-green-600">{formatPrice(stats.totalRevenue)}</p>
+                <p className="text-xs text-gray-400 mt-1">
+                  по оплаченным заказам
+                </p>
               </div>
               <TrendingUp size={32} className="text-green-600 opacity-50" />
             </div>
           </CardBody>
         </Card>
+
+        {/* 3. Неоплаченные заказы (вместо прибыли) */}
         <Card>
           <CardBody className="p-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-500">Общая прибыль</p>
-                <p className="text-2xl font-bold text-gray-900">{formatPrice(stats.totalProfit)}</p>
+                <p className="text-sm text-gray-500">Неоплаченные заказы</p>
+                <p className="text-2xl font-bold text-orange-600">{stats.unpaidCount}</p>
+                {stats.unpaidAmount > 0 && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    на сумму {formatPrice(stats.unpaidAmount)}
+                  </p>
+                )}
               </div>
-              <Receipt size={32} className="text-blue-600 opacity-50" />
+              <Clock size={32} className="text-orange-500 opacity-50" />
             </div>
           </CardBody>
         </Card>
+
+        {/* 4. Средний чек */}
         <Card>
           <CardBody className="p-4">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-gray-500">Средний чек</p>
-                <p className="text-2xl font-bold text-gray-900">{formatPrice(stats.averageCheck)}</p>
+                <p className="text-2xl font-bold text-purple-600">{formatPrice(stats.averageCheck)}</p>
+                <p className="text-xs text-gray-400 mt-1">
+                  по оплаченным заказам
+                </p>
               </div>
               <Receipt size={32} className="text-purple-600 opacity-50" />
             </div>
           </CardBody>
         </Card>
       </div>
+
+      {/* Предупреждение о неоплаченных заказах */}
+      {stats.unpaidCount > 0 && (
+        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 flex items-center gap-3">
+          <AlertCircle size={20} className="text-yellow-600" />
+          <p className="text-yellow-800 text-sm">
+            <span className="font-semibold">Внимание:</span> {stats.unpaidCount} заказ(ов) не оплачено на сумму {formatPrice(stats.unpaidAmount)}.
+            Неоплаченные заказы не учитываются в выручке.
+          </p>
+        </div>
+      )}
 
       {/* Search */}
       <Card>
@@ -198,14 +240,13 @@ export const Sales = () => {
               {filteredDocuments.map((doc) => (
                 <Tr 
                   key={doc.id} 
-                  className="hover:bg-gray-50 transition-colors group"
+                  className="hover:bg-gray-50 transition-colors group cursor-pointer"
                   onClick={() => handleRowClick(doc.id)}
-                  style={{ cursor: 'pointer' }}
                 >
                   <Td className="font-mono text-sm font-medium text-primary-600">{doc.documentNumber}</Td>
                   <Td>{formatDate(doc.saleDate)}</Td>
-                  <Td>{doc.customerName || '—'}</Td>
-                  <Td>{doc.customerPhone || '—'}</Td>
+                  <Td>{doc.customerName || doc.clientName || '—'}</Td>
+                  <Td>{doc.customerPhone || doc.clientPhone || '—'}</Td>
                   <Td>{doc.items?.length || 0} шт.</Td>
                   <Td className="font-semibold">{formatPrice(doc.total)}</Td>
                   <Td>

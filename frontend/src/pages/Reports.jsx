@@ -40,14 +40,15 @@ import {
   BarChart3,
   LineChart as LineChartIcon,
   X,
-  FileSpreadsheet  // 👈 ВАЖНО: добавляем импорт FileSpreadsheet
+  FileSpreadsheet,
+  AlertCircle
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 // Цвета для графиков
 const COLORS = ['#10b981', '#8b5cf6', '#f59e0b', '#ef4444', '#3b82f6', '#ec489a', '#06b6d4', '#84cc16'];
 
-// Компонент фильтров
+// Компонент фильтров (без изменений)
 const AnalyticsFilters = ({ filters, onFilterChange, onReset, products, clients }) => {
   const [productSearch, setProductSearch] = useState('');
   const [clientSearch, setClientSearch] = useState('');
@@ -214,7 +215,9 @@ export const Reports = () => {
     totalProfit: 0,
     totalCost: 0,
     averageCheck: 0,
-    margin: 0
+    margin: 0,
+    unpaidCount: 0,
+    unpaidAmount: 0
   });
   
   const [period, setPeriod] = useState('month');
@@ -259,13 +262,17 @@ export const Reports = () => {
       const response = await saleDocumentsApi.getAll();
       let allDocuments = response.data || [];
       
-      let filteredSales = allDocuments;
+      // 🔥 КЛЮЧЕВОЕ ИЗМЕНЕНИЕ: фильтруем ТОЛЬКО ОПЛАЧЕННЫЕ заказы
+      let paidDocuments = allDocuments.filter(doc => doc.paymentStatus === 'paid');
+      
+      // Применяем фильтр по дате
+      let filteredSales = [...paidDocuments];
       
       if (period === 'custom' && startDate && endDate) {
         const start = new Date(startDate);
         const end = new Date(endDate);
         end.setHours(23, 59, 59, 999);
-        filteredSales = allDocuments.filter(sale => {
+        filteredSales = paidDocuments.filter(sale => {
           const saleDate = new Date(sale.saleDate);
           return saleDate >= start && saleDate <= end;
         });
@@ -292,10 +299,11 @@ export const Reports = () => {
             startDateFilter = null;
         }
         if (startDateFilter) {
-          filteredSales = allDocuments.filter(sale => new Date(sale.saleDate) >= startDateFilter);
+          filteredSales = paidDocuments.filter(sale => new Date(sale.saleDate) >= startDateFilter);
         }
       }
       
+      // Применяем фильтры по товару, клиенту, городу
       if (filters.product) {
         filteredSales = filteredSales.filter(sale => 
           sale.items?.some(item => item.productId === filters.product.id)
@@ -314,6 +322,10 @@ export const Reports = () => {
           return clientCity.toLowerCase().includes(filters.city.toLowerCase());
         });
       }
+      
+      // Подсчет неоплаченных (для информации)
+      const unpaidDocuments = allDocuments.filter(doc => doc.paymentStatus !== 'paid');
+      const unpaidAmount = unpaidDocuments.reduce((sum, d) => sum + (d.total || 0), 0);
       
       const formattedSales = filteredSales.map(sale => {
         const itemsWithCost = (sale.items || []).map(item => {
@@ -369,7 +381,9 @@ export const Reports = () => {
         totalProfit,
         totalCost,
         averageCheck,
-        margin
+        margin,
+        unpaidCount: unpaidDocuments.length,
+        unpaidAmount: unpaidAmount
       });
       
     } catch (error) {
@@ -541,6 +555,17 @@ export const Reports = () => {
           </Button>
         </div>
       </div>
+
+      {/* Предупреждение о неоплаченных заказах */}
+      {stats.unpaidCount > 0 && (
+        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 flex items-center gap-3">
+          <AlertCircle size={20} className="text-yellow-600" />
+          <p className="text-yellow-800 text-sm">
+            <span className="font-semibold">Внимание:</span> В аналитике учитываются только <strong>оплаченные заказы</strong>.
+            В системе {stats.unpaidCount} неоплаченных заказов на сумму {formatPrice(stats.unpaidAmount)}.
+          </p>
+        </div>
+      )}
 
       {/* Фильтры даты */}
       <Card>
@@ -791,7 +816,7 @@ export const Reports = () => {
                             {client.city}
                           </span>
                         ) : '-'}
-                      </td>
+                       </td>
                       <td className="px-4 py-3 text-sm text-right">{client.orders}</td>
                       <td className="px-4 py-3 text-sm text-right">{formatPrice(client.revenue)}</td>
                       <td className="px-4 py-3 text-sm text-right text-green-600">{formatPrice(client.profit)}</td>
@@ -864,7 +889,7 @@ export const Reports = () => {
                       <td className="px-4 py-3 text-sm font-medium text-gray-900 flex items-center gap-2">
                         <MapPin size={14} className="text-gray-400" />
                         {city.name}
-                       </td>
+                      </td>
                       <td className="px-4 py-3 text-sm text-right">{city.orders}</td>
                       <td className="px-4 py-3 text-sm text-right">{formatPrice(city.revenue)}</td>
                       <td className="px-4 py-3 text-sm text-right text-green-600">{formatPrice(city.profit)}</td>
@@ -905,7 +930,7 @@ export const Reports = () => {
                     <tr>
                       <td colSpan="9" className="text-center py-12">
                         <ShoppingBag size={48} className="mx-auto mb-3 text-gray-300" />
-                        <p className="text-gray-500">Нет продаж за выбранный период</p>
+                        <p className="text-gray-500">Нет оплаченных продаж за выбранный период</p>
                       </td>
                     </tr>
                   ) : (

@@ -105,52 +105,66 @@ export const Products = () => {
     .filter(filterProducts)
     .filter(filterByCategory);
 
-  const handleOpenModal = (product = null) => {
-    if (product) {
-      setEditingProduct(product);
-      setFormData({
-        name: product.name || '',
-        article: product.article || '',
-        cost_price: product.cost_price || '',
-        retail_price: product.retail_price || '',
-        stock: product.stock || '',
-        min_stock: product.min_stock || '',
-        categoryId: product.categoryId || '',
-        description: product.description || '',
-        costBreakdown: product.costBreakdown || []
-      });
-      
-      if (product.categoryId) {
-        const category = categories.find(c => c.id === product.categoryId);
-        if (category && category.fields) {
-          setSelectedCategoryFields(category.fields);
-          setCharacteristics(product.characteristics || {});
-        } else {
-          setSelectedCategoryFields([]);
-          setCharacteristics({});
+  // frontend/src/pages/Products.jsx
+// Найти функцию handleOpenModal и заменить ее:
+
+const handleOpenModal = (product = null) => {
+  if (product) {
+    setEditingProduct(product);
+    setFormData({
+      name: product.name || '',
+      article: product.article || '',
+      cost_price: product.cost_price || '',
+      retail_price: product.retail_price || '',
+      stock: product.stock || '',
+      min_stock: product.min_stock || '',
+      categoryId: product.categoryId || '',
+      description: product.description || '',
+      costBreakdown: product.costBreakdown || []
+    });
+    
+    if (product.categoryId) {
+      const category = categories.find(c => c.id === product.categoryId);
+      if (category && category.fields) {
+        setSelectedCategoryFields(category.fields);
+        
+        // 🔥 КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ: преобразуем характеристики из названий в id
+        const transformedCharacteristics = {};
+        if (product.characteristics) {
+          category.fields.forEach(field => {
+            const value = product.characteristics[field.name];
+            if (value !== undefined && value !== null && value !== '') {
+              transformedCharacteristics[field.id] = value;
+            }
+          });
         }
+        setCharacteristics(transformedCharacteristics);
       } else {
         setSelectedCategoryFields([]);
         setCharacteristics({});
       }
     } else {
-      setEditingProduct(null);
-      setFormData({
-        name: '',
-        article: '',
-        cost_price: '',
-        retail_price: '',
-        stock: '',
-        min_stock: '',
-        categoryId: '',
-        description: '',
-        costBreakdown: []
-      });
       setSelectedCategoryFields([]);
       setCharacteristics({});
     }
-    setModalOpen(true);
-  };
+  } else {
+    setEditingProduct(null);
+    setFormData({
+      name: '',
+      article: '',
+      cost_price: '',
+      retail_price: '',
+      stock: '',
+      min_stock: '',
+      categoryId: '',
+      description: '',
+      costBreakdown: []
+    });
+    setSelectedCategoryFields([]);
+    setCharacteristics({});
+  }
+  setModalOpen(true);
+};
 
   const handleCategoryChange = (categoryId) => {
     const selectedCategory = categories.find(c => c.id === parseInt(categoryId));

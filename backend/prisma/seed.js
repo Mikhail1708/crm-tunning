@@ -7,23 +7,11 @@ const prisma = new PrismaClient();
 async function main() {
   console.log('🌱 Начинаем заполнение базы данных...');
 
-  // Хешируем пароли
-  const adminPassword = await bcrypt.hash('admin123', 10);
+
   const manager1Password = await bcrypt.hash('1605', 10);
   const manager2Password = await bcrypt.hash('182204', 10);
 
-  // Создаем администратора
-  const admin = await prisma.user.upsert({
-    where: { email: 'admin@crm.ru' },
-    update: {},
-    create: {
-      email: 'admin@crm.ru',
-      password: adminPassword,
-      name: 'Администратор',
-      role: 'admin'
-    }
-  });
-  console.log(`✅ Создан администратор: ${admin.email}`);
+
 
   // Создаем менеджера 1
   const manager1 = await prisma.user.upsert({
