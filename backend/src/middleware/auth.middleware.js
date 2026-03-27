@@ -20,8 +20,9 @@ const authMiddleware = (req, res, next) => {
 };
 
 const adminMiddleware = (req, res, next) => {
-  if (req.user.role !== 'admin') {
-    return res.status(403).json({ error: 'Доступ запрещен. Требуются права администратора' });
+  // Разрешаем доступ admin и manager
+  if (req.user.role !== 'admin' && req.user.role !== 'manager') {
+    return res.status(403).json({ error: 'Доступ запрещен' });
   }
   next();
 };
