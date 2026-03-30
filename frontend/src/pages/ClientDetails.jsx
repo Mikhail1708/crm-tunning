@@ -49,10 +49,6 @@ const ClientDetails = () => {
           <ArrowLeft className="w-5 h-5" />
         </button>
         <h1 className="text-2xl font-bold">{fullName}</h1>
-        <Button variant="secondary" onClick={() => navigate(`/clients/edit/${client.id}`)}>
-          <Edit2 className="w-4 h-4 mr-2" />
-          Редактировать
-        </Button>
         <Button onClick={() => navigate('/sales/new', { state: { clientId: client.id } })}>
           <Package className="w-4 h-4 mr-2" />
           Новый заказ

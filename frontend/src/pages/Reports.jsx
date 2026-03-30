@@ -402,20 +402,28 @@ export const Reports = () => {
     setFilters({ product: null, client: null, city: null });
   };
 
-  const chartData = useMemo(() => {
-    const grouped = {};
-    orders.forEach(order => {
-      const date = new Date(order.saleDate).toLocaleDateString('ru-RU');
-      if (!grouped[date]) {
-        grouped[date] = { date, revenue: 0, profit: 0, cost: 0, orders: 0 };
-      }
-      grouped[date].revenue += order.total || 0;
-      grouped[date].profit += order.totalProfit || 0;
-      grouped[date].cost += order.totalCost || 0;
-      grouped[date].orders += 1;
-    });
-    return Object.values(grouped).sort((a, b) => new Date(a.date) - new Date(b.date));
-  }, [orders]);
+  // Найти эту часть кода (примерно строка 320-340) и заменить:
+
+const chartData = useMemo(() => {
+  const grouped = {};
+  orders.forEach(order => {
+    const date = new Date(order.saleDate).toLocaleDateString('ru-RU');
+    if (!grouped[date]) {
+      grouped[date] = { date, revenue: 0, profit: 0, cost: 0, orders: 0 };
+    }
+    grouped[date].revenue += order.total || 0;
+    grouped[date].profit += order.totalProfit || 0;
+    grouped[date].cost += order.totalCost || 0;
+    grouped[date].orders += 1;
+  });
+  
+  return Object.values(grouped).sort((a, b) => {
+    // Преобразуем строки дат обратно в объекты Date для корректного сравнения
+    const dateA = a.date.split('.').reverse().join('-');
+    const dateB = b.date.split('.').reverse().join('-');
+    return new Date(dateA) - new Date(dateB);
+  });
+}, [orders]);
 
   const productStats = useMemo(() => {
     const productMap = new Map();

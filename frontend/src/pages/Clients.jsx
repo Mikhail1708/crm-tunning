@@ -9,6 +9,36 @@ import { Input } from '../components/ui/Input';
 import { Card } from '../components/ui/Card';
 import { Modal } from '../components/ui/Modal';
 
+// 🔧 Функция валидации телефона (как в NewOrder.jsx)
+const validatePhone = (phone) => {
+  if (!phone) return 'Телефон обязателен';
+  
+  // Удаляем все нецифровые символы для проверки
+  const digits = phone.replace(/\D/g, '');
+  
+  if (digits.length === 0) return 'Введите номер телефона';
+  if (digits.length < 10) return 'Номер телефона должен содержать минимум 10 цифр';
+  if (digits.length > 12) return 'Номер телефона слишком длинный';
+  
+  return null;
+};
+
+// 🔧 Функция форматирования телефона (как в NewOrder.jsx)
+const formatPhone = (value) => {
+  // Удаляем все нецифровые символы
+  const digits = value.replace(/\D/g, '');
+  
+  if (digits.length === 0) return '';
+  
+  // Форматируем для России
+  if (digits.length <= 1) return `+7`;
+  if (digits.length <= 4) return `+7 (${digits.slice(1, 4)}`;
+  if (digits.length <= 7) return `+7 (${digits.slice(1, 4)}) ${digits.slice(4, 7)}`;
+  if (digits.length <= 9) return `+7 (${digits.slice(1, 4)}) ${digits.slice(4, 7)}-${digits.slice(7, 9)}`;
+  
+  return `+7 (${digits.slice(1, 4)}) ${digits.slice(4, 7)}-${digits.slice(7, 9)}-${digits.slice(9, 11)}`;
+};
+
 const Clients = () => {
   const navigate = useNavigate();
   const [clients, setClients] = useState([]);
@@ -24,6 +54,7 @@ const Clients = () => {
   const [showClientModal, setShowClientModal] = useState(false);
   const [editingClient, setEditingClient] = useState(null);
   const [carYearError, setCarYearError] = useState('');
+  const [phoneError, setPhoneError] = useState('');
   const [formData, setFormData] = useState({
     firstName: '',
     lastName: '',
@@ -31,7 +62,7 @@ const Clients = () => {
     phone: '',
     email: '',
     birthDate: '',
-    city: '',           // 👈 ДОБАВЛЯЕМ ПОЛЕ "ГОРОД"
+    city: '',
     carModel: '',
     carYear: '',
     carNumber: '',
@@ -107,24 +138,56 @@ const Clients = () => {
     }
   };
 
+  // 🔧 Обработчик изменения телефона с форматированием (как в NewOrder.jsx)
+  const handlePhoneChange = (e) => {
+    const rawValue = e.target.value;
+    const formattedValue = formatPhone(rawValue);
+    setFormData({ ...formData, phone: formattedValue });
+    
+    const error = validatePhone(formattedValue);
+    setPhoneError(error || '');
+  };
+
   const handleSaveClient = async () => {
+    // Валидация телефона (как в NewOrder.jsx)
+    const phoneValidationError = validatePhone(formData.phone);
+    if (phoneValidationError) {
+      toast.error(phoneValidationError);
+      return;
+    }
+    
     // Валидация года выпуска перед сохранением
     if (formData.carYear && !validateCarYear(formData.carYear)) {
       toast.error('Год выпуска должен быть от 1970 до 2100');
       return;
     }
     
+    // Проверка обязательных полей
+    if (!formData.firstName) {
+      toast.error('Имя обязательно для заполнения');
+      return;
+    }
+    
+    // Очищаем телефон от форматирования перед отправкой
+    const cleanPhone = formData.phone.replace(/\D/g, '');
+    
+    const clientData = {
+      ...formData,
+      phone: cleanPhone
+    };
+    
     try {
       if (editingClient) {
-        await clientsApi.update(editingClient.id, formData);
+        await clientsApi.update(editingClient.id, clientData);
         toast.success('Клиент обновлен');
       } else {
-        await clientsApi.create(formData);
+        await clientsApi.create(clientData);
         toast.success('Клиент создан');
       }
       setShowClientModal(false);
       setEditingClient(null);
       setCarYearError('');
+      setPhoneError('');
       setFormData({
         firstName: '', lastName: '', middleName: '', phone: '', email: '',
         birthDate: '', city: '', carModel: '', carYear: '', carNumber: '', notes: ''
@@ -139,20 +202,23 @@ const Clients = () => {
 
   const openEditModal = (client) => {
     setEditingClient(client);
+    // Форматируем номер для отображения
+    const formattedPhone = client.phone ? formatPhone(client.phone) : '';
     setFormData({
       firstName: client.firstName || '',
       lastName: client.lastName || '',
       middleName: client.middleName || '',
-      phone: client.phone || '',
+      phone: formattedPhone,
       email: client.email || '',
       birthDate: client.birthDate ? client.birthDate.split('T')[0] : '',
-      city: client.city || '',                    // 👈 ДОБАВЛЯЕМ ЗАГРУЗКУ ГОРОДА
+      city: client.city || '',
       carModel: client.carModel || '',
       carYear: client.carYear || '',
       carNumber: client.carNumber || '',
       notes: client.notes || ''
     });
     setCarYearError('');
+    setPhoneError('');
     setShowClientModal(true);
   };
 
@@ -163,6 +229,12 @@ const Clients = () => {
     return parts.join(' ') || 'Без имени';
   };
 
+  // Форматирование телефона для отображения в таблице
+  const formatDisplayPhone = (phone) => {
+    if (!phone) return '';
+    return formatPhone(phone);
+  };
+
   return (
     <div className="p-6">
       <div className="flex justify-between items-center mb-6">
@@ -170,6 +242,7 @@ const Clients = () => {
         <Button onClick={() => {
           setEditingClient(null);
           setCarYearError('');
+          setPhoneError('');
           setFormData({
             firstName: '', lastName: '', middleName: '', phone: '', email: '',
             birthDate: '', city: '', carModel: '', carYear: '', carNumber: '', notes: ''
@@ -269,7 +342,7 @@ const Clients = () => {
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1 text-sm text-gray-600">
                         <Phone className="w-3 h-3" />
-                        <span>{client.phone}</span>
+                        <span>{formatDisplayPhone(client.phone)}</span>
                       </div>
                       {client.email && (
                         <div className="flex items-center gap-1 text-sm text-gray-500">
@@ -401,14 +474,21 @@ const Clients = () => {
               value={formData.middleName}
               onChange={(e) => setFormData({ ...formData, middleName: e.target.value })}
             />
-            <Input
-              label="Телефон"
-              type="tel"
-              value={formData.phone}
-              onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-              required
-              icon={Phone}
-            />
+            <div>
+              <Input
+                label="Телефон"
+                type="tel"
+                value={formData.phone}
+                onChange={handlePhoneChange}
+                required
+                icon={Phone}
+                placeholder="+7 (___) ___-__-__"
+                className={phoneError ? 'border-red-500' : ''}
+              />
+              {phoneError && (
+                <p className="text-sm text-red-500 mt-1">{phoneError}</p>
+              )}
+            </div>
             <Input
               label="Email"
               type="email"

@@ -61,6 +61,46 @@ const formatPhone = (value) => {
   return `+7 (${digits.slice(1, 4)}) ${digits.slice(4, 7)}-${digits.slice(7, 9)}-${digits.slice(9, 11)}`;
 };
 
+// 🔧 Новая функция для правильного разбора ФИО
+const parseFullName = (fullName) => {
+  if (!fullName || !fullName.trim()) {
+    return { firstName: '', lastName: '', middleName: '' };
+  }
+  
+  // Разбиваем строку на части (по пробелам)
+  const parts = fullName.trim().split(/\s+/);
+  
+  let firstName = '';
+  let lastName = '';
+  let middleName = '';
+  
+  if (parts.length === 1) {
+    // Только имя
+    firstName = parts[0];
+    lastName = '';
+    middleName = '';
+  } else if (parts.length === 2) {
+    // Имя и фамилия (считаем, что первое - имя, второе - фамилия)
+    firstName = parts[0];
+    lastName = parts[1];
+    middleName = '';
+  } else if (parts.length === 3) {
+    // Фамилия, имя, отчество (стандартный русский формат)
+    lastName = parts[0];
+    firstName = parts[1];
+    middleName = parts[2];
+  } else {
+    // Больше 3 слов - объединяем лишние в фамилию
+    // Например: "Иванов Петр Сидорович" -> уже 3 слова
+    // Если больше: "Иванов Иван Иванович Иванов" - берем последние 2 как имя и отчество
+    lastName = parts.slice(0, parts.length - 2).join(' ');
+    firstName = parts[parts.length - 2];
+    middleName = parts[parts.length - 1];
+  }
+  
+  return { firstName, lastName, middleName };
+};
+
 // Компонент поиска клиента
 const ClientSearch = ({ selectedClient, onSelect, onClear }) => {
   const [searchQuery, setSearchQuery] = useState('');
@@ -288,7 +328,7 @@ export const NewOrder = () => {
     if (selectedClient) setSelectedClient(null);
   };
 
-  // Функция автоматического создания клиента
+  // 🔧 ИСПРАВЛЕННАЯ функция автоматического создания клиента
   const autoCreateClient = async () => {
     if (!customerName || !customerPhone) return null;
     
@@ -323,14 +363,13 @@ export const NewOrder = () => {
         return existingClient;
       }
       
-      // Создаем нового клиента
-      const nameParts = customerName.trim().split(' ');
-      const firstName = nameParts[0] || '';
-      const lastName = nameParts.slice(1).join(' ') || '';
+      // 🔧 Правильно разбираем ФИО
+      const { firstName, lastName, middleName } = parseFullName(customerName);
       
       const newClientData = {
         firstName: firstName,
         lastName: lastName,
+        middleName: middleName,
         phone: customerPhone,
         email: customerEmail || null,
         city: customerCity || null
@@ -867,7 +906,7 @@ const ProductRow = ({ product, isInCart, onAddToCart }) => {
         <div className="text-xs text-gray-500 mt-0.5">
           Маржа: {margin.toFixed(1)}%
         </div>
-      </td>
+       </td>
       <td className="px-4 py-3 text-sm text-gray-500">{product.article}</td>
       <td className="px-4 py-3 text-right text-sm">{formatPrice(product.cost_price)}</td>
       <td className="px-4 py-3 text-right text-sm">{formatPrice(product.retail_price)}</td>

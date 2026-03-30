@@ -2,7 +2,7 @@
 import React from 'react';
 
 // Используем абсолютный путь от корня public
-const LOGO_URL = '/images/logo.webp';
+const LOGO_URL = '/images/logo1.png';
 
 export const PrintDocument = ({ order, type = 'receipt' }) => {
   const renderHTML = () => {
@@ -313,7 +313,7 @@ export const PrintDocument = ({ order, type = 'receipt' }) => {
                    onerror="this.style.display='none'; this.parentElement.innerHTML = '<div class=\'logo-placeholder\'>ЛОГО</div>' + this.parentElement.innerHTML">
               <div>
                 <div class="company-title">SWAP SERVICE 38</div>
-                <div class="company-subtitle">Автосервис • Тюнинг • Запчасти</div>
+                <div class="company-subtitle">Свап • Автосервис • Тюнинг • Запчасти</div>
               </div>
             </div>
             <div class="doc-info">
@@ -327,7 +327,7 @@ export const PrintDocument = ({ order, type = 'receipt' }) => {
             <div class="seller-name">ИП Батвенко Николай Сергеевич</div>
             <div>ИНН: 123456789012 / ОГРНИП: 312345678901234</div>
             <div>Россия, Иркутская область, Иркутск, ул. Новаторов, 36</div>
-            <div>Тел: 8 (952) 955-888 | Email: info@swapservice38.ru</div>
+            <div>Тел: +7(924)533-0880 | Email: swap38@mail.ru</div>
           </div>
           
           <!-- Client Info -->
@@ -429,7 +429,7 @@ export const PrintDocument = ({ order, type = 'receipt' }) => {
           <div class="signature">
             <div>
               <div class="signature-line"></div>
-              <div class="signature-text">Подпись</div>
+              <div class="signature-text">Подпись заказчика</div>
             </div>
             <div>
               <div class="signature-line"></div>
