@@ -48,12 +48,18 @@ import toast from 'react-hot-toast';
 // Цвета для графиков
 const COLORS = ['#10b981', '#8b5cf6', '#f59e0b', '#ef4444', '#3b82f6', '#ec489a', '#06b6d4', '#84cc16'];
 
-// Компонент фильтров (без изменений)
+// Компонент фильтров
 const AnalyticsFilters = ({ filters, onFilterChange, onReset, products, clients }) => {
   const [productSearch, setProductSearch] = useState('');
   const [clientSearch, setClientSearch] = useState('');
+  const [citySearch, setCitySearch] = useState(filters.city || '');
   const [showProductDropdown, setShowProductDropdown] = useState(false);
   const [showClientDropdown, setShowClientDropdown] = useState(false);
+
+  // Синхронизируем локальное состояние города с фильтром из родителя
+  useEffect(() => {
+    setCitySearch(filters.city || '');
+  }, [filters.city]);
 
   const filteredProducts = products.filter(p => 
     p.name.toLowerCase().includes(productSearch.toLowerCase()) ||
@@ -67,6 +73,27 @@ const AnalyticsFilters = ({ filters, onFilterChange, onReset, products, clients 
            c.city?.toLowerCase().includes(clientSearch.toLowerCase());
   });
 
+  const handleCityChange = (e) => {
+    const value = e.target.value;
+    setCitySearch(value);
+    onFilterChange('city', value || null);
+  };
+
+  const handleResetProduct = () => {
+    onFilterChange('product', null);
+    setProductSearch('');
+  };
+
+  const handleResetClient = () => {
+    onFilterChange('client', null);
+    setClientSearch('');
+  };
+
+  const handleResetCity = () => {
+    onFilterChange('city', null);
+    setCitySearch('');
+  };
+
   return (
     <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 mb-6">
       <div className="flex items-center justify-between mb-4">
@@ -74,7 +101,12 @@ const AnalyticsFilters = ({ filters, onFilterChange, onReset, products, clients 
           <Filter size={18} className="text-gray-500" />
           <h3 className="font-medium text-gray-900">Фильтры аналитики</h3>
         </div>
-        <Button size="sm" variant="ghost" onClick={onReset}>
+        <Button size="sm" variant="ghost" onClick={() => {
+          onReset();
+          setProductSearch('');
+          setClientSearch('');
+          setCitySearch('');
+        }}>
           Сбросить все
         </Button>
       </div>
@@ -117,7 +149,7 @@ const AnalyticsFilters = ({ filters, onFilterChange, onReset, products, clients 
           {filters.product && (
             <div className="mt-1 flex items-center gap-1 text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded-full inline-flex">
               <span>Товар: {filters.product.name}</span>
-              <button onClick={() => onFilterChange('product', null)} className="ml-1">
+              <button onClick={handleResetProduct} className="ml-1">
                 <X size={12} />
               </button>
             </div>
@@ -167,7 +199,7 @@ const AnalyticsFilters = ({ filters, onFilterChange, onReset, products, clients 
           {filters.client && (
             <div className="mt-1 flex items-center gap-1 text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded-full inline-flex">
               <span>Клиент: {[filters.client.lastName, filters.client.firstName].filter(Boolean).join(' ')}</span>
-              <button onClick={() => onFilterChange('client', null)} className="ml-1">
+              <button onClick={handleResetClient} className="ml-1">
                 <X size={12} />
               </button>
             </div>
@@ -183,8 +215,8 @@ const AnalyticsFilters = ({ filters, onFilterChange, onReset, products, clients 
             <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={14} />
             <input
               type="text"
-              value={filters.city || ''}
-              onChange={(e) => onFilterChange('city', e.target.value || null)}
+              value={citySearch}
+              onChange={handleCityChange}
               placeholder="Введите город..."
               className="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
             />
@@ -193,7 +225,7 @@ const AnalyticsFilters = ({ filters, onFilterChange, onReset, products, clients 
             <div className="mt-1 flex items-center gap-1 text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded-full inline-flex">
               <MapPin size={12} />
               <span>Город: {filters.city}</span>
-              <button onClick={() => onFilterChange('city', null)} className="ml-1">
+              <button onClick={handleResetCity} className="ml-1">
                 <X size={12} />
               </button>
             </div>
@@ -224,7 +256,6 @@ export const Reports = () => {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [showCustom, setShowCustom] = useState(false);
-  const [viewMode, setViewMode] = useState('table');
   const [chartType, setChartType] = useState('line');
   const [activeTab, setActiveTab] = useState('overview');
   
@@ -262,7 +293,7 @@ export const Reports = () => {
       const response = await saleDocumentsApi.getAll();
       let allDocuments = response.data || [];
       
-      // 🔥 КЛЮЧЕВОЕ ИЗМЕНЕНИЕ: фильтруем ТОЛЬКО ОПЛАЧЕННЫЕ заказы
+      // Фильтруем ТОЛЬКО ОПЛАЧЕННЫЕ заказы
       let paidDocuments = allDocuments.filter(doc => doc.paymentStatus === 'paid');
       
       // Применяем фильтр по дате
@@ -402,28 +433,31 @@ export const Reports = () => {
     setFilters({ product: null, client: null, city: null });
   };
 
-  // Найти эту часть кода (примерно строка 320-340) и заменить:
-
-const chartData = useMemo(() => {
-  const grouped = {};
-  orders.forEach(order => {
-    const date = new Date(order.saleDate).toLocaleDateString('ru-RU');
-    if (!grouped[date]) {
-      grouped[date] = { date, revenue: 0, profit: 0, cost: 0, orders: 0 };
-    }
-    grouped[date].revenue += order.total || 0;
-    grouped[date].profit += order.totalProfit || 0;
-    grouped[date].cost += order.totalCost || 0;
-    grouped[date].orders += 1;
-  });
-  
-  return Object.values(grouped).sort((a, b) => {
-    // Преобразуем строки дат обратно в объекты Date для корректного сравнения
-    const dateA = a.date.split('.').reverse().join('-');
-    const dateB = b.date.split('.').reverse().join('-');
-    return new Date(dateA) - new Date(dateB);
-  });
-}, [orders]);
+  // Данные для графика (сортировка от старых к новым)
+  const chartData = useMemo(() => {
+    const grouped = {};
+    orders.forEach(order => {
+      const date = new Date(order.saleDate);
+      const formattedDate = date.toLocaleDateString('ru-RU');
+      if (!grouped[formattedDate]) {
+        grouped[formattedDate] = { 
+          date: formattedDate, 
+          dateObj: date,
+          revenue: 0, 
+          profit: 0, 
+          cost: 0, 
+          orders: 0 
+        };
+      }
+      grouped[formattedDate].revenue += order.total || 0;
+      grouped[formattedDate].profit += order.totalProfit || 0;
+      grouped[formattedDate].cost += order.totalCost || 0;
+      grouped[formattedDate].orders += 1;
+    });
+    
+    // Сортировка от старых к новым (слева направо)
+    return Object.values(grouped).sort((a, b) => a.dateObj - b.dateObj);
+  }, [orders]);
 
   const productStats = useMemo(() => {
     const productMap = new Map();
@@ -810,7 +844,7 @@ const chartData = useMemo(() => {
                     <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Выручка</th>
                     <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Прибыль</th>
                     <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Ср. чек</th>
-                  </tr>
+                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200">
                   {clientStats.map((client, idx) => (
@@ -824,7 +858,7 @@ const chartData = useMemo(() => {
                             {client.city}
                           </span>
                         ) : '-'}
-                       </td>
+                      </td>
                       <td className="px-4 py-3 text-sm text-right">{client.orders}</td>
                       <td className="px-4 py-3 text-sm text-right">{formatPrice(client.revenue)}</td>
                       <td className="px-4 py-3 text-sm text-right text-green-600">{formatPrice(client.profit)}</td>
