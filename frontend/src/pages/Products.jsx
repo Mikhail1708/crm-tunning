@@ -20,7 +20,8 @@ import {
   Tag,
   ChevronDown,
   ChevronUp,
-  Filter
+  Filter,
+  Layers
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -42,7 +43,7 @@ export const Products = () => {
     retail_price: '',
     stock: '',
     min_stock: '',
-    categoryId: '',
+    categoryIds: [],
     description: '',
     costBreakdown: []
   });
@@ -82,7 +83,7 @@ export const Products = () => {
     
     if (product.name?.toLowerCase().includes(searchLower)) return true;
     if (product.article?.toLowerCase().includes(searchLower)) return true;
-    if (product.productCategory?.name?.toLowerCase().includes(searchLower)) return true;
+    if (product.categories?.some(cat => cat.name?.toLowerCase().includes(searchLower))) return true;
     
     if (product.characteristics) {
       for (const [key, value] of Object.entries(product.characteristics)) {
@@ -98,85 +99,95 @@ export const Products = () => {
 
   const filterByCategory = (product) => {
     if (!selectedCategoryFilter) return true;
-    return product.categoryId === parseInt(selectedCategoryFilter);
+    return product.categoryIds?.includes(parseInt(selectedCategoryFilter));
   };
 
   const filteredProducts = products
     .filter(filterProducts)
     .filter(filterByCategory);
 
-  // frontend/src/pages/Products.jsx
-// Найти функцию handleOpenModal и заменить ее:
-
-const handleOpenModal = (product = null) => {
-  if (product) {
-    setEditingProduct(product);
-    setFormData({
-      name: product.name || '',
-      article: product.article || '',
-      cost_price: product.cost_price || '',
-      retail_price: product.retail_price || '',
-      stock: product.stock || '',
-      min_stock: product.min_stock || '',
-      categoryId: product.categoryId || '',
-      description: product.description || '',
-      costBreakdown: product.costBreakdown || []
-    });
-    
-    if (product.categoryId) {
-      const category = categories.find(c => c.id === product.categoryId);
-      if (category && category.fields) {
-        setSelectedCategoryFields(category.fields);
-        
-        // 🔥 КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ: преобразуем характеристики из названий в id
-        const transformedCharacteristics = {};
-        if (product.characteristics) {
-          category.fields.forEach(field => {
-            const value = product.characteristics[field.name];
-            if (value !== undefined && value !== null && value !== '') {
-              transformedCharacteristics[field.id] = value;
-            }
-          });
-        }
-        setCharacteristics(transformedCharacteristics);
-      } else {
-        setSelectedCategoryFields([]);
-        setCharacteristics({});
+  const handleOpenModal = (product = null) => {
+    if (product) {
+      setEditingProduct(product);
+      setFormData({
+        name: product.name || '',
+        article: product.article || '',
+        cost_price: product.cost_price || '',
+        retail_price: product.retail_price || '',
+        stock: product.stock || '',
+        min_stock: product.min_stock || '',
+        categoryIds: product.categoryIds || [],
+        description: product.description || '',
+        costBreakdown: product.costBreakdown || []
+      });
+      
+      // Собираем характеристики со всех категорий товара
+      const allCharacteristics = {};
+      if (product.categories && product.categories.length > 0) {
+        product.categories.forEach(category => {
+          if (category.fields) {
+            category.fields.forEach(field => {
+              const value = product.characteristics?.[field.name];
+              if (value !== undefined && value !== null && value !== '') {
+                allCharacteristics[field.id] = value;
+              }
+            });
+          }
+        });
       }
+      setCharacteristics(allCharacteristics);
+      setSelectedCategoryFields([]);
     } else {
+      setEditingProduct(null);
+      setFormData({
+        name: '',
+        article: '',
+        cost_price: '',
+        retail_price: '',
+        stock: '',
+        min_stock: '',
+        categoryIds: [],
+        description: '',
+        costBreakdown: []
+      });
       setSelectedCategoryFields([]);
       setCharacteristics({});
     }
-  } else {
-    setEditingProduct(null);
-    setFormData({
-      name: '',
-      article: '',
-      cost_price: '',
-      retail_price: '',
-      stock: '',
-      min_stock: '',
-      categoryId: '',
-      description: '',
-      costBreakdown: []
-    });
-    setSelectedCategoryFields([]);
-    setCharacteristics({});
-  }
-  setModalOpen(true);
-};
+    setModalOpen(true);
+  };
 
-  const handleCategoryChange = (categoryId) => {
-    const selectedCategory = categories.find(c => c.id === parseInt(categoryId));
-    setFormData({ ...formData, categoryId });
+  const handleCategoryChange = (categoryIds) => {
+    setFormData({ ...formData, categoryIds });
     
-    if (selectedCategory && selectedCategory.fields) {
-      setSelectedCategoryFields(selectedCategory.fields);
-      setCharacteristics({});
-    } else {
-      setSelectedCategoryFields([]);
-      setCharacteristics({});
-    }
+    // Собираем все поля из выбранных категорий
+    const selectedCategories = categories.filter(cat => categoryIds.includes(cat.id));
+    const allFields = [];
+    selectedCategories.forEach(cat => {
+      if (cat.fields) {
+        allFields.push(...cat.fields);
+      }
+    });
+    
+    // Удаляем дубликаты полей по id
+    const uniqueFields = [];
+    const fieldIds = new Set();
+    allFields.forEach(field => {
+      if (!fieldIds.has(field.id)) {
+        fieldIds.add(field.id);
+        uniqueFields.push(field);
+      }
+    });
+    
+    setSelectedCategoryFields(uniqueFields);
+    
+    // Сохраняем существующие значения характеристик
+    const newCharacteristics = {};
+    uniqueFields.forEach(field => {
+      if (characteristics[field.id] !== undefined) {
+        newCharacteristics[field.id] = characteristics[field.id];
+      }
+    });
+    setCharacteristics(newCharacteristics);
   };
 
   const handleCharacteristicChange = (fieldId, value, fieldType) => {
@@ -197,7 +208,6 @@ const handleOpenModal = (product = null) => {
   };
 
   const handleCostBreakdownChange = (items) => {
-    // Автоматически пересчитываем себестоимость
     const totalCost = items.reduce((sum, item) => sum + (item.amount || 0), 0);
     
     setFormData(prev => ({
@@ -216,7 +226,7 @@ const handleOpenModal = (product = null) => {
         retail_price: parseFloat(formData.retail_price),
         stock: parseInt(formData.stock),
         min_stock: parseInt(formData.min_stock),
-        categoryId: formData.categoryId ? parseInt(formData.categoryId) : null,
+        categoryIds: formData.categoryIds,
         characteristics: characteristics,
         costBreakdown: formData.costBreakdown
       };
@@ -254,6 +264,27 @@ const handleOpenModal = (product = null) => {
       ...prev,
       [productId]: !prev[productId]
     }));
+  };
+
+  const renderCategoriesCell = (product) => {
+    if (!product.categories || product.categories.length === 0) {
+      return <span className="text-gray-400 text-sm">—</span>;
+    }
+    
+    return (
+      <div className="flex flex-wrap gap-1">
+        {product.categories.slice(0, 2).map(cat => (
+          <span key={cat.id} className="px-2 py-1 text-xs rounded-full bg-primary-100 text-primary-700">
+            {cat.name}
+          </span>
+        ))}
+        {product.categories.length > 2 && (
+          <span className="px-2 py-1 text-xs rounded-full bg-gray-100 text-gray-600">
+            +{product.categories.length - 2}
+          </span>
+        )}
+      </div>
+    );
   };
 
   const renderCharacteristicsCell = (product) => {
@@ -535,7 +566,7 @@ const handleOpenModal = (product = null) => {
                 <Th className="w-8"></Th>
                 <Th>Артикул</Th>
                 <Th>Название</Th>
-                <Th>Категория</Th>
+                <Th>Категории</Th>
                 <Th>Себест.</Th>
                 <Th>Розница</Th>
                 <Th>Маржа</Th>
@@ -566,17 +597,7 @@ const handleOpenModal = (product = null) => {
                       </Td>
                       <Td className="font-mono text-sm">{product.article}</Td>
                       <Td className="font-medium">{product.name}</Td>
-                      <Td>
-                        {product.productCategory ? (
-                          <span className="px-2 py-1 text-xs rounded-full bg-primary-100 text-primary-700">
-                            {product.productCategory.name}
-                          </span>
-                        ) : (
-                          <span className="px-2 py-1 text-xs rounded-full bg-gray-100 text-gray-500">
-                            Без категории
-                          </span>
-                        )}
-                      </Td>
+                      <Td>{renderCategoriesCell(product)}</Td>
                       <Td>{formatPrice(product.cost_price)}</Td>
                       <Td>{formatPrice(product.retail_price)}</Td>
                       <Td>
@@ -702,29 +723,54 @@ const handleOpenModal = (product = null) => {
           </div>
           
           <div className="space-y-2">
-            <label className="block text-sm font-medium text-gray-700">
-              Категория
+            <label className="block text-sm font-medium text-gray-700 flex items-center gap-2">
+              <Layers size={16} />
+              Категории (можно выбрать несколько)
             </label>
-            <select
-              value={formData.categoryId}
-              onChange={(e) => handleCategoryChange(e.target.value)}
-              className="w-full px-4 py-2 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-            >
-              <option value="">Без категории</option>
+            <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto p-2 border border-gray-200 rounded-xl">
               {categories.map(category => (
-                <option key={category.id} value={category.id}>
-                  {category.name} {category.fields?.length ? `(${category.fields.length} характеристик)` : ''}
-                </option>
+                <label key={category.id} className="flex items-center gap-2 p-2 hover:bg-gray-50 rounded-lg cursor-pointer">
+                  <input
+                    type="checkbox"
+                    value={category.id}
+                    checked={formData.categoryIds.includes(category.id)}
+                    onChange={(e) => {
+                      const newCategoryIds = e.target.checked
+                        ? [...formData.categoryIds, category.id]
+                        : formData.categoryIds.filter(id => id !== category.id);
+                      handleCategoryChange(newCategoryIds);
+                    }}
+                    className="w-4 h-4 text-primary-600 rounded border-gray-300 focus:ring-primary-500"
+                  />
+                  <span className="text-sm text-gray-700">
+                    {category.name}
+                    {category.fields?.length > 0 && (
+                      <span className="text-xs text-gray-400 ml-1">({category.fields.length} полей)</span>
+                    )}
+                  </span>
+                </label>
               ))}
-            </select>
+            </div>
             {categories.length === 0 && (
               <p className="text-xs text-yellow-600 mt-1">
                 Нет категорий. Сначала создайте категорию в разделе "Категории"
               </p>
             )}
+            {formData.categoryIds.length > 0 && (
+              <div className="flex flex-wrap gap-1 mt-2">
+                {formData.categoryIds.map(catId => {
+                  const cat = categories.find(c => c.id === catId);
+                  return cat ? (
+                    <span key={catId} className="px-2 py-1 text-xs rounded-full bg-primary-100 text-primary-700">
+                      {cat.name}
+                    </span>
+                  ) : null;
+                })}
+              </div>
+            )}
           </div>
           
-          {/* Калькуляция себестоимости - ТЕПЕРЬ РАЗРЕШЕНО РЕДАКТИРОВАНИЕ */}
+          {/* Калькуляция себестоимости */}
           <div className="border-t border-gray-200 pt-4">
             <CostBreakdownEditor
               value={formData.costBreakdown}

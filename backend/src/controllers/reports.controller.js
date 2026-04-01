@@ -5,13 +5,22 @@ const prisma = new PrismaClient();
 // Получить общую статистику
 const getSummary = async (req, res) => {
   try {
-    const totalStats = await prisma.sale.aggregate({
-      _sum: {
-        total_revenue: true,
-        total_cost: true,
-        profit: true
+    // Получаем только оплаченные заказы
+    const paidOrders = await prisma.saleDocument.findMany({
+      where: {
+        paymentStatus: 'paid',
+        documentType: 'order'
+      },
+      include: {
+        items: true
       }
     });
+    
+    const totalRevenue = paidOrders.reduce((sum, order) => sum + order.total, 0);
+    const totalCost = paidOrders.reduce((sum, order) => 
+      sum + order.items.reduce((itemSum, item) => itemSum + ((item.cost_price || 0) * item.quantity), 0), 0
+    );
+    const totalProfit = totalRevenue - totalCost;
     
     const productsCount = await prisma.product.count();
     const lowStockCount = await prisma.product.count({
@@ -20,17 +29,22 @@ const getSummary = async (req, res) => {
       }
     });
     
-    // Топ товаров по продажам
-    const topProducts = await prisma.sale.groupBy({
+    const clientsCount = await prisma.client.count();
+    
+    // Топ товаров по продажам (только из оплаченных заказов)
+    const paidOrderIds = paidOrders.map(o => o.id);
+    const topProducts = await prisma.saleDocumentItem.groupBy({
       by: ['productId'],
+      where: {
+        documentId: { in: paidOrderIds }
+      },
       _sum: {
         quantity: true,
-        profit: true,
-        total_revenue: true
+        total: true
       },
       orderBy: {
         _sum: {
-          profit: 'desc'
+          total: 'desc'
         }
       },
       take: 5
@@ -40,26 +54,32 @@ const getSummary = async (req, res) => {
       topProducts.map(async (item) => {
         const product = await prisma.product.findUnique({
           where: { id: item.productId },
-          select: { id: true, name: true }
+          select: { id: true, name: true, article: true, retail_price: true, cost_price: true }
         });
+        const totalCost = (product?.cost_price || 0) * (item._sum.quantity || 0);
         return {
           ...product,
-          total_sold: item._sum.quantity,
-          total_profit: item._sum.profit,
-          total_revenue: item._sum.total_revenue
+          total_sold: item._sum.quantity || 0,
+          total_revenue: item._sum.total || 0,
+          total_cost: totalCost,
+          total_profit: (item._sum.total || 0) - totalCost
         };
       })
     );
     
     res.json({
       total: {
-        revenue: totalStats._sum.total_revenue || 0,
-        cost: totalStats._sum.total_cost || 0,
-        profit: totalStats._sum.profit || 0
+        revenue: totalRevenue,
+        cost: totalCost,
+        profit: totalProfit,
+        margin: totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0
       },
       products: {
         total: productsCount,
         low_stock: lowStockCount
+      },
+      clients: {
+        total: clientsCount
       },
       top_products: topProductsWithDetails
     });
@@ -69,20 +89,23 @@ const getSummary = async (req, res) => {
   }
 };
 
-// Получить данные для графика
+// Получить данные для графика (только оплаченные заказы)
 const getProfitChart = async (req, res) => {
   try {
     const { period = 'month', limit = 12 } = req.query;
     
     const sales = await prisma.$queryRaw`
       SELECT 
-        DATE_TRUNC(${period}, "sale_date") as period,
-        SUM("total_revenue") as revenue,
-        SUM("total_cost") as cost,
-        SUM(profit) as profit,
-        COUNT(*) as sales_count
-      FROM "Sale"
-      GROUP BY DATE_TRUNC(${period}, "sale_date")
+        DATE_TRUNC(${period}, sd."saleDate") as period,
+        SUM(sd.total) as revenue,
+        SUM(sdi."cost_price" * sdi.quantity) as cost,
+        SUM(sd.total - (sdi."cost_price" * sdi.quantity)) as profit,
+        COUNT(DISTINCT sd.id) as sales_count
+      FROM "SaleDocument" sd
+      LEFT JOIN "SaleDocumentItem" sdi ON sd.id = sdi."documentId"
+      WHERE sd."paymentStatus" = 'paid'
+        AND sd."documentType" = 'order'
+      GROUP BY DATE_TRUNC(${period}, sd."saleDate")
       ORDER BY period DESC
       LIMIT ${parseInt(limit)}
     `;
@@ -93,51 +116,69 @@ const getProfitChart = async (req, res) => {
   }
 };
 
-// Получить прибыль по товарам
+// Получить прибыль по товарам (только оплаченные заказы)
 const getProfitByProduct = async (req, res) => {
   try {
-    // Проверяем, есть ли продажи
-    const salesCount = await prisma.sale.count();
+    // Получаем оплаченные заказы
+    const paidOrders = await prisma.saleDocument.findMany({
+      where: {
+        paymentStatus: 'paid',
+        documentType: 'order'
+      },
+      select: { id: true }
+    });
     
-    if (salesCount === 0) {
-      // Если продаж нет, возвращаем товары с нулевыми показателями
-      const products = await prisma.product.findMany({
-        select: {
-          id: true,
-          name: true,
-          article: true,
-          cost_price: true,
-          retail_price: true,
-          stock: true,
-          min_stock: true,
-          category: true
+    const paidOrderIds = paidOrders.map(o => o.id);
+    
+    // Получаем все товары
+    const products = await prisma.product.findMany({
+      select: {
+        id: true,
+        name: true,
+        article: true,
+        cost_price: true,
+        retail_price: true,
+        stock: true,
+        min_stock: true,
+        categories: {
+          include: {
+            category: true
+          }
         }
-      });
-      
+      }
+    });
+    
+    if (paidOrderIds.length === 0) {
       const emptyReport = products.map(p => ({
         ...p,
         total_sold: 0,
         total_revenue: 0,
         total_cost: 0,
         total_profit: 0,
-        margin_percent: 0
+        margin_percent: 0,
+        category: p.categories[0]?.category?.name || ''
       }));
-      
       return res.json(emptyReport);
     }
     
-    // Используем Prisma ORM вместо raw SQL
-    const products = await prisma.product.findMany({
-      include: {
-        sales: true
+    // Получаем данные по товарам из оплаченных заказов
+    const items = await prisma.saleDocumentItem.groupBy({
+      by: ['productId'],
+      where: {
+        documentId: { in: paidOrderIds }
+      },
+      _sum: {
+        quantity: true,
+        total: true
       }
     });
     
     const report = products.map(product => {
-      const total_sold = product.sales.reduce((sum, sale) => sum + sale.quantity, 0);
-      const total_revenue = product.sales.reduce((sum, sale) => sum + sale.total_revenue, 0);
-      const total_cost = product.sales.reduce((sum, sale) => sum + sale.total_cost, 0);
-      const total_profit = product.sales.reduce((sum, sale) => sum + sale.profit, 0);
+      const item = items.find(i => i.productId === product.id);
+      const total_sold = item?._sum.quantity || 0;
+      const total_revenue = item?._sum.total || 0;
+      const total_cost = product.cost_price * total_sold;
+      const total_profit = total_revenue - total_cost;
       const margin_percent = total_cost > 0 ? (total_profit / total_cost) * 100 : 0;
       
       return {
@@ -148,7 +189,7 @@ const getProfitByProduct = async (req, res) => {
         retail_price: product.retail_price,
         stock: product.stock,
         min_stock: product.min_stock,
-        category: product.category,
+        category: product.categories[0]?.category?.name || '',
         total_sold,
         total_revenue,
         total_cost,
@@ -163,7 +204,6 @@ const getProfitByProduct = async (req, res) => {
     res.json(report);
   } catch (error) {
     console.error('Get profit by product error:', error);
-    // Возвращаем пустой массив в случае ошибки
     res.json([]);
   }
 };
@@ -224,13 +264,14 @@ const createExpense = async (req, res) => {
   }
 };
 
-// Получить заказы за период
+// Получить заказы за период (только оплаченные)
 const getOrdersByPeriod = async (req, res) => {
   try {
     const { startDate, endDate } = req.query;
     
     const where = {
-      documentType: 'order'
+      documentType: 'order',
+      paymentStatus: 'paid'
     };
     
     if (startDate || endDate) {
@@ -331,10 +372,10 @@ const deleteAllSales = async (req, res) => {
   }
 };
 
-// Получить статистику за период (день, неделя, месяц)
+// Получить статистику за период (день, неделя, месяц) - только оплаченные
 const getSalesStats = async (req, res) => {
   try {
-    const { period } = req.params; // day, week, month, year
+    const { period } = req.params;
     const now = new Date();
     let startDate;
     
@@ -361,7 +402,8 @@ const getSalesStats = async (req, res) => {
     const orders = await prisma.saleDocument.findMany({
       where: {
         saleDate: { gte: startDate },
-        documentType: 'order'
+        documentType: 'order',
+        paymentStatus: 'paid'
       },
       include: {
         items: {
@@ -393,23 +435,26 @@ const getSalesStats = async (req, res) => {
   }
 };
 
-// Получить дамп всей базы данных
+// Получить дамп всей базы данных (БЕЗ ID)
 const getDatabaseDump = async (req, res) => {
   try {
-    // Проверяем права администратора
     if (req.user.role !== 'admin') {
       return res.status(403).json({ message: 'Доступ запрещен. Требуются права администратора' });
     }
     
-    // Получаем все данные из всех таблиц
     const [users, products, categories, categoryFields, productCharacteristics, sales, saleDocuments, saleDocumentItems, expenses, clients] = await Promise.all([
       prisma.user.findMany(),
       prisma.product.findMany({
         include: {
-          productCategory: true,
+          categories: {
+            include: {
+              category: true
+            }
+          },
           characteristics: {
             include: { field: true }
-          }
+          },
+          saleDocumentItems: true
         }
       }),
       prisma.category.findMany({
@@ -434,19 +479,20 @@ const getDatabaseDump = async (req, res) => {
       exportedAt: new Date().toISOString(),
       version: '1.0',
       data: {
-        users,
-        products,
-        categories,
-        categoryFields,
-        productCharacteristics,
-        sales,
-        saleDocuments,
-        saleDocumentItems,
-        expenses,
-        clients
+        users: users.map(({ id, ...rest }) => rest),
+        products: products.map(({ id, ...rest }) => rest),
+        categories: categories.map(({ id, ...rest }) => rest),
+        categoryFields: categoryFields.map(({ id, ...rest }) => rest),
+        productCharacteristics: productCharacteristics.map(({ id, ...rest }) => rest),
+        sales: sales.map(({ id, ...rest }) => rest),
+        saleDocuments: saleDocuments.map(({ id, ...rest }) => rest),
+        saleDocumentItems: saleDocumentItems.map(({ id, ...rest }) => rest),
+        expenses: expenses.map(({ id, ...rest }) => rest),
+        clients: clients.map(({ id, ...rest }) => rest)
       }
     };
     
+    console.log('✅ Экспорт базы данных завершен');
     res.json(dump);
   } catch (error) {
     console.error('Error creating database dump:', error);
@@ -457,24 +503,28 @@ const getDatabaseDump = async (req, res) => {
 // Полная очистка базы данных
 const clearDatabase = async (req, res) => {
   try {
-    // Проверяем права администратора
     if (req.user.role !== 'admin') {
       return res.status(403).json({ message: 'Доступ запрещен. Требуются права администратора' });
     }
     
     await prisma.$transaction(async (prisma) => {
-      // Очищаем все таблицы в правильном порядке (сначала дочерние, потом родительские)
       await prisma.saleDocumentItem.deleteMany();
       await prisma.sale.deleteMany();
       await prisma.saleDocument.deleteMany();
       await prisma.productCharacteristic.deleteMany();
       await prisma.expense.deleteMany();
       await prisma.client.deleteMany();
+      
+      try {
+        await prisma.productCategory.deleteMany();
+      } catch (error) {
+        console.log('ProductCategory table may not exist, skipping...');
+      }
+      
       await prisma.product.deleteMany();
       await prisma.categoryField.deleteMany();
       await prisma.category.deleteMany();
       
-      // Оставляем пользователей, но удаляем всех кроме администратора
       await prisma.user.deleteMany({
         where: {
           role: { not: 'admin' }
@@ -487,12 +537,11 @@ const clearDatabase = async (req, res) => {
     console.error('Error clearing database:', error);
     res.status(500).json({ message: 'Ошибка очистки базы данных' });
   }
-  // backend/src/controllers/reports.controller.js (добавить в конец файла)
 };
+
 // Восстановление базы данных из дампа
 const restoreDatabase = async (req, res) => {
   try {
-    // Проверяем права администратора
     if (req.user.role !== 'admin') {
       return res.status(403).json({ message: 'Доступ запрещен. Требуются права администратора' });
     }
@@ -506,39 +555,46 @@ const restoreDatabase = async (req, res) => {
     console.log('Начинаем восстановление базы данных...');
     
     await prisma.$transaction(async (prisma) => {
-      // Очищаем все таблицы в правильном порядке
+      // Очищаем все таблицы
       await prisma.saleDocumentItem.deleteMany();
       await prisma.sale.deleteMany();
       await prisma.saleDocument.deleteMany();
       await prisma.productCharacteristic.deleteMany();
       await prisma.expense.deleteMany();
       await prisma.client.deleteMany();
+      
+      try {
+        await prisma.productCategory.deleteMany();
+      } catch (error) {
+        console.log('ProductCategory table may not exist, skipping...');
+      }
+      
       await prisma.product.deleteMany();
       await prisma.categoryField.deleteMany();
       await prisma.category.deleteMany();
       
-      // Удаляем всех пользователей кроме администратора
       await prisma.user.deleteMany({
         where: {
           role: { not: 'admin' }
         }
       });
       
+      // Маппы для соответствия ID
+      const categoryIdMap = new Map();
+      const fieldIdMap = new Map();
+      const productIdMap = new Map();
+      const clientIdMap = new Map();
+      const documentIdMap = new Map();
+      
       // Восстанавливаем категории
       if (dump.data.categories && dump.data.categories.length > 0) {
         for (const category of dump.data.categories) {
-          await prisma.category.create({
-            data: {
-              id: category.id,
-              name: category.name,
-              description: category.description,
-              icon: category.icon,
-              sortOrder: category.sortOrder,
-              isActive: category.isActive,
-              createdAt: category.createdAt,
-              updatedAt: category.updatedAt
-            }
+          const oldId = category.id;
+          const { id, products, fields, ...categoryData } = category;
+          const newCategory = await prisma.category.create({
+            data: categoryData
           });
+          categoryIdMap.set(oldId, newCategory.id);
         }
         console.log(`Восстановлено ${dump.data.categories.length} категорий`);
       }
@@ -546,19 +602,17 @@ const restoreDatabase = async (req, res) => {
       // Восстанавливаем поля категорий
       if (dump.data.categoryFields && dump.data.categoryFields.length > 0) {
         for (const field of dump.data.categoryFields) {
-          await prisma.categoryField.create({
-            data: {
-              id: field.id,
-              categoryId: field.categoryId,
-              name: field.name,
-              fieldType: field.fieldType,
-              isRequired: field.isRequired,
-              sortOrder: field.sortOrder,
-              options: field.options,
-              createdAt: field.createdAt,
-              updatedAt: field.updatedAt
-            }
-          });
+          const { id, values, categoryId, ...fieldData } = field;
+          const newCategoryId = categoryIdMap.get(categoryId);
+          if (newCategoryId) {
+            const newField = await prisma.categoryField.create({
+              data: {
+                ...fieldData,
+                categoryId: newCategoryId
+              }
+            });
+            fieldIdMap.set(id, newField.id);
+          }
         }
         console.log(`Восстановлено ${dump.data.categoryFields.length} полей категорий`);
       }
@@ -566,22 +620,51 @@ const restoreDatabase = async (req, res) => {
       // Восстанавливаем товары
       if (dump.data.products && dump.data.products.length > 0) {
         for (const product of dump.data.products) {
-          await prisma.product.create({
-            data: {
-              id: product.id,
-              name: product.name,
-              article: product.article,
-              categoryId: product.categoryId,
-              cost_price: product.cost_price,
-              retail_price: product.retail_price,
-              description: product.description,
-              stock: product.stock,
-              min_stock: product.min_stock,
-              image_url: product.image_url,
-              createdAt: product.createdAt,
-              updatedAt: product.updatedAt
-            }
+          const oldId = product.id;
+          const { 
+            id, 
+            categories, 
+            characteristics, 
+            sales, 
+            saleDocumentItems,
+            productCategory,
+            category,
+            categoryId,
+            ...productData 
+          } = product;
+          
+          if (!productData.costBreakdown) {
+            productData.costBreakdown = [];
+          }
+          
+          const newProduct = await prisma.product.create({
+            data: productData
           });
+          productIdMap.set(oldId, newProduct.id);
+          
+          // Восстанавливаем связи с категориями
+          if (product.categoryId && categoryIdMap.has(product.categoryId)) {
+            await prisma.productCategory.create({
+              data: {
+                productId: newProduct.id,
+                categoryId: categoryIdMap.get(product.categoryId)
+              }
+            });
+          }
+          
+          if (product.categories && Array.isArray(product.categories)) {
+            for (const cat of product.categories) {
+              const catId = cat.categoryId || cat.id;
+              if (categoryIdMap.has(catId)) {
+                await prisma.productCategory.create({
+                  data: {
+                    productId: newProduct.id,
+                    categoryId: categoryIdMap.get(catId)
+                  }
+                });
+              }
+            }
+          }
         }
         console.log(`Восстановлено ${dump.data.products.length} товаров`);
       }
@@ -589,16 +672,19 @@ const restoreDatabase = async (req, res) => {
       // Восстанавливаем характеристики товаров
       if (dump.data.productCharacteristics && dump.data.productCharacteristics.length > 0) {
         for (const char of dump.data.productCharacteristics) {
-          await prisma.productCharacteristic.create({
-            data: {
-              id: char.id,
-              productId: char.productId,
-              fieldId: char.fieldId,
-              value: char.value,
-              createdAt: char.createdAt,
-              updatedAt: char.updatedAt
-            }
-          });
+          const { id, productId, fieldId, ...charData } = char;
+          const newProductId = productIdMap.get(productId);
+          const newFieldId = fieldIdMap.get(fieldId);
+          
+          if (newProductId && newFieldId) {
+            await prisma.productCharacteristic.create({
+              data: {
+                ...charData,
+                productId: newProductId,
+                fieldId: newFieldId
+              }
+            });
+          }
         }
         console.log(`Восстановлено ${dump.data.productCharacteristics.length} характеристик`);
       }
@@ -606,30 +692,12 @@ const restoreDatabase = async (req, res) => {
       // Восстанавливаем клиентов
       if (dump.data.clients && dump.data.clients.length > 0) {
         for (const client of dump.data.clients) {
-          await prisma.client.create({
-            data: {
-              id: client.id,
-              firstName: client.firstName,
-              lastName: client.lastName,
-              middleName: client.middleName,
-              phone: client.phone,
-              email: client.email,
-              birthDate: client.birthDate,
-              address: client.address,
-              city: client.city,
-              passport: client.passport,
-              driverLicense: client.driverLicense,
-              carModel: client.carModel,
-              carYear: client.carYear,
-              carVin: client.carVin,
-              carNumber: client.carNumber,
-              notes: client.notes,
-              totalOrders: client.totalOrders,
-              totalSpent: client.totalSpent,
-              createdAt: client.createdAt,
-              updatedAt: client.updatedAt
-            }
+          const oldId = client.id;
+          const { id, orders, ...clientData } = client;
+          const newClient = await prisma.client.create({
+            data: clientData
           });
+          clientIdMap.set(oldId, newClient.id);
         }
         console.log(`Восстановлено ${dump.data.clients.length} клиентов`);
       }
@@ -637,29 +705,46 @@ const restoreDatabase = async (req, res) => {
       // Восстанавливаем документы продаж
       if (dump.data.saleDocuments && dump.data.saleDocuments.length > 0) {
         for (const doc of dump.data.saleDocuments) {
-          await prisma.saleDocument.create({
-            data: {
-              id: doc.id,
-              documentNumber: doc.documentNumber,
-              documentType: doc.documentType,
-              clientId: doc.clientId,
-              clientName: doc.clientName,
-              clientPhone: doc.clientPhone,
-              customerName: doc.customerName,
-              customerPhone: doc.customerPhone,
-              customerEmail: doc.customerEmail,
-              customerAddress: doc.customerAddress,
-              subtotal: doc.subtotal,
-              discount: doc.discount,
-              total: doc.total,
-              tax: doc.tax || 0,
-              paymentMethod: doc.paymentMethod,
-              paymentStatus: doc.paymentStatus,
-              saleDate: doc.saleDate,
-              createdAt: doc.createdAt,
-              updatedAt: doc.updatedAt
-            }
+          const oldId = doc.id;
+          
+          // Создаем чистый объект только с нужными полями
+          const cleanDocData = {
+            documentNumber: doc.documentNumber,
+            documentType: doc.documentType,
+            clientName: doc.clientName,
+            clientPhone: doc.clientPhone,
+            customerName: doc.customerName,
+            customerPhone: doc.customerPhone,
+            customerEmail: doc.customerEmail,
+            customerAddress: doc.customerAddress,
+            subtotal: doc.subtotal,
+            discount: doc.discount,
+            total: doc.total,
+            tax: doc.tax,
+            paymentMethod: doc.paymentMethod,
+            paymentStatus: doc.paymentStatus,
+            saleDate: doc.saleDate,
+            createdAt: doc.createdAt,
+            updatedAt: doc.updatedAt
+          };
+          
+          // Определяем clientId
+          let finalClientId = null;
+          
+          if (doc.clientId && clientIdMap.has(doc.clientId)) {
+            finalClientId = clientIdMap.get(doc.clientId);
+          } else if (doc.client?.id && clientIdMap.has(doc.client.id)) {
+            finalClientId = clientIdMap.get(doc.client.id);
+          }
+          
+          if (finalClientId) {
+            cleanDocData.clientId = finalClientId;
+          }
+          
+          const newDoc = await prisma.saleDocument.create({
+            data: cleanDocData
           });
+          documentIdMap.set(oldId, newDoc.id);
         }
         console.log(`Восстановлено ${dump.data.saleDocuments.length} документов`);
       }
@@ -667,93 +752,79 @@ const restoreDatabase = async (req, res) => {
       // Восстанавливаем элементы документов
       if (dump.data.saleDocumentItems && dump.data.saleDocumentItems.length > 0) {
         for (const item of dump.data.saleDocumentItems) {
-          await prisma.saleDocumentItem.create({
-            data: {
-              id: item.id,
-              documentId: item.documentId,
-              productId: item.productId,
-              productName: item.productName,
-              productArticle: item.productArticle,
-              quantity: item.quantity,
-              price: item.price,
-              cost_price: item.cost_price || 0,
-              total: item.total,
-              createdAt: item.createdAt
-            }
-          });
+          const { id, documentId, productId, ...itemData } = item;
+          const newDocumentId = documentIdMap.get(documentId);
+          const newProductId = productIdMap.get(productId);
+          
+          if (newDocumentId && newProductId) {
+            await prisma.saleDocumentItem.create({
+              data: {
+                ...itemData,
+                documentId: newDocumentId,
+                productId: newProductId
+              }
+            });
+          }
         }
         console.log(`Восстановлено ${dump.data.saleDocumentItems.length} элементов документов`);
       }
       
       // Восстанавливаем продажи
-      if (dump.data.sales && dump.data.sales.length > 0) {
-        for (const sale of dump.data.sales) {
-          await prisma.sale.create({
-            data: {
-              id: sale.id,
-              productId: sale.productId,
-              quantity: sale.quantity,
-              selling_price: sale.selling_price,
-              total_cost: sale.total_cost,
-              total_revenue: sale.total_revenue,
-              profit: sale.profit,
-              customer_name: sale.customer_name,
-              customer_phone: sale.customer_phone,
-              sale_date: sale.sale_date,
-              createdAt: sale.createdAt,
-              documentId: sale.documentId
-            }
-          });
-        }
-        console.log(`Восстановлено ${dump.data.sales.length} продаж`);
-      }
+if (dump.data.sales && dump.data.sales.length > 0) {
+  for (const sale of dump.data.sales) {
+    // Исключаем все вложенные объекты
+    const { 
+      id, 
+      product,      // исключаем вложенный объект product
+      document,     // исключаем вложенный объект document
+      ...saleData 
+    } = sale;
+    
+    const newProductId = productIdMap.get(sale.productId);
+    const newDocumentId = documentIdMap.get(sale.documentId);
+    
+    const dataToCreate = { ...saleData };
+    if (newProductId) dataToCreate.productId = newProductId;
+    if (newDocumentId) dataToCreate.documentId = newDocumentId;
+    
+    await prisma.sale.create({
+      data: dataToCreate
+    });
+  }
+  console.log(`Восстановлено ${dump.data.sales.length} продаж`);
+}
       
       // Восстанавливаем расходы
       if (dump.data.expenses && dump.data.expenses.length > 0) {
         for (const expense of dump.data.expenses) {
+          const { id, ...expenseData } = expense;
           await prisma.expense.create({
-            data: {
-              id: expense.id,
-              name: expense.name,
-              amount: expense.amount,
-              category: expense.category,
-              description: expense.description,
-              expense_date: expense.expense_date,
-              createdAt: expense.createdAt
-            }
+            data: expenseData
           });
         }
         console.log(`Восстановлено ${dump.data.expenses.length} расходов`);
       }
       
-      // Восстанавливаем пользователей (кроме администратора, чтобы не перезаписывать текущего)
+      // Восстанавливаем пользователей
       if (dump.data.users && dump.data.users.length > 0) {
         for (const user of dump.data.users) {
           if (user.role !== 'admin') {
-            // Проверяем, существует ли пользователь
+            const { id, ...userData } = user;
             const existingUser = await prisma.user.findUnique({
-              where: { email: user.email }
+              where: { email: userData.email }
             });
             if (!existingUser) {
               await prisma.user.create({
-                data: {
-                  id: user.id,
-                  email: user.email,
-                  password: user.password,
-                  name: user.name,
-                  role: user.role,
-                  createdAt: user.createdAt,
-                  updatedAt: user.updatedAt
-                }
+                data: userData
               });
             }
           }
         }
-        console.log(`Восстановлено пользователей`);
+        console.log(`Восстановлены пользователи (кроме администратора)`);
       }
     });
     
-    console.log('Восстановление базы данных завершено успешно!');
+    console.log('✅ Восстановление базы данных завершено успешно!');
     res.json({ message: 'База данных успешно восстановлена из дампа' });
     
   } catch (error) {
@@ -772,6 +843,6 @@ module.exports = {
   deleteAllSales,
   getSalesStats,
   getDatabaseDump,
-  restoreDatabase,  
+  restoreDatabase,
   clearDatabase
 };

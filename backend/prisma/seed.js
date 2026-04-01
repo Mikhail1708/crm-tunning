@@ -42,7 +42,7 @@ async function main() {
   console.log('\n📋 Готово! Пользователи созданы:');
   console.log('👑 Администратор: admin@crm.ru / admin123');
   console.log('👤 Менеджер 1: gurin@crm.ru / 1605');
-  console.log('👤 Менеджер 2: petrov@crm.ru / 182204');
+  console.log('👤 Менеджер 2: batvenko@crm.ru / 182204');
 }
 
 main()

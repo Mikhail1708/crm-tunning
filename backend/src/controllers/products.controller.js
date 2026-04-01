@@ -3,14 +3,18 @@ const { PrismaClient } = require('@prisma/client');
 
 const prisma = new PrismaClient();
 
-// Получить все товары с характеристиками
+// Получить все товары с категориями
 const getProducts = async (req, res) => {
   try {
     const products = await prisma.product.findMany({
       include: {
-        productCategory: {
+        categories: {
           include: {
-            fields: true
+            category: {
+              include: {
+                fields: true
+              }
+            }
           }
         },
         characteristics: {
@@ -22,7 +26,7 @@ const getProducts = async (req, res) => {
       orderBy: { createdAt: 'desc' }
     });
     
-    // Форматируем характеристики для удобства
+    // Форматируем для фронтенда
     const formattedProducts = products.map(product => {
       const characteristics = {};
       if (product.characteristics) {
@@ -37,8 +41,12 @@ const getProducts = async (req, res) => {
         id: product.id,
         name: product.name,
         article: product.article,
-        category: product.category,
-        categoryId: product.categoryId,
+        categoryIds: product.categories.map(pc => pc.categoryId),
+        categories: product.categories.map(pc => ({
+          id: pc.category.id,
+          name: pc.category.name,
+          fields: pc.category.fields
+        })),
         cost_price: product.cost_price,
         retail_price: product.retail_price,
         description: product.description,
@@ -48,7 +56,6 @@ const getProducts = async (req, res) => {
         costBreakdown: product.costBreakdown || [],
         createdAt: product.createdAt,
         updatedAt: product.updatedAt,
-        productCategory: product.productCategory,
         characteristics
       };
     });
@@ -67,9 +74,13 @@ const getProductById = async (req, res) => {
     const product = await prisma.product.findUnique({
       where: { id: parseInt(id) },
       include: {
-        productCategory: {
+        categories: {
           include: {
-            fields: true
+            category: {
+              include: {
+                fields: true
+              }
+            }
           }
         },
         characteristics: {
@@ -97,8 +108,12 @@ const getProductById = async (req, res) => {
       id: product.id,
       name: product.name,
       article: product.article,
-      category: product.category,
-      categoryId: product.categoryId,
+      categoryIds: product.categories.map(pc => pc.categoryId),
+      categories: product.categories.map(pc => ({
+        id: pc.category.id,
+        name: pc.category.name,
+        fields: pc.category.fields
+      })),
       cost_price: product.cost_price,
       retail_price: product.retail_price,
       description: product.description,
@@ -108,7 +123,6 @@ const getProductById = async (req, res) => {
       costBreakdown: product.costBreakdown || [],
       createdAt: product.createdAt,
       updatedAt: product.updatedAt,
-      productCategory: product.productCategory,
       characteristics
     });
   } catch (error) {
@@ -128,13 +142,14 @@ const createProduct = async (req, res) => {
       stock, 
       min_stock, 
       description, 
-      categoryId, 
+      image_url,
+      categoryIds,
       characteristics,
       costBreakdown
     } = req.body;
     
     // Проверка обязательных полей
-    if (!name || !cost_price || !retail_price || stock === undefined) {
+    if (!name || cost_price === undefined || retail_price === undefined || stock === undefined) {
       return res.status(400).json({ message: 'Заполните все обязательные поля' });
     }
     
@@ -151,6 +166,7 @@ const createProduct = async (req, res) => {
     
     // Создаем товар в транзакции
     const result = await prisma.$transaction(async (prisma) => {
+      // Создаем товар
       const product = await prisma.product.create({
         data: {
           name,
@@ -160,16 +176,27 @@ const createProduct = async (req, res) => {
           stock: parseInt(stock),
           min_stock: parseInt(min_stock) || 5,
           description: description || null,
-          categoryId: categoryId ? parseInt(categoryId) : null,
+          image_url: image_url || null,
           costBreakdown: costBreakdown || []
         }
       });
+      
+      // Добавляем связи с категориями
+      if (categoryIds && Array.isArray(categoryIds) && categoryIds.length > 0) {
+        const categoryConnections = categoryIds.map(categoryId => ({
+          productId: product.id,
+          categoryId: parseInt(categoryId)
+        }));
+        
+        await prisma.productCategory.createMany({
+          data: categoryConnections
+        });
+      }
       
       // Добавляем характеристики
       if (characteristics && Object.keys(characteristics).length > 0) {
         for (const [fieldId, value] of Object.entries(characteristics)) {
           if (value && value !== '' && value !== null) {
-            // Проверяем, существует ли поле
             const fieldExists = await prisma.categoryField.findUnique({
               where: { id: parseInt(fieldId) }
             });
@@ -209,7 +236,8 @@ const updateProduct = async (req, res) => {
       stock, 
       min_stock, 
       description, 
-      categoryId, 
+      image_url,
+      categoryIds,
       characteristics,
       costBreakdown
     } = req.body;
@@ -242,24 +270,39 @@ const updateProduct = async (req, res) => {
       const product = await prisma.product.update({
         where: { id: parseInt(id) },
         data: {
-          name: name || existingProduct.name,
-          article: article || null,
+          name: name !== undefined ? name : existingProduct.name,
+          article: article !== undefined ? article : existingProduct.article,
           cost_price: cost_price !== undefined ? parseFloat(cost_price) : existingProduct.cost_price,
           retail_price: retail_price !== undefined ? parseFloat(retail_price) : existingProduct.retail_price,
           stock: stock !== undefined ? parseInt(stock) : existingProduct.stock,
           min_stock: min_stock !== undefined ? parseInt(min_stock) : existingProduct.min_stock,
           description: description !== undefined ? description : existingProduct.description,
-          categoryId: categoryId !== undefined ? (categoryId ? parseInt(categoryId) : null) : existingProduct.categoryId,
+          image_url: image_url !== undefined ? image_url : existingProduct.image_url,
           costBreakdown: costBreakdown !== undefined ? costBreakdown : existingProduct.costBreakdown
         }
       });
       
-      // Удаляем старые характеристики
+      // Обновляем связи с категориями (удаляем старые, добавляем новые)
+      await prisma.productCategory.deleteMany({
+        where: { productId: product.id }
+      });
+      
+      if (categoryIds && Array.isArray(categoryIds) && categoryIds.length > 0) {
+        const categoryConnections = categoryIds.map(categoryId => ({
+          productId: product.id,
+          categoryId: parseInt(categoryId)
+        }));
+        
+        await prisma.productCategory.createMany({
+          data: categoryConnections
+        });
+      }
+      
+      // Обновляем характеристики
       await prisma.productCharacteristic.deleteMany({
         where: { productId: product.id }
       });
       
-      // Добавляем новые характеристики
       if (characteristics && Object.keys(characteristics).length > 0) {
         for (const [fieldId, value] of Object.entries(characteristics)) {
           if (value && value !== '' && value !== null) {
@@ -301,7 +344,6 @@ const deleteProduct = async (req, res) => {
   try {
     const { id } = req.params;
     
-    // Проверяем существование товара
     const existingProduct = await prisma.product.findUnique({
       where: { id: parseInt(id) }
     });
@@ -310,7 +352,6 @@ const deleteProduct = async (req, res) => {
       return res.status(404).json({ message: 'Товар не найден' });
     }
     
-    // Удаляем товар (характеристики удалятся автоматически благодаря onDelete: Cascade)
     await prisma.product.delete({
       where: { id: parseInt(id) }
     });
@@ -332,7 +373,11 @@ const getLowStockProducts = async (req, res) => {
         }
       },
       include: {
-        productCategory: true
+        categories: {
+          include: {
+            category: true
+          }
+        }
       },
       orderBy: { stock: 'asc' }
     });
@@ -341,14 +386,13 @@ const getLowStockProducts = async (req, res) => {
       id: product.id,
       name: product.name,
       article: product.article,
-      category: product.category,
-      categoryId: product.categoryId,
+      categoryIds: product.categories.map(pc => pc.categoryId),
+      categories: product.categories.map(pc => pc.category),
       cost_price: product.cost_price,
       retail_price: product.retail_price,
       stock: product.stock,
       min_stock: product.min_stock,
-      costBreakdown: product.costBreakdown || [],
-      productCategory: product.productCategory
+      costBreakdown: product.costBreakdown || []
     }));
     
     res.json(formattedProducts);

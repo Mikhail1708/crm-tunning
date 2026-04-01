@@ -479,22 +479,43 @@ export const NewOrder = () => {
 
   // Фильтрация товаров
   const filteredProducts = useMemo(() => {
-    let filtered = products.filter(p => p.stock > 0);
+  let filtered = products.filter(p => p.stock > 0);
+  
+  console.log('Всего товаров:', products.length);
+  console.log('Выбранная категория:', selectedCategory);
+  
+  if (searchTerm) {
+    const searchLower = searchTerm.toLowerCase();
+    filtered = filtered.filter(p => 
+      p.name?.toLowerCase().includes(searchLower) ||
+      p.article?.toLowerCase().includes(searchLower)
+    );
+  }
+  
+  if (selectedCategory) {
+    const categoryId = parseInt(selectedCategory);
+    console.log('Фильтруем по категории ID:', categoryId);
     
-    if (searchTerm) {
-      const searchLower = searchTerm.toLowerCase();
-      filtered = filtered.filter(p => 
-        p.name?.toLowerCase().includes(searchLower) ||
-        p.article?.toLowerCase().includes(searchLower)
-      );
-    }
-    
-    if (selectedCategory) {
-      filtered = filtered.filter(p => p.categoryId === parseInt(selectedCategory));
-    }
-    
-    return filtered;
-  }, [products, searchTerm, selectedCategory]);
+    filtered = filtered.filter(p => {
+      console.log('Товар:', p.name, 'категории:', p.categories);
+      
+      if (p.categories && Array.isArray(p.categories)) {
+        const hasCategory = p.categories.some(cat => cat.id === categoryId);
+        console.log('  - hasCategory:', hasCategory);
+        return hasCategory;
+      }
+      if (p.categoryIds && Array.isArray(p.categoryIds)) {
+        const hasCategory = p.categoryIds.includes(categoryId);
+        console.log('  - hasCategory (ids):', hasCategory);
+        return hasCategory;
+      }
+      return false;
+    });
+  }
+  
+  console.log('Отфильтровано товаров:', filtered.length);
+  return filtered;
+}, [products, searchTerm, selectedCategory]);
 
   // Добавление товара в корзину с проверкой на дубликаты
   const addToCart = (product, quantity, price) => {

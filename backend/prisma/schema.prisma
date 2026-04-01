@@ -19,12 +19,20 @@ model User {
   updatedAt DateTime @updatedAt
 }
 
+// СВЯЗУЮЩАЯ ТАБЛИЦА для many-to-many
+model ProductCategory {
+  productId   Int
+  categoryId  Int
+  product     Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  category    Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@id([productId, categoryId])
+}
+
 model Product {
   id           Int       @id @default(autoincrement())
   name         String
   article      String?   @unique
-  category     String?
-  categoryId   Int?
   cost_price   Float     @default(0)
   retail_price Float     @default(0)
   description  String?   @db.Text
@@ -34,8 +42,10 @@ model Product {
   costBreakdown Json?     
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
-  sales        Sale[]
-  productCategory Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  
+  // Связи
+  categories     ProductCategory[]     // Many-to-many с категориями
+  sales          Sale[]
   characteristics ProductCharacteristic[]
   saleDocumentItems SaleDocumentItem[]
 }
@@ -49,7 +59,9 @@ model Category {
   isActive    Boolean   @default(true)
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
-  products    Product[]
+  
+  // Связи
+  products    ProductCategory[]    // Many-to-many с товарами
   fields      CategoryField[]
 }
 
@@ -137,15 +149,11 @@ model SaleDocument {
   documentNumber String           @unique
   documentType   String           // 'order', 'receipt', 'invoice'
   
-  // Связь с клиентом
   clientId       Int?
   client         Client?          @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  clientName     String?
+  clientPhone    String?
   
-  // Дублируем данные клиента для быстрого доступа и поиска
-  clientName     String?          // Полное имя клиента
-  clientPhone    String?          // Телефон клиента
-  
-  // Данные покупателя (если не выбран клиент из БД)
   customerName   String?
   customerPhone  String?
   customerEmail  String?
@@ -171,11 +179,11 @@ model SaleDocumentItem {
   document       SaleDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
   productId      Int
   product        Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
-  productName    String       // Сохраняем название на момент продажи
+  productName    String
   productArticle String
   quantity       Int
-  price          Float        // Цена за единицу (продажная)
-  cost_price     Float        @default(0) // 👈 ДОБАВЛЯЕМ поле себестоимости
-  total          Float        // Итого по товару
+  price          Float
+  cost_price     Float        @default(0)
+  total          Float
   createdAt      DateTime     @default(now())
 }
