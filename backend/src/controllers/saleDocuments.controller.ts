@@ -1,10 +1,22 @@
-// backend/src/controllers/saleDocuments.controller.js
-const { PrismaClient } = require('@prisma/client');
+// backend/src/controllers/saleDocuments.controller.ts
+import { Response } from 'express';
+import { PrismaClient } from '@prisma/client';
+import { RequestWithUser, CreateSaleDocumentDTO } from '../types';
 
 const prisma = new PrismaClient();
 
-// Получить все документы
-const getSaleDocuments = async (req, res) => {
+// Тип для элемента документа
+interface DocumentItem {
+  productId: number;
+  quantity: number;
+  price: number;
+}
+
+/**
+ * GET /api/sale-documents
+ * Получить все документы
+ */
+export const getSaleDocuments = async (req: RequestWithUser, res: Response): Promise<void> => {
   try {
     const documents = await prisma.saleDocument.findMany({
       include: {
@@ -25,8 +37,11 @@ const getSaleDocuments = async (req, res) => {
   }
 };
 
-// Получить документ по ID
-const getSaleDocumentById = async (req, res) => {
+/**
+ * GET /api/sale-documents/:id
+ * Получить документ по ID
+ */
+export const getSaleDocumentById = async (req: RequestWithUser, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
     const document = await prisma.saleDocument.findUnique({
@@ -43,7 +58,8 @@ const getSaleDocumentById = async (req, res) => {
     });
     
     if (!document) {
-      return res.status(404).json({ message: 'Документ не найден' });
+      res.status(404).json({ message: 'Документ не найден' });
+      return;
     }
     
     res.json(document);
@@ -53,9 +69,13 @@ const getSaleDocumentById = async (req, res) => {
   }
 };
 
-// Создать документ продажи
-const createSaleDocument = async (req, res) => {
+/**
+ * POST /api/sale-documents
+ * Создать документ продажи (заказ/чек/счет)
+ */
+export const createSaleDocument = async (req: RequestWithUser, res: Response): Promise<void> => {
   try {
+    const data: CreateSaleDocumentDTO = req.body;
     const {
       documentType,
       clientId,
@@ -64,11 +84,12 @@ const createSaleDocument = async (req, res) => {
       customerEmail,
       customerAddress,
       items,
-      discount,
+      discount = 0,
       paymentMethod,
-      paymentStatus
-    } = req.body;
+      paymentStatus = 'unpaid'
+    } = data;
     
+    // Определяем имя и телефон клиента
     let finalClientName = customerName;
     let finalClientPhone = customerPhone;
     let client = null;
@@ -87,22 +108,23 @@ const createSaleDocument = async (req, res) => {
       }
     }
     
+    // Генерируем номер документа
     const prefix = documentType === 'receipt' ? 'ЧЕК' : documentType === 'invoice' ? 'СЧЕТ' : 'ЗАКАЗ';
     const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
     const random = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
     const documentNumber = `${prefix}-${dateStr}-${random}`;
     
+    // Рассчитываем суммы
     const subtotal = items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-    const total = subtotal - (discount || 0);
+    const total = subtotal - discount;
     
-    const result = await prisma.$transaction(async (prisma) => {
-      const document = await prisma.saleDocument.create({
+    const result = await prisma.$transaction(async (tx) => {
+      // Создаем документ
+      const document = await tx.saleDocument.create({
         data: {
           documentNumber,
           documentType: documentType || 'order',
-          client: clientId ? {
-            connect: { id: clientId }
-          } : undefined,
+          client: clientId ? { connect: { id: clientId } } : undefined,
           clientName: finalClientName,
           clientPhone: finalClientPhone,
           customerName: customerName || finalClientName,
@@ -110,17 +132,19 @@ const createSaleDocument = async (req, res) => {
           customerEmail,
           customerAddress,
           subtotal,
-          discount: discount || 0,
+          discount,
           total,
           paymentMethod,
-          paymentStatus: paymentStatus || 'unpaid',
+          paymentStatus,
           saleDate: new Date()
         }
       });
       
       const sales = [];
+      
+      // Создаем элементы документа и списываем товары
       for (const item of items) {
-        const product = await prisma.product.findUnique({
+        const product = await tx.product.findUnique({
           where: { id: item.productId }
         });
         
@@ -129,15 +153,15 @@ const createSaleDocument = async (req, res) => {
         }
         
         if (product.stock < item.quantity) {
-          throw new Error(`Недостаточно товара ${product.name} на складе`);
+          throw new Error(`Недостаточно товара "${product.name}" на складе`);
         }
         
         const itemCostPrice = product.cost_price;
         const itemTotalCost = itemCostPrice * item.quantity;
         const itemTotalRevenue = item.price * item.quantity;
         
-        // Создаем элемент документа без поля isWork
-        await prisma.saleDocumentItem.create({
+        // Создаем элемент документа
+        await tx.saleDocumentItem.create({
           data: {
             documentId: document.id,
             productId: item.productId,
@@ -150,7 +174,8 @@ const createSaleDocument = async (req, res) => {
           }
         });
         
-        const sale = await prisma.sale.create({
+        // Создаем запись о продаже
+        const sale = await tx.sale.create({
           data: {
             productId: item.productId,
             quantity: item.quantity,
@@ -167,14 +192,15 @@ const createSaleDocument = async (req, res) => {
         sales.push(sale);
         
         // Списание товара со склада
-        await prisma.product.update({
+        await tx.product.update({
           where: { id: item.productId },
           data: { stock: product.stock - item.quantity }
         });
       }
       
+      // Обновляем статистику клиента
       if (client && client.id) {
-        await prisma.client.update({
+        await tx.client.update({
           where: { id: client.id },
           data: {
             totalOrders: { increment: 1 },
@@ -189,17 +215,21 @@ const createSaleDocument = async (req, res) => {
     res.status(201).json(result);
   } catch (error) {
     console.error('Error creating sale document:', error);
-    res.status(500).json({ message: error.message || 'Ошибка создания документа' });
+    const message = error instanceof Error ? error.message : 'Ошибка создания документа';
+    res.status(500).json({ message });
   }
 };
 
-// Обновить документ
-const updateSaleDocument = async (req, res) => {
+/**
+ * PUT /api/sale-documents/:id
+ * Обновить документ
+ */
+export const updateSaleDocument = async (req: RequestWithUser, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
-    const { 
-      documentType, 
-      paymentStatus, 
+    const {
+      documentType,
+      paymentStatus,
       clientId,
       customerName,
       customerPhone,
@@ -207,8 +237,8 @@ const updateSaleDocument = async (req, res) => {
       customerAddress
     } = req.body;
     
-    const updateData = { 
-      documentType, 
+    const updateData: any = {
+      documentType,
       paymentStatus,
       customerName,
       customerPhone,
@@ -248,8 +278,11 @@ const updateSaleDocument = async (req, res) => {
   }
 };
 
-// Обновить статус оплаты
-const updatePaymentStatus = async (req, res) => {
+/**
+ * PATCH /api/sale-documents/:id/payment-status
+ * Обновить статус оплаты
+ */
+export const updatePaymentStatus = async (req: RequestWithUser, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
     const { paymentStatus } = req.body;
@@ -266,18 +299,21 @@ const updatePaymentStatus = async (req, res) => {
   }
 };
 
-// Удалить документ
-const deleteSaleDocument = async (req, res) => {
+/**
+ * DELETE /api/sale-documents/:id
+ * Удалить документ (с возвратом товаров на склад)
+ */
+export const deleteSaleDocument = async (req: RequestWithUser, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
     const documentId = parseInt(id);
     
-    await prisma.$transaction(async (prisma) => {
-      const document = await prisma.saleDocument.findUnique({
+    await prisma.$transaction(async (tx) => {
+      const document = await tx.saleDocument.findUnique({
         where: { id: documentId },
-        include: { 
-          sales: true,
+        include: {
           items: true,
+          sales: true,
           client: true
         }
       });
@@ -288,14 +324,15 @@ const deleteSaleDocument = async (req, res) => {
       
       // Возвращаем товары на склад
       for (const item of document.items) {
-        await prisma.product.update({
+        await tx.product.update({
           where: { id: item.productId },
           data: { stock: { increment: item.quantity } }
         });
       }
       
+      // Обновляем статистику клиента
       if (document.clientId) {
-        await prisma.client.update({
+        await tx.client.update({
           where: { id: document.clientId },
           data: {
             totalOrders: { decrement: 1 },
@@ -304,7 +341,8 @@ const deleteSaleDocument = async (req, res) => {
         });
       }
       
-      await prisma.saleDocument.delete({
+      // Удаляем документ (каскадно удалятся items и sales)
+      await tx.saleDocument.delete({
         where: { id: documentId }
       });
     });
@@ -312,12 +350,16 @@ const deleteSaleDocument = async (req, res) => {
     res.json({ message: 'Документ удален, товары возвращены на склад' });
   } catch (error) {
     console.error('Error deleting document:', error);
-    res.status(500).json({ message: error.message || 'Ошибка удаления документа' });
+    const message = error instanceof Error ? error.message : 'Ошибка удаления документа';
+    res.status(500).json({ message });
   }
 };
 
-// Поиск документов по клиенту
-const getDocumentsByClient = async (req, res) => {
+/**
+ * GET /api/sale-documents/client/:clientId
+ * Получить документы по клиенту
+ */
+export const getDocumentsByClient = async (req: RequestWithUser, res: Response): Promise<void> => {
   try {
     const { clientId } = req.params;
     
@@ -337,8 +379,11 @@ const getDocumentsByClient = async (req, res) => {
   }
 };
 
-// Статистика по клиентам
-const getClientStatistics = async (req, res) => {
+/**
+ * GET /api/sale-documents/stats/clients
+ * Статистика по клиентам
+ */
+export const getClientStatistics = async (req: RequestWithUser, res: Response): Promise<void> => {
   try {
     const stats = await prisma.$queryRaw`
       SELECT 
@@ -361,15 +406,4 @@ const getClientStatistics = async (req, res) => {
     console.error('Error getting client statistics:', error);
     res.status(500).json({ message: 'Ошибка загрузки статистики' });
   }
-};
-
-module.exports = {
-  getSaleDocuments,
-  getSaleDocumentById,
-  createSaleDocument,
-  updateSaleDocument,
-  updatePaymentStatus,
-  deleteSaleDocument,
-  getDocumentsByClient,
-  getClientStatistics
 };

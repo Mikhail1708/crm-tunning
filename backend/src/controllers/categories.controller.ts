@@ -1,10 +1,10 @@
-// backend/src/controllers/categories.controller.js
-const { PrismaClient } = require('@prisma/client');
+// backend/src/controllers/categories.controller.ts
+import { Response } from 'express';
+import { PrismaClient } from '@prisma/client';
+import { RequestWithUser, CreateCategoryDTO, CreateCategoryFieldDTO } from '../types';
 
 const prisma = new PrismaClient();
-
-// Получить все категории
-const getCategories = async (req, res) => {
+export const getCategories = async (req: RequestWithUser, res: Response): Promise<void> => {
   try {
     const categories = await prisma.category.findMany({
       include: {
@@ -24,8 +24,7 @@ const getCategories = async (req, res) => {
   }
 };
 
-// Получить категорию по ID
-const getCategoryById = async (req, res) => {
+export const getCategoryById = async (req: RequestWithUser, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
     const category = await prisma.category.findUnique({
@@ -38,7 +37,8 @@ const getCategoryById = async (req, res) => {
     });
     
     if (!category) {
-      return res.status(404).json({ message: 'Категория не найдена' });
+      res.status(404).json({ message: 'Категория не найдена' });
+      return;
     }
     
     res.json(category);
@@ -48,10 +48,10 @@ const getCategoryById = async (req, res) => {
   }
 };
 
-// Создать категорию
-const createCategory = async (req, res) => {
+export const createCategory = async (req: RequestWithUser, res: Response): Promise<void> => {
   try {
-    const { name, description, icon, sortOrder } = req.body;
+    const data: CreateCategoryDTO = req.body;
+    const { name, description, icon, sortOrder } = data;
     
     const category = await prisma.category.create({
       data: {
@@ -65,27 +65,27 @@ const createCategory = async (req, res) => {
     res.status(201).json(category);
   } catch (error) {
     console.error('Error creating category:', error);
-    if (error.code === 'P2002') {
-      return res.status(400).json({ message: 'Категория с таким названием уже существует' });
+    if (error instanceof Error && 'code' in error && error.code === 'P2002') {
+      res.status(400).json({ message: 'Категория с таким названием уже существует' });
+      return;
     }
     res.status(500).json({ message: 'Ошибка создания категории' });
   }
 };
 
-// Обновить категорию
-const updateCategory = async (req, res) => {
+export const updateCategory = async (req: RequestWithUser, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
     const { name, description, icon, sortOrder, isActive } = req.body;
     
     const category = await prisma.category.update({
       where: { id: parseInt(id) },
-      data: { 
-        name, 
-        description, 
-        icon, 
-        sortOrder, 
-        isActive 
+      data: {
+        name,
+        description,
+        icon,
+        sortOrder,
+        isActive
       }
     });
     
@@ -96,8 +96,7 @@ const updateCategory = async (req, res) => {
   }
 };
 
-// Удалить категорию
-const deleteCategory = async (req, res) => {
+export const deleteCategory = async (req: RequestWithUser, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
     
@@ -111,9 +110,7 @@ const deleteCategory = async (req, res) => {
     res.status(500).json({ message: 'Ошибка удаления категории' });
   }
 };
-
-// Получить поля категории
-const getCategoryFields = async (req, res) => {
+export const getCategoryFields = async (req: RequestWithUser, res: Response): Promise<void> => {
   try {
     const { categoryId } = req.params;
     
@@ -122,8 +119,8 @@ const getCategoryFields = async (req, res) => {
       orderBy: { sortOrder: 'asc' }
     });
     
-    // Парсим options из JSON
-    const fieldsWithOptions = fields.map(field => ({
+    // Исправлено: добавляем тип для параметра field
+    const fieldsWithOptions = fields.map((field: any) => ({
       ...field,
       options: field.options ? JSON.parse(field.options) : null
     }));
@@ -134,12 +131,11 @@ const getCategoryFields = async (req, res) => {
     res.status(500).json({ message: 'Ошибка загрузки полей' });
   }
 };
-
-// Создать поле для категории
-const createCategoryField = async (req, res) => {
+export const createCategoryField = async (req: RequestWithUser, res: Response): Promise<void> => {
   try {
     const { categoryId } = req.params;
-    const { name, fieldType, isRequired, sortOrder, options } = req.body;
+    const data: CreateCategoryFieldDTO = req.body;
+    const { name, fieldType, isRequired, sortOrder, options } = data;
     
     const field = await prisma.categoryField.create({
       data: {
@@ -159,8 +155,7 @@ const createCategoryField = async (req, res) => {
   }
 };
 
-// Обновить поле категории
-const updateCategoryField = async (req, res) => {
+export const updateCategoryField = async (req: RequestWithUser, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
     const { name, fieldType, isRequired, sortOrder, options } = req.body;
@@ -183,8 +178,7 @@ const updateCategoryField = async (req, res) => {
   }
 };
 
-// Удалить поле категории
-const deleteCategoryField = async (req, res) => {
+export const deleteCategoryField = async (req: RequestWithUser, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
     
@@ -197,16 +191,4 @@ const deleteCategoryField = async (req, res) => {
     console.error('Error deleting category field:', error);
     res.status(500).json({ message: 'Ошибка удаления поля' });
   }
-};
-
-module.exports = {
-  getCategories,
-  getCategoryById,
-  createCategory,
-  updateCategory,
-  deleteCategory,
-  getCategoryFields,
-  createCategoryField,
-  updateCategoryField,
-  deleteCategoryField
 };
