@@ -18,7 +18,7 @@ import {
 
 // Навигация с указанием доступных ролей
 const navigation = [
-  { name: 'Дашборд', href: '/dashboard', icon: LayoutDashboard, roles: ['admin', 'manager'] },
+  { name: 'Главная', href: '/dashboard', icon: LayoutDashboard, roles: ['admin', 'manager'] },
   { name: 'Товары', href: '/products', icon: Package, roles: ['admin', 'manager'] },
   { name: 'Категории', href: '/categories', icon: Tag, roles: ['admin', 'manager'] },
   { name: 'Клиенты', href: '/clients', icon: Users, roles: ['admin', 'manager'] },
@@ -69,7 +69,7 @@ export const Layout = () => {
           {/* Logo */}
           <div className="p-6 border-b border-gray-700">
             <h1 className="text-2xl font-bold bg-gradient-to-r from-primary-400 to-primary-300 bg-clip-text text-transparent">
-              CRM TUNING
+              CRM SWAP38
             </h1>
             <p className="text-sm text-gray-400 mt-1">Управление продажами</p>
           </div>
