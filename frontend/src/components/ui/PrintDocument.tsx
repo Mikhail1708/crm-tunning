@@ -1,11 +1,45 @@
-// frontend/src/components/ui/PrintDocument.jsx
+// frontend/src/components/ui/PrintDocument.tsx
 import React from 'react';
+
+// Типы
+interface OrderItem {
+  productName: string;
+  quantity: number;
+  price: number;
+  total: number;
+  isWork?: boolean;
+}
+
+interface Order {
+  id?: number;
+  documentNumber?: string;
+  documentType?: string;
+  customerName?: string;
+  clientName?: string;
+  customerPhone?: string;
+  clientPhone?: string;
+  customerEmail?: string;
+  customerAddress?: string;
+  items?: OrderItem[];
+  subtotal?: number;
+  discount?: number;
+  total?: number;
+  paymentStatus?: 'paid' | 'unpaid';
+  paymentMethod?: string;
+  saleDate?: string | Date;
+}
+
+interface PrintDocumentProps {
+  order: Order | null;
+  type?: 'receipt' | 'invoice';
+}
 
 // Используем абсолютный путь от корня public
 const LOGO_URL = '/images/logo1.png';
 
-export const PrintDocument = ({ order, type = 'receipt' }) => {
-  const renderHTML = () => {
+export const PrintDocument: React.FC<PrintDocumentProps> = ({ order, type = 'receipt' }) => {
+  
+  const renderHTML = (): string => {
     const currentDate = new Date();
     const formattedDate = currentDate.toLocaleDateString('ru-RU', {
       day: '2-digit',
@@ -18,19 +52,19 @@ export const PrintDocument = ({ order, type = 'receipt' }) => {
     const title = isReceipt ? 'ЧЕК' : 'СЧЕТ НА ОПЛАТУ';
     
     // Безопасное получение суммы
-    const subtotal = order?.subtotal || 0;
-    const discount = order?.discount || 0;
-    const total = order?.total || 0;
-    const items = order?.items || [];
-    const customerName = order?.customerName || order?.clientName || '___________________';
-    const customerPhone = order?.customerPhone || order?.clientPhone || '___________________';
+    const subtotal = order?.subtotal ?? 0;
+    const discount = order?.discount ?? 0;
+    const total = order?.total ?? 0;
+    const items = order?.items ?? [];
+    const customerName = order?.customerName ?? order?.clientName ?? '___________________';
+    const customerPhone = order?.customerPhone ?? order?.clientPhone ?? '___________________';
 
     return `
       <!DOCTYPE html>
       <html>
       <head>
         <meta charset="UTF-8">
-        <title>${title} №${order?.documentNumber || ''}</title>
+        <title>${title} №${order?.documentNumber ?? ''}</title>
         <style>
           * {
             margin: 0;
@@ -310,7 +344,7 @@ export const PrintDocument = ({ order, type = 'receipt' }) => {
           <div class="header">
             <div class="logo-section">
               <img src="${LOGO_URL}" alt="SWAP SERVICE 38" class="logo" 
-                   onerror="this.style.display='none'; this.parentElement.innerHTML = '<div class=\'logo-placeholder\'>ЛОГО</div>' + this.parentElement.innerHTML">
+                   onerror="this.style.display='none'; this.parentElement.innerHTML = '<div class=\\'logo-placeholder\\'>ЛОГО</div>' + this.parentElement.innerHTML">
               <div>
                 <div class="company-title">SWAP SERVICE 38</div>
                 <div class="company-subtitle">Свап • Автосервис • Тюнинг • Запчасти</div>
@@ -318,7 +352,7 @@ export const PrintDocument = ({ order, type = 'receipt' }) => {
             </div>
             <div class="doc-info">
               <div class="doc-title">${title}</div>
-              <div class="doc-number">№ ${order?.documentNumber || ''} от ${formattedDate}</div>
+              <div class="doc-number">№ ${order?.documentNumber ?? ''} от ${formattedDate}</div>
             </div>
           </div>
           
@@ -334,22 +368,22 @@ export const PrintDocument = ({ order, type = 'receipt' }) => {
           <div class="client-info">
             <div class="client-row">
               <div class="client-label">Покупатель:</div>
-              <div class="client-value">${customerName}</div>
+              <div class="client-value">${escapeHtml(customerName)}</div>
             </div>
             <div class="client-row">
               <div class="client-label">Телефон:</div>
-              <div class="client-value">${customerPhone}</div>
+              <div class="client-value">${escapeHtml(customerPhone)}</div>
             </div>
             ${order?.customerEmail ? `
             <div class="client-row">
               <div class="client-label">Email:</div>
-              <div class="client-value">${order.customerEmail}</div>
+              <div class="client-value">${escapeHtml(order.customerEmail)}</div>
             </div>
             ` : ''}
             ${order?.customerAddress ? `
             <div class="client-row">
               <div class="client-label">Адрес:</div>
-              <div class="client-value">${order.customerAddress}</div>
+              <div class="client-value">${escapeHtml(order.customerAddress)}</div>
             </div>
             ` : ''}
           </div>
@@ -369,7 +403,7 @@ export const PrintDocument = ({ order, type = 'receipt' }) => {
               ${items.length > 0 ? items.map((item, idx) => `
                 <tr>
                   <td style="text-align: center;">${idx + 1}</td>
-                  <td>${item.productName}</td>
+                  <td>${escapeHtml(item.productName)}</td>
                   <td style="text-align: center;">${item.quantity} ${item.isWork ? 'н/ч' : 'шт'}</td>
                   <td style="text-align: right;">${item.price.toLocaleString()} ₽</td>
                   <td style="text-align: right; font-weight: bold;">${item.total.toLocaleString()} ₽</td>
@@ -414,7 +448,7 @@ export const PrintDocument = ({ order, type = 'receipt' }) => {
             <div>Р/с: 40802810123456789012</div>
             <div>Банк: ИРКУТСКОЕ ОТДЕЛЕНИЕ №1234 ПАО СБЕРБАНК</div>
             <div>БИК: 042520001 / К/с: 30101810100000000123</div>
-            <div style="margin-top: 8px;"><strong>Назначение платежа:</strong> Оплата по ${title.toLowerCase()} №${order?.documentNumber || ''} от ${formattedDate}</div>
+            <div style="margin-top: 8px;"><strong>Назначение платежа:</strong> Оплата по ${title.toLowerCase()} №${order?.documentNumber ?? ''} от ${formattedDate}</div>
           </div>
           ` : ''}
           
@@ -447,5 +481,36 @@ export const PrintDocument = ({ order, type = 'receipt' }) => {
     `;
   };
 
-  return { renderHTML };
+  // Функция для экранирования HTML спецсимволов (безопасность)
+  const escapeHtml = (str: string): string => {
+    if (!str) return '';
+    return str
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  };
+
+  // Функция для печати
+  const print = (): void => {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      alert('Пожалуйста, разрешите всплывающие окна для печати');
+      return;
+    }
+    
+    printWindow.document.write(renderHTML());
+    printWindow.document.close();
+    printWindow.focus();
+    
+    // Ждем загрузки всех ресурсов (изображений)
+    printWindow.onload = () => {
+      printWindow.print();
+    };
+  };
+
+  return { renderHTML, print };
 };
+
+export default PrintDocument;

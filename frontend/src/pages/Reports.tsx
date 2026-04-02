@@ -1,4 +1,4 @@
-// frontend/src/pages/Reports.jsx
+// frontend/src/pages/Reports.tsx
 import React, { useState, useEffect, useMemo } from 'react';
 import { reportsApi } from '../api/reports';
 import { saleDocumentsApi } from '../api/saleDocuments';
@@ -8,6 +8,7 @@ import { Button } from '../components/ui/Button';
 import { Card, CardBody } from '../components/ui/Card';
 import { Input } from '../components/ui/Input';
 import { formatPrice, formatDate } from '../utils/formatters';
+import { SaleDocument, Product, Client, ReportSummary, ProductStat, ClientStat, CityStat } from '../types';
 import * as XLSX from 'xlsx';
 import {
   LineChart,
@@ -45,18 +46,31 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
-// Цвета для графиков
 const COLORS = ['#10b981', '#8b5cf6', '#f59e0b', '#ef4444', '#3b82f6', '#ec489a', '#06b6d4', '#84cc16'];
 
-// Компонент фильтров
-const AnalyticsFilters = ({ filters, onFilterChange, onReset, products, clients }) => {
-  const [productSearch, setProductSearch] = useState('');
-  const [clientSearch, setClientSearch] = useState('');
-  const [citySearch, setCitySearch] = useState(filters.city || '');
-  const [showProductDropdown, setShowProductDropdown] = useState(false);
-  const [showClientDropdown, setShowClientDropdown] = useState(false);
+interface AnalyticsFilters {
+  product: Product | null;
+  client: Client | null;
+  city: string | null;
+}
 
-  // Синхронизируем локальное состояние города с фильтром из родителя
+interface AnalyticsFiltersProps {
+  filters: AnalyticsFilters;
+  onFilterChange: (key: keyof AnalyticsFilters, value: Product | Client | string | null) => void;
+  onReset: () => void;
+  products: Product[];
+  clients: Client[];
+}
+
+const AnalyticsFiltersComponent: React.FC<AnalyticsFiltersProps> = ({ 
+  filters, onFilterChange, onReset, products, clients 
+}) => {
+  const [productSearch, setProductSearch] = useState<string>('');
+  const [clientSearch, setClientSearch] = useState<string>('');
+  const [citySearch, setCitySearch] = useState<string>(filters.city || '');
+  const [showProductDropdown, setShowProductDropdown] = useState<boolean>(false);
+  const [showClientDropdown, setShowClientDropdown] = useState<boolean>(false);
+
   useEffect(() => {
     setCitySearch(filters.city || '');
   }, [filters.city]);
@@ -73,23 +87,23 @@ const AnalyticsFilters = ({ filters, onFilterChange, onReset, products, clients 
            c.city?.toLowerCase().includes(clientSearch.toLowerCase());
   });
 
-  const handleCityChange = (e) => {
+  const handleCityChange = (e: React.ChangeEvent<HTMLInputElement>): void => {
     const value = e.target.value;
     setCitySearch(value);
     onFilterChange('city', value || null);
   };
 
-  const handleResetProduct = () => {
+  const handleResetProduct = (): void => {
     onFilterChange('product', null);
     setProductSearch('');
   };
 
-  const handleResetClient = () => {
+  const handleResetClient = (): void => {
     onFilterChange('client', null);
     setClientSearch('');
   };
 
-  const handleResetCity = () => {
+  const handleResetCity = (): void => {
     onFilterChange('city', null);
     setCitySearch('');
   };
@@ -112,11 +126,8 @@ const AnalyticsFilters = ({ filters, onFilterChange, onReset, products, clients 
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {/* Фильтр по товару */}
         <div className="relative">
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Товар
-          </label>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Товар</label>
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={14} />
             <input
@@ -156,11 +167,8 @@ const AnalyticsFilters = ({ filters, onFilterChange, onReset, products, clients 
           )}
         </div>
 
-        {/* Фильтр по клиенту */}
         <div className="relative">
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Покупатель
-          </label>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Покупатель</label>
           <div className="relative">
             <Users className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={14} />
             <input
@@ -206,11 +214,8 @@ const AnalyticsFilters = ({ filters, onFilterChange, onReset, products, clients 
           )}
         </div>
 
-        {/* Фильтр по городу */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Город
-          </label>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Город</label>
           <div className="relative">
             <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={14} />
             <input
@@ -236,12 +241,18 @@ const AnalyticsFilters = ({ filters, onFilterChange, onReset, products, clients 
   );
 };
 
-export const Reports = () => {
-  const [loading, setLoading] = useState(true);
-  const [orders, setOrders] = useState([]);
-  const [products, setProducts] = useState([]);
-  const [clients, setClients] = useState([]);
-  const [stats, setStats] = useState({
+interface FormattedSale extends SaleDocument {
+  totalProfit: number;
+  totalCost: number;
+  customerCity: string;
+}
+
+export const Reports: React.FC = () => {
+  const [loading, setLoading] = useState<boolean>(true);
+  const [orders, setOrders] = useState<FormattedSale[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [clients, setClients] = useState<Client[]>([]);
+  const [stats, setStats] = useState<ReportSummary>({
     totalOrders: 0,
     totalRevenue: 0,
     totalProfit: 0,
@@ -252,15 +263,14 @@ export const Reports = () => {
     unpaidAmount: 0
   });
   
-  const [period, setPeriod] = useState('month');
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
-  const [showCustom, setShowCustom] = useState(false);
-  const [chartType, setChartType] = useState('line');
-  const [activeTab, setActiveTab] = useState('overview');
+  const [period, setPeriod] = useState<string>('month');
+  const [startDate, setStartDate] = useState<string>('');
+  const [endDate, setEndDate] = useState<string>('');
+  const [showCustom, setShowCustom] = useState<boolean>(false);
+  const [chartType, setChartType] = useState<'line' | 'bar'>('line');
+  const [activeTab, setActiveTab] = useState<'overview' | 'products' | 'clients' | 'cities'>('overview');
   
-  // Фильтры
-  const [filters, setFilters] = useState({
+  const [filters, setFilters] = useState<AnalyticsFilters>({
     product: null,
     client: null,
     city: null
@@ -274,29 +284,27 @@ export const Reports = () => {
     loadOrders();
   }, [period, startDate, endDate, filters]);
 
-  const loadInitialData = async () => {
+  const loadInitialData = async (): Promise<void> => {
     try {
       const [productsRes, clientsRes] = await Promise.all([
         productsApi.getAll(),
         clientsApi.getAll({ limit: 1000 })
       ]);
       setProducts(productsRes.data || []);
-      setClients(clientsRes.data.clients || []);
+      setClients(clientsRes.data?.data?.clients || []);
     } catch (error) {
       console.error('Error loading initial data:', error);
     }
   };
 
-  const loadOrders = async () => {
+  const loadOrders = async (): Promise<void> => {
     setLoading(true);
     try {
       const response = await saleDocumentsApi.getAll();
       let allDocuments = response.data || [];
       
-      // Фильтруем ТОЛЬКО ОПЛАЧЕННЫЕ заказы
       let paidDocuments = allDocuments.filter(doc => doc.paymentStatus === 'paid');
       
-      // Применяем фильтр по дате
       let filteredSales = [...paidDocuments];
       
       if (period === 'custom' && startDate && endDate) {
@@ -308,7 +316,7 @@ export const Reports = () => {
           return saleDate >= start && saleDate <= end;
         });
       } else if (period !== 'custom') {
-        let startDateFilter;
+        let startDateFilter: Date | null = null;
         switch (period) {
           case 'day':
             startDateFilter = new Date();
@@ -326,44 +334,40 @@ export const Reports = () => {
             startDateFilter = new Date();
             startDateFilter.setFullYear(startDateFilter.getFullYear() - 1);
             break;
-          default:
-            startDateFilter = null;
         }
         if (startDateFilter) {
-          filteredSales = paidDocuments.filter(sale => new Date(sale.saleDate) >= startDateFilter);
+          filteredSales = paidDocuments.filter(sale => new Date(sale.saleDate) >= startDateFilter!);
         }
       }
       
-      // Применяем фильтры по товару, клиенту, городу
       if (filters.product) {
         filteredSales = filteredSales.filter(sale => 
-          sale.items?.some(item => item.productId === filters.product.id)
+          sale.items?.some(item => item.productId === filters.product!.id)
         );
       }
       
       if (filters.client) {
         filteredSales = filteredSales.filter(sale => 
-          sale.clientId === filters.client.id
+          sale.clientId === filters.client!.id
         );
       }
       
       if (filters.city) {
         filteredSales = filteredSales.filter(sale => {
           const clientCity = sale.client?.city || '';
-          return clientCity.toLowerCase().includes(filters.city.toLowerCase());
+          return clientCity.toLowerCase().includes(filters.city!.toLowerCase());
         });
       }
       
-      // Подсчет неоплаченных (для информации)
       const unpaidDocuments = allDocuments.filter(doc => doc.paymentStatus !== 'paid');
       const unpaidAmount = unpaidDocuments.reduce((sum, d) => sum + (d.total || 0), 0);
       
-      const formattedSales = filteredSales.map(sale => {
+      const formattedSales: FormattedSale[] = filteredSales.map(sale => {
         const itemsWithCost = (sale.items || []).map(item => {
-          const costPrice = item.cost_price || item.product?.cost_price || 0;
+          const costPrice = item.cost_price || (item as { product?: { cost_price: number } }).product?.cost_price || 0;
           return {
-            name: item.productName || item.product?.name || 'Товар',
-            article: item.productArticle || item.product?.article || '-',
+            name: item.productName || (item as { product?: { name: string } }).product?.name || 'Товар',
+            article: item.productArticle || (item as { product?: { article: string } }).product?.article || '-',
             quantity: item.quantity,
             price: item.price,
             total: item.total,
@@ -379,21 +383,11 @@ export const Reports = () => {
         const docType = sale.documentType === 'receipt' ? 'Чек' : sale.documentType === 'invoice' ? 'Счет' : 'Заказ';
         
         return {
-          id: sale.id,
-          documentNumber: sale.documentNumber,
+          ...sale,
           documentType: docType,
-          saleDate: sale.saleDate,
-          customerName: sale.customerName || sale.clientName || '-',
-          customerPhone: sale.customerPhone || sale.clientPhone || '-',
-          customerCity: sale.client?.city || '-',
-          clientId: sale.clientId,
-          items: itemsWithCost,
-          subtotal: sale.subtotal || 0,
-          discount: sale.discount || 0,
-          total: sale.total || 0,
-          paymentStatus: sale.paymentStatus,
-          totalProfit: totalProfit,
-          totalCost: totalCost
+          totalProfit,
+          totalCost,
+          customerCity: sale.client?.city || '-'
         };
       });
       
@@ -425,17 +419,16 @@ export const Reports = () => {
     }
   };
 
-  const handleFilterChange = (key, value) => {
+  const handleFilterChange = (key: keyof AnalyticsFilters, value: Product | Client | string | null): void => {
     setFilters(prev => ({ ...prev, [key]: value }));
   };
 
-  const resetFilters = () => {
+  const resetFilters = (): void => {
     setFilters({ product: null, client: null, city: null });
   };
 
-  // Данные для графика (сортировка от старых к новым)
   const chartData = useMemo(() => {
-    const grouped = {};
+    const grouped: Record<string, { date: string; dateObj: Date; revenue: number; profit: number; cost: number; orders: number }> = {};
     orders.forEach(order => {
       const date = new Date(order.saleDate);
       const formattedDate = date.toLocaleDateString('ru-RU');
@@ -455,18 +448,17 @@ export const Reports = () => {
       grouped[formattedDate].orders += 1;
     });
     
-    // Сортировка от старых к новым (слева направо)
-    return Object.values(grouped).sort((a, b) => a.dateObj - b.dateObj);
+    return Object.values(grouped).sort((a, b) => a.dateObj.getTime() - b.dateObj.getTime());
   }, [orders]);
 
   const productStats = useMemo(() => {
-    const productMap = new Map();
+    const productMap = new Map<string, { name: string; revenue: number; profit: number; quantity: number }>();
     orders.forEach(order => {
       order.items?.forEach(item => {
-        if (!productMap.has(item.name)) {
-          productMap.set(item.name, { name: item.name, revenue: 0, profit: 0, quantity: 0 });
+        if (!productMap.has(item.productName)) {
+          productMap.set(item.productName, { name: item.productName, revenue: 0, profit: 0, quantity: 0 });
         }
-        const p = productMap.get(item.name);
+        const p = productMap.get(item.productName)!;
         p.revenue += item.total;
         p.profit += (item.price - item.cost_price) * item.quantity;
         p.quantity += item.quantity;
@@ -476,7 +468,7 @@ export const Reports = () => {
   }, [orders]);
 
   const clientStats = useMemo(() => {
-    const clientMap = new Map();
+    const clientMap = new Map<string, { name: string; phone?: string; city?: string; revenue: number; profit: number; orders: number }>();
     orders.forEach(order => {
       if (order.customerName && order.customerName !== '-') {
         if (!clientMap.has(order.customerName)) {
@@ -489,7 +481,7 @@ export const Reports = () => {
             orders: 0 
           });
         }
-        const c = clientMap.get(order.customerName);
+        const c = clientMap.get(order.customerName)!;
         c.revenue += order.total;
         c.profit += order.totalProfit;
         c.orders += 1;
@@ -499,13 +491,13 @@ export const Reports = () => {
   }, [orders]);
 
   const cityStats = useMemo(() => {
-    const cityMap = new Map();
+    const cityMap = new Map<string, { name: string; revenue: number; profit: number; orders: number }>();
     orders.forEach(order => {
       const city = order.customerCity && order.customerCity !== '-' ? order.customerCity : 'Не указан';
       if (!cityMap.has(city)) {
         cityMap.set(city, { name: city, revenue: 0, profit: 0, orders: 0 });
       }
-      const c = cityMap.get(city);
+      const c = cityMap.get(city)!;
       c.revenue += order.total;
       c.profit += order.totalProfit;
       c.orders += 1;
@@ -513,8 +505,8 @@ export const Reports = () => {
     return Array.from(cityMap.values()).sort((a, b) => b.revenue - a.revenue);
   }, [orders]);
 
-  const exportToExcel = () => {
-    let exportData = [];
+  const exportToExcel = (): void => {
+    let exportData: Record<string, unknown>[] = [];
     
     if (activeTab === 'overview') {
       exportData = orders.map(order => ({
@@ -529,7 +521,7 @@ export const Reports = () => {
         'Итого': order.total || 0,
         'Себестоимость': order.totalCost || 0,
         'Прибыль': order.totalProfit || 0,
-        'Состав': order.items?.map(i => `${i.name} x${i.quantity}`).join('; ') || '-'
+        'Состав': order.items?.map(i => `${i.productName} x${i.quantity}`).join('; ') || '-'
       }));
     } else if (activeTab === 'products') {
       exportData = productStats.map(p => ({
@@ -615,7 +607,7 @@ export const Reports = () => {
           <div className="flex flex-wrap gap-3 items-center">
             <Calendar size={18} className="text-gray-400" />
             <div className="flex gap-2">
-              {['day', 'week', 'month', 'year'].map(p => (
+              {(['day', 'week', 'month', 'year'] as const).map(p => (
                 <Button
                   key={p}
                   variant={period === p ? 'primary' : 'secondary'}
@@ -663,7 +655,7 @@ export const Reports = () => {
       </Card>
 
       {/* Фильтры аналитики */}
-      <AnalyticsFilters
+      <AnalyticsFiltersComponent
         filters={filters}
         onFilterChange={handleFilterChange}
         onReset={resetFilters}
@@ -691,10 +683,10 @@ export const Reports = () => {
       {/* Вкладки аналитики */}
       <div className="flex flex-wrap gap-2 border-b border-gray-200 pb-2">
         {[
-          { id: 'overview', label: 'Обзор', icon: BarChart3 },
-          { id: 'products', label: 'По товарам', icon: Package },
-          { id: 'clients', label: 'По покупателям', icon: Users },
-          { id: 'cities', label: 'По городам', icon: MapPin }
+          { id: 'overview' as const, label: 'Обзор', icon: BarChart3 },
+          { id: 'products' as const, label: 'По товарам', icon: Package },
+          { id: 'clients' as const, label: 'По покупателям', icon: Users },
+          { id: 'cities' as const, label: 'По городам', icon: MapPin }
         ].map(tab => (
           <button
             key={tab.id}
@@ -743,7 +735,7 @@ export const Reports = () => {
                   <XAxis dataKey="date" />
                   <YAxis yAxisId="left" />
                   <YAxis yAxisId="right" orientation="right" />
-                  <Tooltip formatter={(value) => formatPrice(value)} />
+                  <Tooltip formatter={(value) => formatPrice(value as number)} />
                   <Legend />
                   <Line yAxisId="left" type="monotone" dataKey="revenue" stroke="#10b981" name="Выручка" strokeWidth={2} />
                   <Line yAxisId="right" type="monotone" dataKey="profit" stroke="#8b5cf6" name="Прибыль" strokeWidth={2} />
@@ -753,7 +745,7 @@ export const Reports = () => {
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="date" />
                   <YAxis />
-                  <Tooltip formatter={(value) => formatPrice(value)} />
+                  <Tooltip formatter={(value) => formatPrice(value as number)} />
                   <Legend />
                   <Bar dataKey="revenue" fill="#10b981" name="Выручка" />
                   <Bar dataKey="profit" fill="#8b5cf6" name="Прибыль" />
@@ -764,37 +756,76 @@ export const Reports = () => {
         </Card>
       )}
 
+      {/* Таблица продаж для обзора */}
+      {activeTab === 'overview' && (
+        <Card>
+          <CardBody className="p-0">
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="bg-gray-50 border-b border-gray-200">
+                  <tr>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Тип</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">№ документа</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Дата</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Покупатель</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Телефон</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Город</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Состав</th>
+                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Итого</th>
+                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Прибыль</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200">
+                  {orders.length === 0 ? (
+                    <tr>
+                      <td colSpan={9} className="text-center py-12">
+                        <ShoppingBag size={48} className="mx-auto mb-3 text-gray-300" />
+                        <p className="text-gray-500">Нет оплаченных продаж за выбранный период</p>
+                      </td>
+                    </tr>
+                  ) : (
+                    orders.map((order) => (
+                      <tr key={order.id} className="hover:bg-gray-50">
+                        <td className="px-4 py-3 text-sm">
+                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                            order.documentType === 'Чек' ? 'bg-green-100 text-green-700' : 
+                            order.documentType === 'Счет' ? 'bg-blue-100 text-blue-700' : 
+                            'bg-purple-100 text-purple-700'
+                          }`}>
+                            {order.documentType}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-sm font-mono text-primary-600">{order.documentNumber}</td>
+                        <td className="px-4 py-3 text-sm text-gray-500">{formatDate(order.saleDate)}</td>
+                        <td className="px-4 py-3 text-sm text-gray-900">{order.customerName}</td>
+                        <td className="px-4 py-3 text-sm text-gray-500">{order.customerPhone}</td>
+                        <td className="px-4 py-3 text-sm text-gray-500">
+                          {order.customerCity && order.customerCity !== '-' ? (
+                            <span className="flex items-center gap-1">
+                              <MapPin size={12} className="text-gray-400" />
+                              {order.customerCity}
+                            </span>
+                          ) : '-'}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-500 max-w-md truncate">
+                          {order.items?.map(i => `${i.productName} x${i.quantity}`).join(', ') || '-'}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-right font-semibold">{formatPrice(order.total)}</td>
+                        <td className="px-4 py-3 text-sm text-right text-green-600">{formatPrice(order.totalProfit)}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </CardBody>
+        </Card>
+      )}
+
       {/* Аналитика по товарам */}
       {activeTab === 'products' && (
         <Card>
           <CardBody className="p-0">
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 p-6 border-b border-gray-200">
-              <div>
-                <h3 className="font-medium text-gray-900 mb-4">Топ товаров по выручке</h3>
-                <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={productStats.slice(0, 10)} layout="vertical" margin={{ left: 100 }}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis type="number" />
-                    <YAxis type="category" dataKey="name" width={90} />
-                    <Tooltip formatter={(value) => formatPrice(value)} />
-                    <Bar dataKey="revenue" fill="#10b981" name="Выручка" />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-              <div>
-                <h3 className="font-medium text-gray-900 mb-4">Топ товаров по прибыли</h3>
-                <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={productStats.slice(0, 10)} layout="vertical" margin={{ left: 100 }}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis type="number" />
-                    <YAxis type="category" dataKey="name" width={90} />
-                    <Tooltip formatter={(value) => formatPrice(value)} />
-                    <Bar dataKey="profit" fill="#8b5cf6" name="Прибыль" />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-            
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead className="bg-gray-50 border-b border-gray-200">
@@ -844,7 +875,7 @@ export const Reports = () => {
                     <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Выручка</th>
                     <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Прибыль</th>
                     <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Ср. чек</th>
-                   </tr>
+                  </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200">
                   {clientStats.map((client, idx) => (
@@ -890,11 +921,11 @@ export const Reports = () => {
                       outerRadius={100}
                       label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
                     >
-                      {cityStats.slice(0, 8).map((entry, index) => (
+                      {cityStats.slice(0, 8).map((_, index) => (
                         <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                       ))}
                     </Pie>
-                    <Tooltip formatter={(value) => formatPrice(value)} />
+                    <Tooltip formatter={(value) => formatPrice(value as number)} />
                     <Legend />
                   </PieChart>
                 </ResponsiveContainer>
@@ -947,72 +978,8 @@ export const Reports = () => {
           </CardBody>
         </Card>
       )}
-
-      {/* Таблица продаж для обзора */}
-      {activeTab === 'overview' && (
-        <Card>
-          <CardBody className="p-0">
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-gray-50 border-b border-gray-200">
-                  <tr>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Тип</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">№ документа</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Дата</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Покупатель</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Телефон</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Город</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Состав</th>
-                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Итого</th>
-                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Прибыль</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-200">
-                  {orders.length === 0 ? (
-                    <tr>
-                      <td colSpan="9" className="text-center py-12">
-                        <ShoppingBag size={48} className="mx-auto mb-3 text-gray-300" />
-                        <p className="text-gray-500">Нет оплаченных продаж за выбранный период</p>
-                      </td>
-                    </tr>
-                  ) : (
-                    orders.map((order) => (
-                      <tr key={order.id} className="hover:bg-gray-50">
-                        <td className="px-4 py-3 text-sm">
-                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                            order.documentType === 'Чек' ? 'bg-green-100 text-green-700' : 
-                            order.documentType === 'Счет' ? 'bg-blue-100 text-blue-700' : 
-                            'bg-purple-100 text-purple-700'
-                          }`}>
-                            {order.documentType}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 text-sm font-mono text-primary-600">{order.documentNumber}</td>
-                        <td className="px-4 py-3 text-sm text-gray-500">{formatDate(order.saleDate)}</td>
-                        <td className="px-4 py-3 text-sm text-gray-900">{order.customerName}</td>
-                        <td className="px-4 py-3 text-sm text-gray-500">{order.customerPhone}</td>
-                        <td className="px-4 py-3 text-sm text-gray-500">
-                          {order.customerCity && order.customerCity !== '-' ? (
-                            <span className="flex items-center gap-1">
-                              <MapPin size={12} className="text-gray-400" />
-                              {order.customerCity}
-                            </span>
-                          ) : '-'}
-                        </td>
-                        <td className="px-4 py-3 text-sm text-gray-500 max-w-md truncate">
-                          {order.items?.map(i => `${i.name} x${i.quantity}`).join(', ') || '-'}
-                        </td>
-                        <td className="px-4 py-3 text-sm text-right font-semibold">{formatPrice(order.total)}</td>
-                        <td className="px-4 py-3 text-sm text-right text-green-600">{formatPrice(order.totalProfit)}</td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </CardBody>
-        </Card>
-      )}
     </div>
   );
 };
+
+export default Reports;

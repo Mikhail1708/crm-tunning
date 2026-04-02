@@ -1,31 +1,65 @@
 // frontend/src/pages/ClientDetails.tsx
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Edit2, Phone, Mail, MapPin, Calendar, Car, CreditCard, Package } from 'lucide-react';
-import { toast } from 'react-hot-toast';
 import { clientsApi } from '../api/clients';
+import { saleDocumentsApi } from '../api/saleDocuments';
 import { Button } from '../components/ui/Button';
-import { Card } from '../components/ui/Card';
-import { formatDate, formatPrice } from '../utils/formatters';
-import { Client } from '../types';
+import { Card, CardBody, CardHeader } from '../components/ui/Card';
+import { formatPrice, formatDate } from '../utils/formatters';
+import { ArrowLeft, Phone, Mail, MapPin, Car, ShoppingBag, Calendar } from 'lucide-react';
+import toast from 'react-hot-toast';
 
-const ClientDetails: React.FC = () => {
+interface Client {
+  id: number;
+  firstName: string;
+  lastName: string;
+  phone: string;
+  email?: string;
+  city?: string;
+  carModel?: string;
+  carYear?: number;
+  carNumber?: string;
+  createdAt: string;
+}
+
+interface Order {
+  id: number;
+  documentNumber: string;
+  total: number;
+  paymentStatus: string;
+  saleDate: string;
+  items: Array<{
+    productName: string;
+    quantity: number;
+    price: number;
+    total: number;
+  }>;
+}
+
+export const ClientDetails: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [client, setClient] = useState<Client | null>(null);
+  const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
 
   useEffect(() => {
-    fetchClient();
+    if (id) {
+      loadClientData(parseInt(id));
+    }
   }, [id]);
 
-  const fetchClient = async (): Promise<void> => {
-    setLoading(true);
+  const loadClientData = async (clientId: number) => {
     try {
-      const response = await clientsApi.getById(Number(id));
-      setClient(response.data);
+      setLoading(true);
+      const [clientRes, ordersRes] = await Promise.all([
+        clientsApi.getById(clientId),
+        saleDocumentsApi.getByClientId(clientId)
+      ]);
+      setClient(clientRes.data);
+      setOrders(ordersRes.data || []);
     } catch (error) {
-      console.error('Error fetching client:', error);
+      console.error('Error loading client data:', error);
       toast.error('Ошибка загрузки данных клиента');
       navigate('/clients');
     } finally {
@@ -33,162 +67,161 @@ const ClientDetails: React.FC = () => {
     }
   };
 
+  const getFullName = (): string => {
+    if (!client) return '';
+    return `${client.firstName} ${client.lastName}`;
+  };
+
+  const getTotalSpent = (): number => {
+    return orders.reduce((sum, order) => sum + order.total, 0);
+  };
+
   if (loading) {
-    return <div className="p-6 text-center">Загрузка...</div>;
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="w-8 h-8 border-4 border-primary-600 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
   }
 
   if (!client) {
-    return <div className="p-6 text-center">Клиент не найден</div>;
-  }
-
-  const fullName = [client.lastName, client.firstName, client.middleName].filter(Boolean).join(' ');
-
-  return (
-    <div className="p-6">
-      <div className="flex items-center gap-4 mb-6">
-        <button onClick={() => navigate('/clients')} className="p-2 hover:bg-gray-100 rounded-lg">
-          <ArrowLeft className="w-5 h-5" />
-        </button>
-        <h1 className="text-2xl font-bold">{fullName}</h1>
-        <Button onClick={() => navigate('/sales/new', { state: { clientId: client.id } })}>
-          <Package className="w-4 h-4 mr-2" />
-          Новый заказ
+    return (
+      <div className="text-center py-12">
+        <p className="text-gray-500">Клиент не найден</p>
+        <Button onClick={() => navigate('/clients')} className="mt-4">
+          Вернуться к списку
         </Button>
       </div>
+    );
+  }
 
+  return (
+    <div className="space-y-6">
+      {/* Кнопка назад */}
+      <button
+        onClick={() => navigate('/clients')}
+        className="flex items-center gap-2 text-gray-600 hover:text-gray-900 transition-colors"
+      >
+        <ArrowLeft size={20} />
+        Назад к списку
+      </button>
+
+      {/* Информация о клиенте */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Основная информация */}
-        <Card className="lg:col-span-2 p-6">
-          <h2 className="text-lg font-semibold mb-4">Информация о клиенте</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="flex items-center gap-3">
-              <Phone className="w-5 h-5 text-gray-400" />
-              <div>
-                <div className="text-sm text-gray-500">Телефон</div>
-                <div className="font-medium">{client.phone}</div>
+        <Card className="lg:col-span-2">
+          <CardHeader>
+            <h2 className="text-xl font-semibold text-gray-900">{getFullName()}</h2>
+            <p className="text-sm text-gray-500">Клиент с {formatDate(client.createdAt)}</p>
+          </CardHeader>
+          <CardBody className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="flex items-center gap-3">
+                <Phone size={18} className="text-gray-400" />
+                <div>
+                  <p className="text-sm text-gray-500">Телефон</p>
+                  <p className="font-medium">{client.phone}</p>
+                </div>
               </div>
+              {client.email && (
+                <div className="flex items-center gap-3">
+                  <Mail size={18} className="text-gray-400" />
+                  <div>
+                    <p className="text-sm text-gray-500">Email</p>
+                    <p className="font-medium">{client.email}</p>
+                  </div>
+                </div>
+              )}
+              {client.city && (
+                <div className="flex items-center gap-3">
+                  <MapPin size={18} className="text-gray-400" />
+                  <div>
+                    <p className="text-sm text-gray-500">Город</p>
+                    <p className="font-medium">{client.city}</p>
+                  </div>
+                </div>
+              )}
+              {client.carModel && (
+                <div className="flex items-center gap-3">
+                  <Car size={18} className="text-gray-400" />
+                  <div>
+                    <p className="text-sm text-gray-500">Автомобиль</p>
+                    <p className="font-medium">
+                      {client.carModel}
+                      {client.carYear && `, ${client.carYear}`}
+                      {client.carNumber && ` (${client.carNumber})`}
+                    </p>
+                  </div>
+                </div>
+              )}
             </div>
-            {client.email && (
-              <div className="flex items-center gap-3">
-                <Mail className="w-5 h-5 text-gray-400" />
-                <div>
-                  <div className="text-sm text-gray-500">Email</div>
-                  <div className="font-medium">{client.email}</div>
-                </div>
-              </div>
-            )}
-            {client.birthDate && (
-              <div className="flex items-center gap-3">
-                <Calendar className="w-5 h-5 text-gray-400" />
-                <div>
-                  <div className="text-sm text-gray-500">Дата рождения</div>
-                  <div className="font-medium">{formatDate(client.birthDate)}</div>
-                </div>
-              </div>
-            )}
-            {(client.address || client.city) && (
-              <div className="flex items-center gap-3">
-                <MapPin className="w-5 h-5 text-gray-400" />
-                <div>
-                  <div className="text-sm text-gray-500">Адрес</div>
-                  <div className="font-medium">{client.city} {client.address}</div>
-                </div>
-              </div>
-            )}
-          </div>
+          </CardBody>
         </Card>
 
         {/* Статистика */}
-        <Card className="p-6">
-          <h2 className="text-lg font-semibold mb-4">Статистика</h2>
-          <div className="space-y-3">
-            <div>
-              <div className="text-sm text-gray-500">Всего заказов</div>
-              <div className="text-2xl font-bold">{client.totalOrders}</div>
+        <Card>
+          <CardHeader>
+            <h3 className="font-semibold text-gray-900">Статистика</h3>
+          </CardHeader>
+          <CardBody className="space-y-4">
+            <div className="text-center">
+              <p className="text-2xl font-bold text-primary-600">{getTotalSpent().toLocaleString()} ₽</p>
+              <p className="text-sm text-gray-500">Всего потрачено</p>
             </div>
-            <div>
-              <div className="text-sm text-gray-500">Общая сумма покупок</div>
-              <div className="text-2xl font-bold text-blue-600">{formatPrice(client.totalSpent || 0)}</div>
+            <div className="text-center">
+              <p className="text-2xl font-bold text-gray-900">{orders.length}</p>
+              <p className="text-sm text-gray-500">Заказов</p>
             </div>
-            <div>
-              <div className="text-sm text-gray-500">Средний чек</div>
-              <div className="text-xl font-semibold">
-                {client.totalOrders && client.totalOrders > 0 ? formatPrice((client.totalSpent || 0) / client.totalOrders) : '0 ₽'}
-              </div>
-            </div>
-          </div>
-        </Card>
-
-        {/* Информация об автомобиле */}
-        {(client.carModel || client.carNumber || client.carVin) && (
-          <Card className="lg:col-span-3 p-6">
-            <h2 className="text-lg font-semibold mb-4">Автомобиль</h2>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <div>
-                <div className="text-sm text-gray-500">Модель</div>
-                <div className="font-medium">{client.carModel || '-'}</div>
-              </div>
-              <div>
-                <div className="text-sm text-gray-500">Год выпуска</div>
-                <div className="font-medium">{client.carYear || '-'}</div>
-              </div>
-              <div>
-                <div className="text-sm text-gray-500">Госномер</div>
-                <div className="font-medium">{client.carNumber || '-'}</div>
-              </div>
-              <div>
-                <div className="text-sm text-gray-500">VIN номер</div>
-                <div className="font-medium font-mono text-sm">{client.carVin || '-'}</div>
-              </div>
-            </div>
-          </Card>
-        )}
-
-        {/* История заказов */}
-        <Card className="lg:col-span-3 p-6">
-          <h2 className="text-lg font-semibold mb-4">История заказов</h2>
-          {client.orders && client.orders.length > 0 ? (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-4 py-2 text-left text-sm font-medium text-gray-600">Номер</th>
-                    <th className="px-4 py-2 text-left text-sm font-medium text-gray-600">Дата</th>
-                    <th className="px-4 py-2 text-right text-sm font-medium text-gray-600">Сумма</th>
-                    <th className="px-4 py-2 text-left text-sm font-medium text-gray-600">Статус</th>
-                    <th className="px-4 py-2 text-left text-sm font-medium text-gray-600">Тип</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y">
-                  {client.orders.map(order => (
-                    <tr
-                      key={order.id}
-                      className="hover:bg-gray-50 cursor-pointer"
-                      onClick={() => navigate(`/sales/${order.id}`)}
-                    >
-                      <td className="px-4 py-2 font-mono text-sm">{order.documentNumber}</td>
-                      <td className="px-4 py-2 text-sm">{formatDate(order.saleDate)}</td>
-                      <td className="px-4 py-2 text-right font-medium">{formatPrice(order.total)}</td>
-                      <td className="px-4 py-2">
-                        <span className={`px-2 py-1 rounded-full text-xs ${
-                          order.paymentStatus === 'paid' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
-                        }`}>
-                          {order.paymentStatus === 'paid' ? 'Оплачен' : 'Не оплачен'}
-                        </span>
-                      </td>
-                      <td className="px-4 py-2 text-sm">
-                        {order.documentType === 'order' ? 'Заказ' : order.documentType === 'receipt' ? 'Чек' : 'Счет'}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <div className="text-center py-8 text-gray-500">У клиента пока нет заказов</div>
-          )}
+          </CardBody>
         </Card>
       </div>
+
+      {/* История заказов */}
+      <Card>
+        <CardHeader>
+          <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+            <ShoppingBag size={20} />
+            История заказов
+          </h3>
+        </CardHeader>
+        <CardBody>
+          {orders.length === 0 ? (
+            <p className="text-center text-gray-500 py-8">У клиента пока нет заказов</p>
+          ) : (
+            <div className="space-y-4">
+              {orders.map((order) => (
+                <div
+                  key={order.id}
+                  onClick={() => navigate(`/sales/${order.id}`)}
+                  className="border rounded-lg p-4 hover:bg-gray-50 cursor-pointer transition-colors"
+                >
+                  <div className="flex justify-between items-start mb-2">
+                    <div>
+                      <p className="font-medium text-gray-900">{order.documentNumber}</p>
+                      <p className="text-sm text-gray-500 flex items-center gap-1">
+                        <Calendar size={14} />
+                        {formatDate(order.saleDate)}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-bold text-primary-600">{formatPrice(order.total)}</p>
+                      <p className={`text-xs px-2 py-0.5 rounded-full ${
+                        order.paymentStatus === 'paid' 
+                          ? 'bg-green-100 text-green-700' 
+                          : 'bg-yellow-100 text-yellow-700'
+                      }`}>
+                        {order.paymentStatus === 'paid' ? 'Оплачен' : 'Не оплачен'}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="text-sm text-gray-600">
+                    {order.items.length} товаров
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardBody>
+      </Card>
     </div>
   );
 };

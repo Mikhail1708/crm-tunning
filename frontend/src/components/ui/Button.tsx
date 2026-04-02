@@ -1,6 +1,20 @@
-import React from 'react';
+// frontend/src/components/ui/Button.tsx
+import React, { ButtonHTMLAttributes, ReactNode, ElementType } from 'react';
+import { LucideIcon } from 'lucide-react';
 
-const variants = {
+type ButtonVariant = 'primary' | 'secondary' | 'success' | 'danger' | 'outline' | 'ghost';
+type ButtonSize = 'sm' | 'md' | 'lg';
+
+interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+  children: ReactNode;
+  variant?: ButtonVariant;
+  size?: ButtonSize;
+  icon?: LucideIcon;
+  loading?: boolean;
+  fullWidth?: boolean;
+}
+
+const variants: Record<ButtonVariant, string> = {
   primary: 'bg-primary-600 text-white hover:bg-primary-700 shadow-md hover:shadow-lg',
   secondary: 'bg-gray-600 text-white hover:bg-gray-700 shadow-md',
   success: 'bg-green-600 text-white hover:bg-green-700 shadow-md',
@@ -9,13 +23,13 @@ const variants = {
   ghost: 'text-gray-700 bg-gray-100 hover:bg-gray-200',
 };
 
-const sizes = {
+const sizes: Record<ButtonSize, string> = {
   sm: 'px-3 py-1.5 text-sm',
   md: 'px-5 py-2.5 text-sm',
   lg: 'px-6 py-3 text-base',
 };
 
-export const Button = ({ 
+export const Button: React.FC<ButtonProps> = ({ 
   children, 
   variant = 'primary', 
   size = 'md', 
@@ -23,6 +37,7 @@ export const Button = ({
   loading, 
   fullWidth,
   className = '',
+  disabled,
   ...props 
 }) => {
   return (
@@ -36,7 +51,7 @@ export const Button = ({
         disabled:opacity-50 disabled:cursor-not-allowed
         ${className}
       `}
-      disabled={loading || props.disabled}
+      disabled={loading || disabled}
       {...props}
     >
       {loading ? (

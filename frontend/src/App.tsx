@@ -5,7 +5,7 @@ import { Toaster } from 'react-hot-toast';
 import { AuthProvider } from './contexts/AuthContext';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { PrivateRoute } from './components/PrivateRoute';
-import { Layout } from './components/Layout';
+import { Layout } from './components/layout/Layout';  // ← путь к Layout (если он в папке layout)
 import { Login } from './pages/Login';
 import { Dashboard } from './pages/Dashboard';
 import { Products } from './pages/Products';
@@ -27,6 +27,8 @@ function App() {
           <Toaster position="top-right" />
           <Routes>
             <Route path="/login" element={<Login />} />
+            
+            {/* Защищенные маршруты */}
             <Route path="/" element={<PrivateRoute />}>
               <Route element={<Layout />}>
                 <Route index element={<Navigate to="/dashboard" replace />} />
@@ -43,6 +45,7 @@ function App() {
                 <Route path="audit" element={<AuditLogs />} />
               </Route>
             </Route>
+            
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </Router>

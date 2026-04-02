@@ -1,15 +1,37 @@
-// frontend/src/components/ui/CostBreakdownEditor.jsx
+// frontend/src/components/ui/CostBreakdownEditor.tsx
 import React, { useState, useEffect } from 'react';
 import { Button } from './Button';
 import { Input } from './Input';
 import { X, Plus, Trash2, Edit, Calculator, DollarSign } from 'lucide-react';
 import toast from 'react-hot-toast';
 
-export const CostBreakdownEditor = ({ value = [], onChange, disabled = false }) => {
-  const [items, setItems] = useState(value || []);
-  const [modalOpen, setModalOpen] = useState(false);
-  const [editingIndex, setEditingIndex] = useState(null);
-  const [formData, setFormData] = useState({ name: '', amount: '' });
+// Типы
+interface CostItem {
+  id?: number;
+  name: string;
+  amount: number;
+}
+
+interface CostBreakdownEditorProps {
+  value?: CostItem[];
+  onChange: (items: CostItem[]) => void;
+  disabled?: boolean;
+}
+
+interface FormData {
+  name: string;
+  amount: string;
+}
+
+export const CostBreakdownEditor: React.FC<CostBreakdownEditorProps> = ({ 
+  value = [], 
+  onChange, 
+  disabled = false 
+}) => {
+  const [items, setItems] = useState<CostItem[]>(value || []);
+  const [modalOpen, setModalOpen] = useState<boolean>(false);
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [formData, setFormData] = useState<FormData>({ name: '', amount: '' });
 
   // Синхронизация с внешним value
   useEffect(() => {
@@ -18,27 +40,28 @@ export const CostBreakdownEditor = ({ value = [], onChange, disabled = false }) 
     }
   }, [value]);
 
-  const updateItems = (newItems) => {
+  const updateItems = (newItems: CostItem[]): void => {
     setItems(newItems);
     onChange(newItems);
   };
 
-  const totalCost = items.reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0);
+  const totalCost: number = items.reduce((sum, item) => sum + (item.amount || 0), 0);
 
-  const handleAddItem = () => {
+  const handleAddItem = (): void => {
     if (!formData.name.trim()) {
       toast.error('Введите название затраты');
       return;
     }
-    if (!formData.amount || parseFloat(formData.amount) <= 0) {
+    const amountNum = parseFloat(formData.amount);
+    if (isNaN(amountNum) || amountNum <= 0) {
       toast.error('Введите корректную сумму');
       return;
     }
 
-    const newItem = {
+    const newItem: CostItem = {
       id: Date.now(),
       name: formData.name.trim(),
-      amount: parseFloat(formData.amount)
+      amount: amountNum
     };
 
     if (editingIndex !== null) {
@@ -54,7 +77,7 @@ export const CostBreakdownEditor = ({ value = [], onChange, disabled = false }) 
     closeModal();
   };
 
-  const handleEditItem = (index, e) => {
+  const handleEditItem = (index: number, e: React.MouseEvent): void => {
     e.stopPropagation();
     setEditingIndex(index);
     setFormData({
@@ -64,29 +87,29 @@ export const CostBreakdownEditor = ({ value = [], onChange, disabled = false }) 
     setModalOpen(true);
   };
 
-  const handleDeleteItem = (index, e) => {
+  const handleDeleteItem = (index: number, e: React.MouseEvent): void => {
     e.stopPropagation();
-    if (confirm('Удалить этот пункт затрат?')) {
+    if (window.confirm('Удалить этот пункт затрат?')) {
       const newItems = items.filter((_, i) => i !== index);
       updateItems(newItems);
       toast.success('Пункт затрат удален');
     }
   };
 
-  const handleOpenModal = (e) => {
+  const handleOpenModal = (e: React.MouseEvent): void => {
     e.stopPropagation();
     setEditingIndex(null);
     setFormData({ name: '', amount: '' });
     setModalOpen(true);
   };
 
-  const closeModal = () => {
+  const closeModal = (): void => {
     setModalOpen(false);
     setEditingIndex(null);
     setFormData({ name: '', amount: '' });
   };
 
-  const stopPropagation = (e) => {
+  const stopPropagation = (e: React.MouseEvent): void => {
     e.stopPropagation();
   };
 
@@ -97,7 +120,7 @@ export const CostBreakdownEditor = ({ value = [], onChange, disabled = false }) 
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Calculator size={20} className="text-primary-600" />
-            <h3 className="font-medium text-gray-900">Калькуляция себестоимости</h3>
+            <h3 className="font-medium text-gray-900 dark:text-white">Калькуляция себестоимости</h3>
           </div>
           {!disabled && (
             <Button
@@ -118,12 +141,12 @@ export const CostBreakdownEditor = ({ value = [], onChange, disabled = false }) 
             {items.map((item, index) => (
               <div
                 key={item.id || index}
-                className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors group"
+                className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors group"
                 onClick={stopPropagation}
               >
                 <div className="flex-1">
-                  <p className="font-medium text-gray-900">{item.name}</p>
-                  <p className="text-sm text-gray-500">
+                  <p className="font-medium text-gray-900 dark:text-white">{item.name}</p>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">
                     {new Intl.NumberFormat('ru-RU').format(item.amount)} ₽
                   </p>
                 </div>
@@ -131,7 +154,7 @@ export const CostBreakdownEditor = ({ value = [], onChange, disabled = false }) 
                   <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                     <button
                       onClick={(e) => handleEditItem(index, e)}
-                      className="p-1 text-blue-600 hover:bg-blue-100 rounded transition-colors"
+                      className="p-1 text-blue-600 hover:bg-blue-100 dark:hover:bg-blue-900/30 rounded transition-colors"
                       title="Редактировать"
                       type="button"
                     >
@@ -139,7 +162,7 @@ export const CostBreakdownEditor = ({ value = [], onChange, disabled = false }) 
                     </button>
                     <button
                       onClick={(e) => handleDeleteItem(index, e)}
-                      className="p-1 text-red-600 hover:bg-red-100 rounded transition-colors"
+                      className="p-1 text-red-600 hover:bg-red-100 dark:hover:bg-red-900/30 rounded transition-colors"
                       title="Удалить"
                       type="button"
                     >
@@ -151,24 +174,24 @@ export const CostBreakdownEditor = ({ value = [], onChange, disabled = false }) 
             ))}
 
             {/* Итоговая себестоимость */}
-            <div className="pt-3 mt-2 border-t border-gray-200">
-              <div className="flex items-center justify-between p-3 bg-primary-50 rounded-lg">
+            <div className="pt-3 mt-2 border-t border-gray-200 dark:border-gray-700">
+              <div className="flex items-center justify-between p-3 bg-primary-50 dark:bg-primary-900/20 rounded-lg">
                 <div className="flex items-center gap-2">
-                  <DollarSign size={20} className="text-primary-600" />
-                  <span className="font-semibold text-gray-900">Общая себестоимость:</span>
+                  <DollarSign size={20} className="text-primary-600 dark:text-primary-400" />
+                  <span className="font-semibold text-gray-900 dark:text-white">Общая себестоимость:</span>
                 </div>
-                <span className="text-xl font-bold text-primary-700">
+                <span className="text-xl font-bold text-primary-700 dark:text-primary-400">
                   {new Intl.NumberFormat('ru-RU').format(totalCost)} ₽
                 </span>
               </div>
             </div>
           </div>
         ) : (
-          <div className="text-center py-8 bg-gray-50 rounded-lg">
-            <Calculator size={32} className="mx-auto text-gray-400 mb-2" />
-            <p className="text-gray-500 text-sm">Нет добавленных затрат</p>
+          <div className="text-center py-8 bg-gray-50 dark:bg-gray-800 rounded-lg">
+            <Calculator size={32} className="mx-auto text-gray-400 dark:text-gray-600 mb-2" />
+            <p className="text-gray-500 dark:text-gray-400 text-sm">Нет добавленных затрат</p>
             {!disabled && (
-              <p className="text-gray-400 text-xs mt-1">
+              <p className="text-gray-400 dark:text-gray-500 text-xs mt-1">
                 Нажмите "Добавить затрату", чтобы указать из чего состоит себестоимость
               </p>
             )}
@@ -183,19 +206,19 @@ export const CostBreakdownEditor = ({ value = [], onChange, disabled = false }) 
           onClick={closeModal}
         >
           <div 
-            className="bg-white rounded-2xl shadow-xl max-w-md w-full animate-scale-up"
+            className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl max-w-md w-full animate-scale-up"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between p-6 border-b border-gray-100">
-              <h2 className="text-xl font-semibold text-gray-900">
+            <div className="flex items-center justify-between p-6 border-b border-gray-100 dark:border-gray-700">
+              <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
                 {editingIndex !== null ? 'Редактировать затрату' : 'Добавить затрату'}
               </h2>
               <button
                 onClick={closeModal}
-                className="p-1 hover:bg-gray-100 rounded-lg transition-colors"
+                className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
                 type="button"
               >
-                <X size={20} />
+                <X size={20} className="text-gray-500 dark:text-gray-400" />
               </button>
             </div>
             <div className="p-6">
@@ -203,7 +226,9 @@ export const CostBreakdownEditor = ({ value = [], onChange, disabled = false }) 
                 <Input
                   label="Название затраты"
                   value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => 
+                    setFormData({ ...formData, name: e.target.value })
+                  }
                   placeholder="Например: Резка металла"
                   autoFocus
                 />
@@ -211,7 +236,9 @@ export const CostBreakdownEditor = ({ value = [], onChange, disabled = false }) 
                   label="Сумма (₽)"
                   type="number"
                   value={formData.amount}
-                  onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => 
+                    setFormData({ ...formData, amount: e.target.value })
+                  }
                   placeholder="0"
                   step="0.01"
                   min="0"
@@ -233,4 +260,4 @@ export const CostBreakdownEditor = ({ value = [], onChange, disabled = false }) 
   );
 };
 
-export default CostBreakdownEditor; // Добавляем default export
+export default CostBreakdownEditor;

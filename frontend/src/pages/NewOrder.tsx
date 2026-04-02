@@ -361,14 +361,14 @@ const ProductRow: React.FC<ProductRowProps> = ({ product, isInCart, onAddToCart 
 };
 
 // Компонент строки товара в корзине
-interface CartItemComponentProps {
+interface CartItemProps {
   item: CartItem;
   onUpdateQuantity: (itemId: number, quantity: number) => void;
   onUpdatePrice: (itemId: number, price: number) => void;
   onRemove: (itemId: number) => void;
 }
 
-const CartItemComponent: React.FC<CartItemComponentProps> = ({ item, onUpdateQuantity, onUpdatePrice, onRemove }) => {
+const CartItemComponent: React.FC<CartItemProps> = ({ item, onUpdateQuantity, onUpdatePrice, onRemove }) => {
   const [quantity, setQuantity] = useState<number>(item.quantity);
   const [price, setPrice] = useState<number>(item.selling_price);
   const [quantityError, setQuantityError] = useState<string>('');
@@ -577,7 +577,7 @@ export const NewOrder: React.FC = () => {
       
       const searchResponse = await clientsApi.search(cleanPhone);
       const existingClient = searchResponse.data.clients.find(
-        (c: Client) => c.phone.replace(/\D/g, '') === cleanPhone
+        c => c.phone.replace(/\D/g, '') === cleanPhone
       );
       
       if (existingClient) {
@@ -886,7 +886,7 @@ export const NewOrder: React.FC = () => {
                       <td colSpan={6} className="text-center py-8 text-gray-500">
                         <Package size={32} className="mx-auto mb-2 opacity-50" />
                         Товары не найдены
-                      </td>
+                       </td>
                     </tr>
                   ) : (
                     filteredProducts.map(product => (

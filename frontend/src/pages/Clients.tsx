@@ -95,25 +95,34 @@ export const Clients: React.FC = () => {
     fetchStats();
   }, [search, sortBy, sortOrder, page]);
 
-  const fetchClients = async (): Promise<void> => {
+  const fetchClients = async () => {
+  try {
     setLoading(true);
-    try {
-      const response = await clientsApi.getAll({
-        search,
-        sortBy,
-        sortOrder,
-        page,
-        limit
-      });
-      setClients(response.data.data.clients);
-      setTotal(response.data.data.total);
-    } catch (error) {
-      console.error('Error fetching clients:', error);
-      toast.error('Ошибка загрузки клиентов');
-    } finally {
-      setLoading(false);
+    const response = await clientsApi.getAll();
+    
+    // Исправление: проверяем структуру ответа
+    let clientsData = [];
+    if (response.data && Array.isArray(response.data)) {
+      clientsData = response.data;
+    } else if (response.data && Array.isArray(response.data.clients)) {
+      clientsData = response.data.clients;
+    } else if (Array.isArray(response)) {
+      clientsData = response;
+    } else if (response.data && response.data.data && Array.isArray(response.data.data)) {
+      clientsData = response.data.data;
+    } else {
+      clientsData = [];
+      console.warn('Unexpected API response structure:', response);
     }
-  };
+    
+    setClients(clientsData);
+  } catch (error) {
+    console.error('Error fetching clients:', error);
+    toast.error('Ошибка загрузки клиентов');
+  } finally {
+    setLoading(false);
+  }
+};
 
   const fetchStats = async (): Promise<void> => {
     try {
