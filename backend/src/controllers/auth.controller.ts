@@ -25,7 +25,10 @@ interface LoginBody {
  */
 export const register = async (req: RequestWithUser, res: Response): Promise<void> => {
   try {
-    const { email, password, name, role }: RegisterBody = req.body;
+    let { email, password, name, role }: RegisterBody = req.body;
+
+    email = email.toLowerCase().trim();
+    name = name.trim().replace(/[<>]/g, '');
     
     const existingUser = await prisma.user.findUnique({ where: { email } });
     if (existingUser) {
@@ -60,7 +63,7 @@ export const register = async (req: RequestWithUser, res: Response): Promise<voi
 
 /**
  * POST /api/auth/login
- * Вход в систему
+ * Вход в систему - устанавливаем HttpOnly cookie
  */
 export const login = async (req: RequestWithUser, res: Response): Promise<void> => {
   try {
@@ -89,8 +92,17 @@ export const login = async (req: RequestWithUser, res: Response): Promise<void> 
       { expiresIn: '24h' }
     );
     
+    // Устанавливаем HttpOnly cookie
+    res.cookie('token', token, {
+      httpOnly: true,      // Недоступен из JavaScript (защита от XSS)
+      secure: process.env.NODE_ENV === 'production', // Только HTTPS в продакшене
+      sameSite: 'lax',     // Защита от CSRF
+      maxAge: 24 * 60 * 60 * 1000, // 24 часа
+      path: '/'
+    });
+    
+    // Отправляем пользователя (без токена)
     res.json({ 
-      token, 
       user: { 
         id: user.id, 
         email: user.email, 
@@ -101,6 +113,25 @@ export const login = async (req: RequestWithUser, res: Response): Promise<void> 
   } catch (error) {
     console.error('Login error:', error);
     res.status(500).json({ error: 'Ошибка при входе' });
+  }
+};
+
+/**
+ * POST /api/auth/logout
+ * Выход из системы - удаляем cookie
+ */
+export const logout = async (req: RequestWithUser, res: Response): Promise<void> => {
+  try {
+    res.clearCookie('token', {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/'
+    });
+    res.json({ message: 'Выход выполнен успешно' });
+  } catch (error) {
+    console.error('Logout error:', error);
+    res.status(500).json({ error: 'Ошибка при выходе' });
   }
 };
 

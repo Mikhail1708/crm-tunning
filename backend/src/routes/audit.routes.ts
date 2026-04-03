@@ -12,8 +12,8 @@ import { authMiddleware, adminMiddleware } from '../middleware/auth.middleware';
 
 const router = Router();
 
-// Все маршруты требуют аутентификации
-router.use(authMiddleware);
+// Временно отключаем для теста
+ router.use(authMiddleware);  
 
 router.get('/', getLogs);
 router.get('/stats', getLogsStats);

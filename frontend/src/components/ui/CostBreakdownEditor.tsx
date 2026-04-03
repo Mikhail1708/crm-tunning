@@ -1,5 +1,5 @@
 // frontend/src/components/ui/CostBreakdownEditor.tsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, memo } from 'react';
 import { Button } from './Button';
 import { Input } from './Input';
 import { X, Plus, Trash2, Edit, Calculator, DollarSign } from 'lucide-react';
@@ -23,7 +23,7 @@ interface FormData {
   amount: string;
 }
 
-export const CostBreakdownEditor: React.FC<CostBreakdownEditorProps> = ({ 
+const CostBreakdownEditorComponent: React.FC<CostBreakdownEditorProps> = ({ 
   value = [], 
   onChange, 
   disabled = false 
@@ -38,7 +38,7 @@ export const CostBreakdownEditor: React.FC<CostBreakdownEditorProps> = ({
     if (value && JSON.stringify(value) !== JSON.stringify(items)) {
       setItems(value);
     }
-  }, [value]);
+  }, [value, items]);
 
   const updateItems = (newItems: CostItem[]): void => {
     setItems(newItems);
@@ -260,4 +260,8 @@ export const CostBreakdownEditor: React.FC<CostBreakdownEditorProps> = ({
   );
 };
 
+// Правильный экспорт с memo
+export const CostBreakdownEditor = memo(CostBreakdownEditorComponent);
+
+// Default export для совместимости
 export default CostBreakdownEditor;

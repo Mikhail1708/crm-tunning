@@ -11,7 +11,7 @@ interface JwtPayload {
 }
 
 /**
- * Middleware для проверки JWT токена
+ * Middleware для проверки JWT токена из cookie
  */
 export const authMiddleware = async (
   req: RequestWithUser,
@@ -19,14 +19,14 @@ export const authMiddleware = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    const authHeader = req.headers.authorization;
+    // Берем токен из cookie вместо Authorization header
+    const token = req.cookies?.token;
     
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    if (!token) {
       res.status(401).json({ error: 'Не авторизован' });
       return;
     }
     
-    const token = authHeader.split(' ')[1];
     const decoded = jwt.verify(token, process.env.JWT_SECRET!) as JwtPayload;
     
     req.user = {

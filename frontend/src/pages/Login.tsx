@@ -9,25 +9,27 @@ import { Mail, Lock, LogIn } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 export const Login: React.FC = () => {
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [email, setEmail] = useState<string>('');
   const [password, setPassword] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(false);
   const { login } = useAuth();
   const navigate = useNavigate();
 
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    setLoading(true);
-    try {
-      await login(email, password);
-      navigate('/dashboard');
-    } catch (error) {
-      console.error('Login failed');
-      toast.error('Ошибка входа. Проверьте email и пароль.');
-    } finally {
-      setLoading(false);
-    }
-  };
+ const handleSubmit = async (e: React.FormEvent) => {
+  e.preventDefault();
+  if (isSubmitting) return; 
+  
+  setIsSubmitting(true);
+  try {
+    await login(email, password);
+    navigate('/dashboard');
+  } catch (error) {
+    // ошибка уже обработана в AuthContext
+  } finally {
+    setIsSubmitting(false);
+  }
+};
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary-50 via-white to-primary-50">
@@ -60,14 +62,9 @@ export const Login: React.FC = () => {
               placeholder="Ваш пароль"
               required
             />
-            <Button
-              type="submit"
-              fullWidth
-              loading={loading}
-              icon={LogIn}
-            >
-              Войти
-            </Button>
+            <Button type="submit" disabled={isSubmitting} fullWidth>
+  {isSubmitting ? 'Вход...' : 'Войти'}
+</Button>
           </form>
         </CardBody>
       </Card>

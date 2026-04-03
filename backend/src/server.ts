@@ -1,19 +1,36 @@
 // backend/src/server.ts
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
+import cookieParser from 'cookie-parser';
+import helmet from 'helmet';
 import dotenv from 'dotenv';
 import os from 'os';
+import { globalLimiter, authLimiter, apiLimiter } from './middleware/rateLimit.middleware';
 
 dotenv.config();
 
 const app = express();
 
-// Настройка CORS для доступа из любой сети
-app.use(cors({
-  origin: '*',
-  credentials: true
+// Helmet для безопасных заголовков
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: "cross-origin" },
+  contentSecurityPolicy: false,
 }));
-app.use(express.json());
+
+// Настройка CORS для работы с cookie
+app.use(cors({
+  origin: ['http://localhost:5173', 'http://127.0.0.1:5173'],
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Cookie', 'Authorization'],
+}));
+
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(cookieParser());
+
+// Глобальный лимит для всех запросов
+app.use(globalLimiter);
 
 // Подключаем маршруты
 import authRoutes from './routes/auth.routes';
@@ -27,24 +44,25 @@ import auditRoutes from './routes/audit.routes';
 import { auditLog } from './middleware/audit.middleware';
 import { authMiddleware } from './middleware/auth.middleware';
 
-// Публичные маршруты (не требуют аутентификации)
-app.use('/api/auth', authRoutes);
+// ============ ПУБЛИЧНЫЕ МАРШРУТЫ (без authMiddleware) ============
+app.use('/api/auth', authLimiter, authRoutes);  // authLimiter только для защиты от брутфорса
 app.get('/api/health', (req: Request, res: Response) => {
   res.json({ status: 'OK', timestamp: new Date().toISOString() });
 });
 
-// Middleware аутентификации (применяется ко всем защищенным маршрутам)
+// ============ ЗАЩИЩЕННЫЕ МАРШРУТЫ (с authMiddleware) ============
+// authMiddleware проверяет токен в cookie
 app.use(authMiddleware);
 app.use(auditLog);
 
-// Защищенные маршруты (требуют аутентификации)
-app.use('/api/audit', auditRoutes);
-app.use('/api/products', productRoutes);
-app.use('/api/categories', categoryRoutes);
-app.use('/api/sales', saleRoutes);
-app.use('/api/reports', reportRoutes);
-app.use('/api/sale-documents', saleDocumentRoutes);
-app.use('/api/clients', clientRoutes);
+// API лимит для защищенных маршрутов
+app.use('/api/products', apiLimiter, productRoutes);
+app.use('/api/categories', apiLimiter, categoryRoutes);
+app.use('/api/sales', apiLimiter, saleRoutes);
+app.use('/api/reports', apiLimiter, reportRoutes);
+app.use('/api/sale-documents', apiLimiter, saleDocumentRoutes);
+app.use('/api/clients', apiLimiter, clientRoutes);
+app.use('/api/audit', apiLimiter, auditRoutes);
 
 // Обработка 404
 app.use((req: Request, res: Response) => {
@@ -82,7 +100,6 @@ app.listen(PORT, HOST, () => {
   console.log('📍 Доступные адреса:');
   console.log(`   📱 Локальный:    http://localhost:${PORT}`);
   
-  // Показываем все сетевые интерфейсы
   console.log('\n🔍 Все сетевые интерфейсы:');
   const ips = getLocalIPs();
   for (const [name, addresses] of Object.entries(ips)) {
@@ -92,4 +109,9 @@ app.listen(PORT, HOST, () => {
     }
   }
   console.log('\n✅ Сервер готов к работе!\n');
+  console.log('🔒 Безопасность включена:');
+  console.log('   - HttpOnly Cookies');
+  console.log('   - Rate Limiting');
+  console.log('   - Helmet.js');
+  console.log('   - CORS ограничен');
 });
