@@ -1,30 +1,35 @@
 // backend/src/middleware/rateLimit.middleware.ts
 import rateLimit from 'express-rate-limit';
 
-// Общий лимит для всех запросов (увеличил)
+// Глобальный лимит для всех запросов
 export const globalLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 минута
-  max: 300, // 200 запросов в минуту (было 100)
+  max: 200, // 200 запросов в минуту
   message: { error: 'Слишком много запросов, попробуйте позже' },
   standardHeaders: true,
   legacyHeaders: false,
 });
 
-// Строгий лимит для авторизации (оставляем строгим)
+// Строгий лимит для авторизации (защита от брутфорса)
 export const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 минут
-  max: 10, // 10 попыток входа (было 5)
-  skipSuccessfulRequests: true,
+  max: 5, // 5 попыток входа
+  skipSuccessfulRequests: true, // Не считать успешные входы
   message: { error: 'Слишком много попыток входа. Попробуйте через 15 минут' },
   standardHeaders: true,
   legacyHeaders: false,
 });
 
-// API лимит для защищенных маршрутов (увеличил)
+// Лимит для API запросов
 export const apiLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 минута
-  max: 200, // 100 запросов в минуту (было 30)
+  max: 100, // 100 запросов в минуту
   message: { error: 'Слишком много запросов, подождите немного' },
   standardHeaders: true,
   legacyHeaders: false,
 });
+
+// Функция для отладки (необязательно)
+export const logRateLimitStatus = () => {
+  console.log('✅ Rate limiting configured (in-memory storage, resets on server restart)');
+};

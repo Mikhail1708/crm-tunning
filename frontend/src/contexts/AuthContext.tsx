@@ -23,59 +23,59 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
-  const checkRef = useRef<boolean>(false); // предотвращаем двойные запросы
+  const initialCheckDone = useRef<boolean>(false);
 
- // frontend/src/contexts/AuthContext.tsx
-useEffect(() => {
-  let isMounted = true;
-  let retryCount = 0;
-  const MAX_RETRIES = 1; // только одна попытка
-  
-  const checkAuth = async () => {
-    try {
-      const { data } = await apiClient.get('/auth/me', { withCredentials: true });
-      if (isMounted) {
+  useEffect(() => {
+    if (initialCheckDone.current) return;
+    initialCheckDone.current = true;
+    
+    const checkAuth = async () => {
+      try {
+        console.log('Checking auth status...');
+        const { data } = await apiClient.get('/auth/me', { 
+          withCredentials: true,
+          timeout: 10000
+        });
         setUser(data);
+        console.log('Auth check successful:', data?.email);
+      } catch (error: any) {
+        if (error.response?.status === 429) {
+          console.warn('Rate limited (429), stopping auth checks');
+          setUser(null);
+        } else if (error.response?.status === 401) {
+          console.log('Not authenticated (401)');
+          setUser(null);
+        } else {
+          console.error('Auth check error:', error.message);
+          setUser(null);
+        }
+      } finally {
         setLoading(false);
       }
-    } catch (error: any) {
-      if (error.response?.status === 401) {
-        // Не авторизован - просто выходим, без редиректа
-        if (isMounted) {
-          setUser(null);
-          setLoading(false);
-          // Не делаем редирект, просто показываем страницу логина
-        }
-      } else if (retryCount < MAX_RETRIES && error.name !== 'AbortError') {
-        retryCount++;
-        setTimeout(checkAuth, 1000);
-      } else {
-        if (isMounted) {
-          setUser(null);
-          setLoading(false);
-        }
-      }
-    }
-  };
-  
-  checkAuth();
-  
-  return () => {
-    isMounted = false;
-  };
-}, []);
+    };
+    
+    checkAuth();
+  }, []);
 
   const login = async (email: string, password: string) => {
     try {
+      console.log('Logging in...');
       const { data } = await apiClient.post('/auth/login', { email, password }, {
-        withCredentials: true
+        withCredentials: true,
+        timeout: 15000
       });
       setUser(data.user);
       toast.success('Добро пожаловать!');
       return data;
     } catch (error: any) {
-      const message = error.response?.data?.message || error.response?.data?.error || 'Ошибка входа';
-      toast.error(message);
+      if (error.response?.status === 429) {
+        toast.error('Слишком много попыток входа. Подождите 15 минут');
+        console.error('Rate limited on login');
+      } else if (error.response?.status === 401) {
+        toast.error('Неверный email или пароль');
+      } else {
+        toast.error(error.response?.data?.message || error.response?.data?.error || 'Ошибка входа');
+      }
       throw error;
     }
   };

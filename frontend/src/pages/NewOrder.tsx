@@ -1,6 +1,5 @@
-// frontend/src/pages/NewOrder.tsx
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation, useSearchParams } from 'react-router-dom'; // ← добавить useSearchParams
 import { productsApi } from '../api/products';
 import { categoriesApi } from '../api/categories';
 import { saleDocumentsApi } from '../api/saleDocuments';
@@ -462,7 +461,12 @@ const CartItemComponent: React.FC<CartItemProps> = ({ item, onUpdateQuantity, on
 export const NewOrder: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const clientFromState = (location.state as { clientId?: number })?.clientId;
+  const [searchParams] = useSearchParams(); // ← ДОБАВИТЬ
+  
+  // Получаем clientId из URL (?clientId=123) или из state
+  const clientIdFromUrl = searchParams.get('clientId');
+  const clientIdFromState = (location.state as { clientId?: number })?.clientId;
+  const clientId = clientIdFromUrl ? parseInt(clientIdFromUrl) : clientIdFromState;
   
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -493,10 +497,11 @@ export const NewOrder: React.FC = () => {
     loadProducts();
     loadCategories();
     
-    if (clientFromState) {
-      loadClientById(clientFromState);
+    // Загружаем клиента если есть ID в URL или state
+    if (clientId) {
+      loadClientById(clientId);
     }
-  }, [clientFromState]);
+  }, [clientId])
 
   const loadProducts = async (): Promise<void> => {
     try {
