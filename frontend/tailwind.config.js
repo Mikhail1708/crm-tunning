@@ -4,23 +4,25 @@ export default {
     "./index.html",
     "./src/**/*.{js,ts,jsx,tsx}",
   ],
-  darkMode: 'class', // 👈 Добавляем поддержку темной темы через класс "dark"
+  darkMode: 'class',
   theme: {
     extend: {
       colors: {
+        // Основной цвет — черный/серый вместо синего
         primary: {
-          50: '#eff6ff',
-          100: '#dbeafe',
-          200: '#bfdbfe',
-          300: '#93c5fd',
-          400: '#60a5fa',
-          500: '#3b82f6',
-          600: '#2563eb',
-          700: '#1d4ed8',
-          800: '#1e40af',
-          900: '#1e3a8a',
+          50: '#fafafa',
+          100: '#f5f5f5',
+          200: '#e5e5e5',
+          300: '#d4d4d4',
+          400: '#a3a3a3',
+          500: '#737373',
+          600: '#525252',
+          700: '#404040',
+          800: '#262626',
+          900: '#171717',
+          950: '#0a0a0a',
         },
-        // Добавляем цвета для темной темы
+        // Цвета для темной темы (уже есть в primary)
         dark: {
           50: '#f9fafb',
           100: '#f3f4f6',
@@ -71,7 +73,6 @@ export default {
           '100%': { transform: 'scale(1)' },
         },
       },
-      // Добавляем кастомные брейкпоинты если нужно
       screens: {
         'xs': '475px',
         'sm': '640px',
@@ -80,18 +81,15 @@ export default {
         'xl': '1280px',
         '2xl': '1536px',
       },
-      // Добавляем кастомные шрифты
       fontFamily: {
         'sans': ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
         'mono': ['Fira Code', 'monospace'],
       },
-      // Добавляем кастомные отступы
       spacing: {
         '18': '4.5rem',
         '88': '22rem',
         '128': '32rem',
       },
-      // Добавляем кастомные тени для темной темы
       boxShadow: {
         'dark-sm': '0 1px 2px 0 rgba(0, 0, 0, 0.3)',
         'dark-md': '0 4px 6px -1px rgba(0, 0, 0, 0.3)',
@@ -101,7 +99,6 @@ export default {
     },
   },
   plugins: [
-    // Добавляем плагин для форм (если нужно)
     require('@tailwindcss/forms')({
       strategy: 'class',
     }),

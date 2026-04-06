@@ -15,7 +15,8 @@ interface CardSectionProps {
 export const Card: React.FC<CardProps> = ({ children, className = '', hover = false }) => {
   return (
     <div className={`
-      bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700
+      bg-white dark:bg-dark-800 rounded-2xl shadow-sm 
+      border border-gray-200 dark:border-dark-700
       ${hover ? 'hover:shadow-lg hover:scale-[1.02] transition-all duration-300' : ''}
       ${className}
     `}>
@@ -25,7 +26,7 @@ export const Card: React.FC<CardProps> = ({ children, className = '', hover = fa
 };
 
 export const CardHeader: React.FC<CardSectionProps> = ({ children, className = '' }) => (
-  <div className={`p-6 border-b border-gray-100 dark:border-gray-700 ${className}`}>
+  <div className={`p-6 border-b border-gray-100 dark:border-dark-700 ${className}`}>
     {children}
   </div>
 );
@@ -37,7 +38,7 @@ export const CardBody: React.FC<CardSectionProps> = ({ children, className = '' 
 );
 
 export const CardFooter: React.FC<CardSectionProps> = ({ children, className = '' }) => (
-  <div className={`p-6 border-t border-gray-100 dark:border-gray-700 ${className}`}>
+  <div className={`p-6 border-t border-gray-100 dark:border-dark-700 ${className}`}>
     {children}
   </div>
 );

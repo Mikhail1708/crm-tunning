@@ -145,29 +145,26 @@ model Client {
 }
 
 model SaleDocument {
-  id             Int              @id @default(autoincrement())
-  documentNumber String           @unique
-  documentType   String           // 'order', 'receipt', 'invoice'
-  
+  id             Int                @id @default(autoincrement())
+  documentNumber String             @unique
+  documentType   String             // order, receipt, invoice
   clientId       Int?
-  client         Client?          @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  client         Client?            @relation(fields: [clientId], references: [id])
   clientName     String?
   clientPhone    String?
-  
   customerName   String?
   customerPhone  String?
   customerEmail  String?
   customerAddress String?
-  
   subtotal       Float
-  discount       Float            @default(0)
+  discount       Float              @default(0)
   total          Float
-  tax            Float            @default(0)
   paymentMethod  String?
-  paymentStatus  String           @default("unpaid")
-  saleDate       DateTime         @default(now())
-  createdAt      DateTime         @default(now())
-  updatedAt      DateTime         @updatedAt
+  paymentStatus  String             @default("unpaid")
+  saleDate       DateTime           @default(now())
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+  createdBy      Int?             
   
   items          SaleDocumentItem[]
   sales          Sale[]

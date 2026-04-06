@@ -19,7 +19,7 @@ interface TableRowProps extends React.HTMLAttributes<HTMLTableRowElement> {
 export const Table: React.FC<TableProps> = ({ children, className = '', ...props }) => {
   return (
     <div className="overflow-x-auto">
-      <table className={`min-w-full divide-y divide-gray-200 dark:divide-gray-700 ${className}`} {...props}>
+      <table className={`min-w-full divide-y divide-gray-200 dark:divide-dark-700 ${className}`} {...props}>
         {children}
       </table>
     </div>
@@ -27,17 +27,17 @@ export const Table: React.FC<TableProps> = ({ children, className = '', ...props
 };
 
 export const Thead: React.FC<TableSectionProps> = ({ children }) => {
-  return <thead className="bg-gray-50 dark:bg-gray-800">{children}</thead>;
+  return <thead className="bg-gray-50 dark:bg-dark-800">{children}</thead>;
 };
 
 export const Tbody: React.FC<TableSectionProps> = ({ children }) => {
-  return <tbody className="bg-white dark:bg-gray-900 divide-y divide-gray-200 dark:divide-gray-700">{children}</tbody>;
+  return <tbody className="bg-white dark:bg-dark-900 divide-y divide-gray-200 dark:divide-dark-800">{children}</tbody>;
 };
 
 export const Tr: React.FC<TableRowProps> = ({ children, className = '', onClick, ...props }) => {
   return (
     <tr 
-      className={className} 
+      className={`hover:bg-gray-50 dark:hover:bg-dark-800 transition-colors ${className}`} 
       onClick={onClick}
       style={{ cursor: onClick ? 'pointer' : 'default' }}
       {...props}

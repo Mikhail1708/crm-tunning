@@ -5,7 +5,9 @@ import { saleDocumentsApi } from '../api/saleDocuments';
 import { Button } from '../components/ui/Button';
 import { Table, Thead, Tbody, Tr, Th, Td } from '../components/ui/Table';
 import { formatPrice, formatDate } from '../utils/formatters';
-import { PrintDocument } from '../components/ui/PrintDocument';
+import { PrintDocument, ReceiptType, LegalEntityData } from '../components/ui/PrintDocument';
+import { ReceiptTypeModal } from '../components/ui/ReceiptTypeModal';
+import { LegalEntityModal } from '../components/ui/LegalEntityModal';
 import { SaleDocument } from '../types';
 import { 
   ArrowLeft, 
@@ -30,6 +32,11 @@ export const OrderDetails: React.FC = () => {
   const [order, setOrder] = useState<SaleDocument | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [generating, setGenerating] = useState<boolean>(false);
+  
+  // Состояния для модальных окон чека
+  const [showReceiptTypeModal, setShowReceiptTypeModal] = useState<boolean>(false);
+  const [showLegalEntityModal, setShowLegalEntityModal] = useState<boolean>(false);
+  const [legalData, setLegalData] = useState<LegalEntityData | null>(null);
 
   useEffect(() => {
     loadOrder();
@@ -49,26 +56,78 @@ export const OrderDetails: React.FC = () => {
     }
   };
 
-  const handlePrintReceipt = async (): Promise<void> => {
+  // Просто отметить как оплаченный (без чека)
+  const handleMarkAsPaid = async (): Promise<void> => {
     if (!order) return;
     
     setGenerating(true);
     try {
       await saleDocumentsApi.updatePaymentStatus(order.id, 'paid');
-      await saleDocumentsApi.update(order.id, { documentType: 'receipt' });
-      
-      const updatedOrder = { ...order, paymentStatus: 'paid', documentType: 'receipt' };
+      const updatedOrder = { ...order, paymentStatus: 'paid' };
       setOrder(updatedOrder);
-      
-      toast.success('Чек сформирован');
-      
-      const printWindow = window.open('', '_blank');
-      if (printWindow) {
-        const { renderHTML } = PrintDocument({ order: updatedOrder, type: 'receipt' });
-        printWindow.document.write(renderHTML());
-        printWindow.document.close();
-        printWindow.print();
+      toast.success('Заказ отмечен как оплаченный');
+    } catch (error) {
+      console.error('Error marking as paid:', error);
+      toast.error('Ошибка при отметке оплаты');
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  // Открыть выбор типа чека
+  const handleOpenReceiptModal = () => {
+    setShowReceiptTypeModal(true);
+  };
+
+  // Выбран тип чека
+  const handleReceiptTypeSelect = (type: ReceiptType) => {
+    setShowReceiptTypeModal(false);
+    
+    if (type === 'legal') {
+      // Для юр лица открываем форму с реквизитами
+      setShowLegalEntityModal(true);
+    } else {
+      // Для физ лица сразу генерируем чек
+      generateAndPrintReceipt('individual', null);
+    }
+  };
+
+  // Получены реквизиты юр лица
+  const handleLegalEntitySubmit = async (data: LegalEntityData) => {
+    setShowLegalEntityModal(false);
+    setLegalData(data);
+    generateAndPrintReceipt('legal', data);
+  };
+
+  // Генерация и печать чека
+  const generateAndPrintReceipt = async (type: ReceiptType, legalDataParam: LegalEntityData | null) => {
+    if (!order) return;
+    
+    setGenerating(true);
+    try {
+      // Если заказ еще не оплачен - отмечаем как оплаченный
+      if (order.paymentStatus !== 'paid') {
+        await saleDocumentsApi.updatePaymentStatus(order.id, 'paid');
+        const updatedOrder = { ...order, paymentStatus: 'paid' };
+        setOrder(updatedOrder);
       }
+      
+      // Обновляем тип документа на receipt
+      await saleDocumentsApi.update(order.id, { documentType: 'receipt' });
+      const finalOrder = { ...order, documentType: 'receipt', paymentStatus: 'paid' };
+      setOrder(finalOrder);
+      
+      toast.success(type === 'individual' ? 'Чек сформирован' : 'Счет-фактура сформирован');
+      
+      // Печатаем документ
+      const { print } = PrintDocument({ 
+        order: finalOrder, 
+        type: 'receipt',
+        receiptType: type,
+        legalData: legalDataParam 
+      });
+      print();
+      
     } catch (error) {
       console.error('Error generating receipt:', error);
       toast.error('Ошибка формирования чека');
@@ -89,13 +148,8 @@ export const OrderDetails: React.FC = () => {
       
       toast.success('Счет сформирован');
       
-      const printWindow = window.open('', '_blank');
-      if (printWindow) {
-        const { renderHTML } = PrintDocument({ order: updatedOrder, type: 'invoice' });
-        printWindow.document.write(renderHTML());
-        printWindow.document.close();
-        printWindow.print();
-      }
+      const { print } = PrintDocument({ order: updatedOrder, type: 'invoice' });
+      print();
     } catch (error) {
       console.error('Error generating invoice:', error);
       toast.error('Ошибка формирования счета');
@@ -108,13 +162,9 @@ export const OrderDetails: React.FC = () => {
     if (!order) return;
     
     const type = order.documentType === 'receipt' ? 'receipt' : 'invoice';
-    const printWindow = window.open('', '_blank');
-    if (printWindow) {
-      const { renderHTML } = PrintDocument({ order, type });
-      printWindow.document.write(renderHTML());
-      printWindow.document.close();
-      printWindow.print();
-    }
+    const receiptType = order.documentType === 'receipt' && legalData ? 'legal' : 'individual';
+    const { print } = PrintDocument({ order, type, receiptType, legalData });
+    print();
   };
 
   if (loading) {
@@ -159,8 +209,9 @@ export const OrderDetails: React.FC = () => {
           </div>
         </div>
         <div className="flex gap-2">
+          {/* Кнопка "Чек" - открывает выбор типа */}
           <Button
-            onClick={handlePrintReceipt}
+            onClick={handleOpenReceiptModal}
             disabled={generating}
             icon={Receipt}
             variant="success"
@@ -184,26 +235,41 @@ export const OrderDetails: React.FC = () => {
           ? 'bg-green-50 border border-green-200' 
           : 'bg-yellow-50 border border-yellow-200'
       }`}>
-        <div className="flex items-center gap-2">
-          {order.paymentStatus === 'paid' ? (
-            <CheckCircle className="text-green-600" size={20} />
-          ) : (
-            <XCircle className="text-yellow-600" size={20} />
-          )}
-          <span className={`font-medium ${
-            order.paymentStatus === 'paid' ? 'text-green-700' : 'text-yellow-700'
-          }`}>
-            {order.paymentStatus === 'paid' ? 'Заказ оплачен' : 'Заказ ожидает оплаты'}
-          </span>
-          {order.documentType === 'receipt' && (
-            <span className="ml-2 px-2 py-1 bg-green-100 text-green-700 text-xs rounded-full">
-              Чек выдан
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div className="flex items-center gap-2">
+            {order.paymentStatus === 'paid' ? (
+              <CheckCircle className="text-green-600" size={20} />
+            ) : (
+              <XCircle className="text-yellow-600" size={20} />
+            )}
+            <span className={`font-medium ${
+              order.paymentStatus === 'paid' ? 'text-green-700' : 'text-yellow-700'
+            }`}>
+              {order.paymentStatus === 'paid' ? 'Заказ оплачен' : 'Заказ ожидает оплаты'}
             </span>
-          )}
-          {order.documentType === 'invoice' && (
-            <span className="ml-2 px-2 py-1 bg-blue-100 text-blue-700 text-xs rounded-full">
-              Счет выставлен
-            </span>
+            {order.documentType === 'receipt' && (
+              <span className="ml-2 px-2 py-1 bg-green-100 text-green-700 text-xs rounded-full">
+                Чек выдан
+              </span>
+            )}
+            {order.documentType === 'invoice' && (
+              <span className="ml-2 px-2 py-1 bg-blue-100 text-blue-700 text-xs rounded-full">
+                Счет выставлен
+              </span>
+            )}
+          </div>
+          
+          {/* Кнопка "Отметить как оплаченный" - только если не оплачен */}
+          {order.paymentStatus !== 'paid' && (
+            <Button
+              onClick={handleMarkAsPaid}
+              disabled={generating}
+              icon={CreditCard}
+              variant="secondary"
+              size="sm"
+            >
+              {generating ? 'Обработка...' : 'Отметить как оплаченный'}
+            </Button>
           )}
         </div>
       </div>
@@ -330,17 +396,21 @@ export const OrderDetails: React.FC = () => {
             Распечатать
           </Button>
         )}
-        {order.paymentStatus !== 'paid' && (
-          <Button
-            onClick={handlePrintReceipt}
-            icon={CreditCard}
-            variant="success"
-            disabled={generating}
-          >
-            {generating ? 'Обработка...' : 'Отметить как оплаченный'}
-          </Button>
-        )}
       </div>
+
+      {/* Модальное окно выбора типа чека */}
+      <ReceiptTypeModal
+        isOpen={showReceiptTypeModal}
+        onClose={() => setShowReceiptTypeModal(false)}
+        onSelect={handleReceiptTypeSelect}
+      />
+
+      {/* Модальное окно для реквизитов юр лица */}
+      <LegalEntityModal
+        isOpen={showLegalEntityModal}
+        onClose={() => setShowLegalEntityModal(false)}
+        onSubmit={handleLegalEntitySubmit}
+      />
     </div>
   );
 };

@@ -30,7 +30,21 @@ export const getSaleDocuments = async (req: RequestWithUser, res: Response): Pro
       },
       orderBy: { saleDate: 'desc' }
     });
-    res.json(documents);
+    
+    // Добавляем информацию о продавце (кто создал)
+    const documentsWithSeller = await Promise.all(documents.map(async (doc) => {
+      let sellerName = null;
+      if (doc.createdBy) {
+        const user = await prisma.user.findUnique({
+          where: { id: doc.createdBy },
+          select: { name: true, email: true }
+        });
+        sellerName = user?.name || user?.email || null;
+      }
+      return { ...doc, sellerName };
+    }));
+    
+    res.json(documentsWithSeller);
   } catch (error) {
     console.error('Error getting documents:', error);
     res.status(500).json({ message: 'Ошибка загрузки документов' });
@@ -62,7 +76,17 @@ export const getSaleDocumentById = async (req: RequestWithUser, res: Response): 
       return;
     }
     
-    res.json(document);
+    // Добавляем информацию о продавце
+    let sellerName = null;
+    if (document.createdBy) {
+      const user = await prisma.user.findUnique({
+        where: { id: document.createdBy },
+        select: { name: true, email: true }
+      });
+      sellerName = user?.name || user?.email || null;
+    }
+    
+    res.json({ ...document, sellerName });
   } catch (error) {
     console.error('Error getting document:', error);
     res.status(500).json({ message: 'Ошибка загрузки документа' });
@@ -75,6 +99,12 @@ export const getSaleDocumentById = async (req: RequestWithUser, res: Response): 
  */
 export const createSaleDocument = async (req: RequestWithUser, res: Response): Promise<void> => {
   try {
+    // Проверяем авторизацию
+    if (!req.user) {
+      res.status(401).json({ message: 'Не авторизован' });
+      return;
+    }
+    
     const data: CreateSaleDocumentDTO = req.body;
     const {
       documentType,
@@ -88,6 +118,10 @@ export const createSaleDocument = async (req: RequestWithUser, res: Response): P
       paymentMethod,
       paymentStatus = 'unpaid'
     } = data;
+    
+    // Получаем информацию о текущем пользователе (продавец)
+    const sellerId = req.user.id;
+    const sellerName = req.user.name || req.user.email;
     
     // Определяем имя и телефон клиента
     let finalClientName = customerName;
@@ -119,7 +153,7 @@ export const createSaleDocument = async (req: RequestWithUser, res: Response): P
     const total = subtotal - discount;
     
     const result = await prisma.$transaction(async (tx) => {
-      // Создаем документ
+      // Создаем документ с указанием создателя
       const document = await tx.saleDocument.create({
         data: {
           documentNumber,
@@ -136,7 +170,8 @@ export const createSaleDocument = async (req: RequestWithUser, res: Response): P
           total,
           paymentMethod,
           paymentStatus,
-          saleDate: new Date()
+          saleDate: new Date(),
+          createdBy: sellerId  // Сохраняем ID создателя
         }
       });
       
@@ -209,10 +244,14 @@ export const createSaleDocument = async (req: RequestWithUser, res: Response): P
         });
       }
       
-      return { document, sales };
+      return { document, sales, sellerName };
     });
     
-    res.status(201).json(result);
+    // Возвращаем документ с именем продавца
+    res.status(201).json({
+      document: { ...result.document, sellerName: result.sellerName },
+      sales: result.sales
+    });
   } catch (error) {
     console.error('Error creating sale document:', error);
     const message = error instanceof Error ? error.message : 'Ошибка создания документа';
@@ -372,7 +411,20 @@ export const getDocumentsByClient = async (req: RequestWithUser, res: Response):
       orderBy: { saleDate: 'desc' }
     });
     
-    res.json(documents);
+    // Добавляем информацию о продавце
+    const documentsWithSeller = await Promise.all(documents.map(async (doc) => {
+      let sellerName = null;
+      if (doc.createdBy) {
+        const user = await prisma.user.findUnique({
+          where: { id: doc.createdBy },
+          select: { name: true, email: true }
+        });
+        sellerName = user?.name || user?.email || null;
+      }
+      return { ...doc, sellerName };
+    }));
+    
+    res.json(documentsWithSeller);
   } catch (error) {
     console.error('Error getting documents by client:', error);
     res.status(500).json({ message: 'Ошибка загрузки документов клиента' });

@@ -50,12 +50,12 @@ export const Modal: React.FC<ModalProps> = ({
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 animate-fade-in"
       onClick={handleBackdropClick}
     >
-      <div className={`${sizes[size]} w-full bg-white dark:bg-gray-800 rounded-2xl shadow-xl animate-scale-up`}>
-        <div className="flex items-center justify-between p-6 border-b border-gray-100 dark:border-gray-700">
+      <div className={`${sizes[size]} w-full bg-white dark:bg-dark-800 rounded-2xl shadow-xl animate-scale-up`}>
+        <div className="flex items-center justify-between p-6 border-b border-gray-100 dark:border-dark-700">
           <h2 className="text-xl font-semibold text-gray-900 dark:text-white">{title}</h2>
           <button
             onClick={onClose}
-            className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+            className="p-1 hover:bg-gray-100 dark:hover:bg-dark-700 rounded-lg transition-colors"
             type="button"
           >
             <X size={20} className="text-gray-500 dark:text-gray-400" />
