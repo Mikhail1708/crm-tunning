@@ -5,8 +5,6 @@ import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 import dotenv from 'dotenv';
 import os from 'os';
-import { globalLimiter, authLimiter, apiLimiter, logRateLimitStatus } from './middleware/rateLimit.middleware';
-import { csrfProtection, csrfTokenHandler, csrfValidate } from './middleware/csrf.middleware';
 
 dotenv.config();
 
@@ -30,9 +28,6 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(cookieParser());
 
-// Глобальный лимит для всех запросов
-app.use(globalLimiter);
-
 // Подключаем маршруты
 import authRoutes from './routes/auth.routes';
 import productRoutes from './routes/products.routes';
@@ -45,47 +40,26 @@ import auditRoutes from './routes/audit.routes';
 import { auditLog } from './middleware/audit.middleware';
 import { authMiddleware } from './middleware/auth.middleware';
 
-// ============ ПУБЛИЧНЫЕ МАРШРУТЫ (без authMiddleware, без CSRF) ============
-app.use('/api/auth', authLimiter, authRoutes);
+// ============ ПУБЛИЧНЫЕ МАРШРУТЫ (без authMiddleware) ============
+// Все маршруты авторизации должны быть ДО authMiddleware
+app.use('/api/auth', authRoutes);
 app.get('/api/health', (req: Request, res: Response) => {
   res.json({ status: 'OK', timestamp: new Date().toISOString() });
 });
 
-// ============ CSRF ТОКЕН ДЛЯ ФРОНТЕНДА ============
-// Этот маршрут генерирует и отправляет CSRF токен
-app.get('/api/csrf-token', csrfProtection, csrfTokenHandler, (req: Request, res: Response) => {
-  const token = (req as any).csrfToken?.() || null;
-  res.json({ csrfToken: token });
-});
-
-// ============ ЗАЩИЩЕННЫЕ МАРШРУТЫ ============
-// Сначала проверяем аутентификацию
+// ============ ЗАЩИЩЕННЫЕ МАРШРУТЫ (с authMiddleware) ============
+// authMiddleware применяется ТОЛЬКО к маршрутам ниже
 app.use(authMiddleware);
-
-// Потом проверяем CSRF (только для не-GET запросов)
-app.use(csrfValidate);
-
-// Затем логируем
 app.use(auditLog);
 
-// API с лимитерами
-app.use('/api/products', apiLimiter, productRoutes);
-app.use('/api/categories', apiLimiter, categoryRoutes);
-app.use('/api/sales', apiLimiter, saleRoutes);
-app.use('/api/reports', apiLimiter, reportRoutes);
-app.use('/api/sale-documents', apiLimiter, saleDocumentRoutes);
-app.use('/api/clients', apiLimiter, clientRoutes);
-app.use('/api/audit', apiLimiter, auditRoutes);
-
-// Обработка ошибки CSRF
-app.use((err: any, req: Request, res: Response, next: NextFunction) => {
-  if (err.code === 'EBADCSRFTOKEN') {
-    console.error('CSRF token validation failed:', err.message);
-    res.status(403).json({ error: 'Неверный CSRF токен' });
-    return;
-  }
-  next(err);
-});
+// API маршруты
+app.use('/api/products', productRoutes);
+app.use('/api/categories', categoryRoutes);
+app.use('/api/sales', saleRoutes);
+app.use('/api/reports', reportRoutes);
+app.use('/api/sale-documents', saleDocumentRoutes);
+app.use('/api/clients', clientRoutes);
+app.use('/api/audit', auditRoutes);
 
 // Обработка 404
 app.use((req: Request, res: Response) => {
@@ -133,10 +107,6 @@ app.listen(PORT, HOST, () => {
   console.log('\n✅ Сервер готов к работе!\n');
   console.log('🔒 Безопасность включена:');
   console.log('   - HttpOnly Cookies');
-  console.log('   - CSRF Protection');
-  console.log('   - Rate Limiting');
   console.log('   - Helmet.js');
   console.log('   - CORS ограничен');
-  
-  logRateLimitStatus();
 });

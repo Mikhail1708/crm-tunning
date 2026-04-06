@@ -1,5 +1,6 @@
+// frontend/src/pages/NewOrder.tsx
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { useNavigate, useLocation, useSearchParams } from 'react-router-dom'; // ← добавить useSearchParams
+import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { productsApi } from '../api/products';
 import { categoriesApi } from '../api/categories';
 import { saleDocumentsApi } from '../api/saleDocuments';
@@ -360,14 +361,14 @@ const ProductRow: React.FC<ProductRowProps> = ({ product, isInCart, onAddToCart 
 };
 
 // Компонент строки товара в корзине
-interface CartItemProps {
+interface CartItemComponentProps {
   item: CartItem;
   onUpdateQuantity: (itemId: number, quantity: number) => void;
   onUpdatePrice: (itemId: number, price: number) => void;
   onRemove: (itemId: number) => void;
 }
 
-const CartItemComponent: React.FC<CartItemProps> = ({ item, onUpdateQuantity, onUpdatePrice, onRemove }) => {
+const CartItemComponent: React.FC<CartItemComponentProps> = ({ item, onUpdateQuantity, onUpdatePrice, onRemove }) => {
   const [quantity, setQuantity] = useState<number>(item.quantity);
   const [price, setPrice] = useState<number>(item.selling_price);
   const [quantityError, setQuantityError] = useState<string>('');
@@ -461,9 +462,9 @@ const CartItemComponent: React.FC<CartItemProps> = ({ item, onUpdateQuantity, on
 export const NewOrder: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const [searchParams] = useSearchParams(); // ← ДОБАВИТЬ
+  const [searchParams] = useSearchParams();
   
-  // Получаем clientId из URL (?clientId=123) или из state
+  // Получаем clientId из URL параметра ?clientId=123 или из state
   const clientIdFromUrl = searchParams.get('clientId');
   const clientIdFromState = (location.state as { clientId?: number })?.clientId;
   const clientId = clientIdFromUrl ? parseInt(clientIdFromUrl) : clientIdFromState;
@@ -493,15 +494,18 @@ export const NewOrder: React.FC = () => {
     return new Set(cartItems.map(item => item.id));
   }, [cartItems]);
 
+  // Загрузка данных при монтировании и при изменении clientId
   useEffect(() => {
     loadProducts();
     loadCategories();
-    
-    // Загружаем клиента если есть ID в URL или state
+  }, []);
+
+  // Загрузка клиента если есть clientId в URL или state
+  useEffect(() => {
     if (clientId) {
       loadClientById(clientId);
     }
-  }, [clientId])
+  }, [clientId]);
 
   const loadProducts = async (): Promise<void> => {
     try {
@@ -524,30 +528,41 @@ export const NewOrder: React.FC = () => {
     }
   };
 
-  const loadClientById = async (clientId: number): Promise<void> => {
+  const loadClientById = async (id: number): Promise<void> => {
     try {
-      const response = await clientsApi.getById(clientId);
+      const response = await clientsApi.getById(id);
       const client = response.data;
       setSelectedClient(client);
-      setCustomerName([client.lastName, client.firstName, client.middleName].filter(Boolean).join(' ').trim() || client.firstName);
+      // Формируем ФИО из полей
+      const fullName = [client.lastName, client.firstName, client.middleName]
+        .filter(Boolean)
+        .join(' ')
+        .trim() || client.firstName;
+      setCustomerName(fullName);
       setCustomerPhone(client.phone);
       setCustomerEmail(client.email || '');
       setCustomerCity(client.city || '');
       setPhoneError('');
+      toast.success(`Выбран клиент: ${fullName}`);
     } catch (error) {
       console.error('Error loading client:', error);
+      toast.error('Ошибка загрузки данных клиента');
     }
   };
 
   const handleSelectClient = (client: Client): void => {
     setSelectedClient(client);
-    setCustomerName([client.lastName, client.firstName, client.middleName].filter(Boolean).join(' ').trim() || client.firstName);
+    const fullName = [client.lastName, client.firstName, client.middleName]
+      .filter(Boolean)
+      .join(' ')
+      .trim() || client.firstName;
+    setCustomerName(fullName);
     setCustomerPhone(client.phone);
     setCustomerEmail(client.email || '');
     setCustomerCity(client.city || '');
     setAutoCreatedClient(null);
     setPhoneError('');
-    toast.success(`Выбран клиент: ${customerName || client.firstName}`);
+    toast.success(`Выбран клиент: ${fullName}`);
   };
 
   const handleClearClient = (): void => {
@@ -582,26 +597,30 @@ export const NewOrder: React.FC = () => {
       
       const searchResponse = await clientsApi.search(cleanPhone);
       const existingClient = searchResponse.data.clients.find(
-        c => c.phone.replace(/\D/g, '') === cleanPhone
+        (c: Client) => c.phone.replace(/\D/g, '') === cleanPhone
       );
       
       if (existingClient) {
         setSelectedClient(existingClient);
-        setCustomerName([existingClient.lastName, existingClient.firstName, existingClient.middleName].filter(Boolean).join(' ').trim() || existingClient.firstName);
+        const fullName = [existingClient.lastName, existingClient.firstName, existingClient.middleName]
+          .filter(Boolean)
+          .join(' ')
+          .trim() || existingClient.firstName;
+        setCustomerName(fullName);
         setCustomerPhone(existingClient.phone);
         setCustomerEmail(existingClient.email || '');
         setCustomerCity(existingClient.city || '');
         setPhoneError('');
-        toast.success(`Найден существующий клиент: ${existingClient.firstName}`);
+        toast.success(`Найден существующий клиент: ${fullName}`);
         return existingClient;
       }
       
       const { firstName, lastName, middleName } = parseFullName(customerName);
       
       const newClientData = {
-        firstName: firstName,
-        lastName: lastName,
-        middleName: middleName,
+        firstName: firstName || customerName,
+        lastName: lastName || '',
+        middleName: middleName || '',
         phone: customerPhone,
         email: customerEmail || null,
         city: customerCity || null
@@ -891,7 +910,7 @@ export const NewOrder: React.FC = () => {
                       <td colSpan={6} className="text-center py-8 text-gray-500">
                         <Package size={32} className="mx-auto mb-2 opacity-50" />
                         Товары не найдены
-                       </td>
+                      </td>
                     </tr>
                   ) : (
                     filteredProducts.map(product => (

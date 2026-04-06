@@ -134,14 +134,7 @@ export const ClientDetails: React.FC = () => {
           Назад к списку
         </button>
         
-        <Button
-          onClick={handleNewOrder}
-          icon={Plus}
-          variant="primary"
-          size="sm"
-        >
-          Новый заказ
-        </Button>
+        
       </div>
 
       {/* Информация о клиенте */}
@@ -153,14 +146,7 @@ export const ClientDetails: React.FC = () => {
                 <h2 className="text-xl font-semibold text-gray-900">{getFullName()}</h2>
                 <p className="text-sm text-gray-500">Клиент с {formatDate(client.createdAt)}</p>
               </div>
-              <Button
-                onClick={handleNewOrder}
-                icon={Plus}
-                variant="outline"
-                size="sm"
-              >
-                Новый заказ
-              </Button>
+              
             </div>
           </CardHeader>
           <CardBody className="space-y-4">

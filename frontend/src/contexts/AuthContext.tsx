@@ -26,36 +26,36 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const initialCheckDone = useRef<boolean>(false);
 
   useEffect(() => {
+    // Предотвращаем повторные вызовы
     if (initialCheckDone.current) return;
     initialCheckDone.current = true;
     
     const checkAuth = async () => {
       try {
         console.log('Checking auth status...');
+        // Увеличиваем таймаут для медленных соединений
         const { data } = await apiClient.get('/auth/me', { 
           withCredentials: true,
-          timeout: 10000
+          timeout: 15000
         });
-        setUser(data);
-        console.log('Auth check successful:', data?.email);
-      } catch (error: any) {
-        if (error.response?.status === 429) {
-          console.warn('Rate limited (429), stopping auth checks');
-          setUser(null);
-        } else if (error.response?.status === 401) {
-          console.log('Not authenticated (401)');
-          setUser(null);
+        
+        if (data && data.id) {
+          setUser(data);
+          console.log('Auth check successful:', data.email);
         } else {
-          console.error('Auth check error:', error.message);
           setUser(null);
         }
+      } catch (error: any) {
+        console.error('Auth check error:', error.message);
+        // При любой ошибке - пользователь не авторизован
+        setUser(null);
       } finally {
         setLoading(false);
       }
     };
     
     checkAuth();
-  }, []);
+  }, []); // Пустой массив - только при монтировании
 
   const login = async (email: string, password: string) => {
     try {
@@ -70,7 +70,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (error: any) {
       if (error.response?.status === 429) {
         toast.error('Слишком много попыток входа. Подождите 15 минут');
-        console.error('Rate limited on login');
       } else if (error.response?.status === 401) {
         toast.error('Неверный email или пароль');
       } else {

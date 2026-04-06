@@ -10,42 +10,53 @@ interface JwtPayload {
   role: string;
 }
 
-/**
- * Middleware для проверки JWT токена из cookie
- */
 export const authMiddleware = async (
   req: RequestWithUser,
   res: Response,
   next: NextFunction
 ): Promise<void> => {
   try {
-    // Берем токен из cookie вместо Authorization header
-    const token = req.cookies?.token;
+    let token = req.cookies?.token;
+    
+    if (!token && req.headers.authorization) {
+      const authHeader = req.headers.authorization;
+      if (authHeader.startsWith('Bearer ')) {
+        token = authHeader.split(' ')[1];
+      }
+    }
+    
+    console.log('Auth middleware - token exists:', !!token);
     
     if (!token) {
+      console.log('No token, sending 401');
       res.status(401).json({ error: 'Не авторизован' });
       return;
     }
     
-    const decoded = jwt.verify(token, process.env.JWT_SECRET!) as JwtPayload;
-    
-    req.user = {
-      id: decoded.id,
-      email: decoded.email,
-      name: decoded.name,
-      role: decoded.role
-    };
-    
-    next();
+    try {
+      const decoded = jwt.verify(token, process.env.JWT_SECRET!) as JwtPayload;
+      console.log('Token verified for user:', decoded.email);
+      
+      req.user = {
+        id: decoded.id,
+        email: decoded.email,
+        name: decoded.name,
+        role: decoded.role
+      };
+      
+      console.log('User set, proceeding to next middleware');
+      next();
+    } catch (jwtError) {
+      console.error('JWT verification failed:', jwtError);
+      res.status(401).json({ error: 'Недействительный токен' });
+      return;
+    }
   } catch (error) {
     console.error('Auth middleware error:', error);
     res.status(401).json({ error: 'Недействительный токен' });
   }
 };
 
-/**
- * Middleware для проверки прав администратора
- */
 export const adminMiddleware = async (
   req: RequestWithUser,
   res: Response,
@@ -64,9 +75,6 @@ export const adminMiddleware = async (
   next();
 };
 
-/**
- * Middleware для проверки прав менеджера или администратора
- */
 export const managerAccess = async (
   req: RequestWithUser,
   res: Response,

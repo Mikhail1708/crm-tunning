@@ -19,16 +19,9 @@ interface LoginBody {
   password: string;
 }
 
-/**
- * POST /api/auth/register
- * Регистрация нового пользователя
- */
 export const register = async (req: RequestWithUser, res: Response): Promise<void> => {
   try {
-    let { email, password, name, role }: RegisterBody = req.body;
-
-    email = email.toLowerCase().trim();
-    name = name.trim().replace(/[<>]/g, '');
+    const { email, password, name, role }: RegisterBody = req.body;
     
     const existingUser = await prisma.user.findUnique({ where: { email } });
     if (existingUser) {
@@ -61,13 +54,11 @@ export const register = async (req: RequestWithUser, res: Response): Promise<voi
   }
 };
 
-/**
- * POST /api/auth/login
- * Вход в систему - устанавливаем HttpOnly cookie
- */
 export const login = async (req: RequestWithUser, res: Response): Promise<void> => {
   try {
     const { email, password }: LoginBody = req.body;
+    
+    console.log('Login attempt:', email);
     
     const user = await prisma.user.findUnique({ where: { email } });
     if (!user) {
@@ -92,16 +83,20 @@ export const login = async (req: RequestWithUser, res: Response): Promise<void> 
       { expiresIn: '24h' }
     );
     
-    // Устанавливаем HttpOnly cookie
+    console.log('Token generated, setting cookie...');
+    
+    // Устанавливаем cookie с правильными настройками
     res.cookie('token', token, {
-      httpOnly: true,      // Недоступен из JavaScript (защита от XSS)
-      secure: process.env.NODE_ENV === 'production', // Только HTTPS в продакшене
-      sameSite: 'lax',     // Защита от CSRF
+      httpOnly: true,
+      secure: false, // Для разработки - false
+      sameSite: 'lax',
       maxAge: 24 * 60 * 60 * 1000, // 24 часа
-      path: '/'
+      path: '/',
+      domain: 'localhost' // Явно указываем домен
     });
     
-    // Отправляем пользователя (без токена)
+    console.log('Cookie set, sending response');
+    
     res.json({ 
       user: { 
         id: user.id, 
@@ -116,15 +111,11 @@ export const login = async (req: RequestWithUser, res: Response): Promise<void> 
   }
 };
 
-/**
- * POST /api/auth/logout
- * Выход из системы - удаляем cookie
- */
 export const logout = async (req: RequestWithUser, res: Response): Promise<void> => {
   try {
     res.clearCookie('token', {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
+      secure: false,
       sameSite: 'lax',
       path: '/'
     });
@@ -135,13 +126,13 @@ export const logout = async (req: RequestWithUser, res: Response): Promise<void>
   }
 };
 
-/**
- * GET /api/auth/me
- * Получить информацию о текущем пользователе
- */
+// backend/src/controllers/auth.controller.ts
 export const getMe = async (req: RequestWithUser, res: Response): Promise<void> => {
   try {
+    console.log('getMe called, req.user:', req.user);
+    
     if (!req.user) {
+      console.log('No user in request, sending 401');
       res.status(401).json({ error: 'Не авторизован' });
       return;
     }
@@ -151,6 +142,7 @@ export const getMe = async (req: RequestWithUser, res: Response): Promise<void> 
       select: { id: true, email: true, name: true, role: true, createdAt: true }
     });
     
+    console.log('User found:', user?.email);
     res.json(user);
   } catch (error) {
     console.error('Get me error:', error);
