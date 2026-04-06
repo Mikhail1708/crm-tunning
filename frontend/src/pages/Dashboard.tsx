@@ -1,5 +1,6 @@
 // frontend/src/pages/Dashboard.tsx
 import React, { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { reportsApi } from '../api/reports';
 import { productsApi } from '../api/products';
 import { clientsApi } from '../api/clients';
@@ -57,6 +58,7 @@ interface RecentClient {
 }
 
 export const Dashboard: React.FC = () => {
+  const navigate = useNavigate();
   const [loading, setLoading] = useState<boolean>(true);
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
@@ -92,18 +94,44 @@ export const Dashboard: React.FC = () => {
         saleDocumentsApi.getAll()
       ]);
       
+      // 🔸 ЛОГИРУЕМ СТРУКТУРУ ДАННЫХ ДЛЯ ОТЛАДКИ
+      console.log('📊 API Responses:', {
+        products: productsRes.data,
+        lowStock: lowStockRes.data,
+        clients: clientsRes.data,
+        sales: salesRes.data
+      });
+      
       const allProducts = productsRes.data || [];
       const allSales = salesRes.data || [];
       const lowStockData = lowStockRes.data || [];
-      const clients = clientsRes.data?.data?.clients || [];
-      const totalClients = clientsRes.data?.data?.total || 0;
       
-      console.log('📊 Data loaded:', {
-        products: allProducts.length,
-        sales: allSales.length,
-        lowStock: lowStockData.length,
-        clients: totalClients
-      });
+      // 🔸 ИСПРАВЛЕНО: правильное получение клиентов
+      let clients: Client[] = [];
+      let totalClients = 0;
+      
+      if (clientsRes.data) {
+        // Проверяем структуру ответа
+        if (Array.isArray(clientsRes.data)) {
+          clients = clientsRes.data;
+          totalClients = clients.length;
+        } else if (clientsRes.data.data && Array.isArray(clientsRes.data.data)) {
+          clients = clientsRes.data.data;
+          totalClients = clientsRes.data.total || clients.length;
+        } else if (clientsRes.data.clients && Array.isArray(clientsRes.data.clients)) {
+          clients = clientsRes.data.clients;
+          totalClients = clientsRes.data.total || clients.length;
+        } else if (clientsRes.data.items && Array.isArray(clientsRes.data.items)) {
+          clients = clientsRes.data.items;
+          totalClients = clientsRes.data.total || clients.length;
+        } else {
+          // Если ничего не подошло, пробуем получить из response
+          clients = Array.isArray(clientsRes.data) ? clientsRes.data : [];
+          totalClients = clients.length;
+        }
+      }
+      
+      console.log('👥 Clients loaded:', { clients: clients.length, totalClients });
       
       // Фильтруем ТОЛЬКО ОПЛАЧЕННЫЕ заказы
       const paidSales = allSales.filter(sale => {
@@ -152,7 +180,7 @@ export const Dashboard: React.FC = () => {
         totalSales: totalSalesCount,
         totalProducts: allProducts.length,
         lowStockCount: lowStockProductsList.length,
-        totalClients,
+        totalClients: totalClients,
         totalStock,
         averageCheck,
         unpaidSales: unpaidSales.length,
@@ -247,15 +275,29 @@ export const Dashboard: React.FC = () => {
         });
       setRecentSales(recentSalesData);
       
-      // Последние 5 клиентов
-      const recentClientsData: RecentClient[] = clients.slice(0, 5).map((client: Client) => ({
-        id: client.id,
-        name: [client.lastName, client.firstName, client.middleName].filter(Boolean).join(' ') || client.firstName || client.name || 'Без имени',
-        phone: client.phone,
-        city: client.city,
-        createdAt: client.createdAt,
-        totalSpent: client.totalSpent || 0
-      }));
+      // 🔸 ИСПРАВЛЕНО: последние 5 клиентов (сортировка по дате создания)
+      const sortedClients = [...clients].sort((a, b) => 
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      );
+      
+      const recentClientsData: RecentClient[] = sortedClients.slice(0, 5).map((client: Client) => {
+        // Формируем полное имя
+        const fullName = [client.lastName, client.firstName, client.middleName]
+          .filter(Boolean)
+          .join(' ')
+          .trim();
+        
+        return {
+          id: client.id,
+          name: fullName || client.firstName || client.name || 'Без имени',
+          phone: client.phone,
+          city: client.city,
+          createdAt: client.createdAt,
+          totalSpent: client.totalSpent || 0
+        };
+      });
+      
+      console.log('📋 Recent clients:', recentClientsData);
       setRecentClients(recentClientsData);
       
     } catch (error) {
@@ -506,7 +548,7 @@ export const Dashboard: React.FC = () => {
                 <h2 className="text-lg font-semibold text-gray-900">Последние заказы</h2>
               </div>
               <button 
-                onClick={() => window.location.href = '/sales'}
+                onClick={() => navigate('/sales')}
                 className="text-xs text-primary-600 hover:text-primary-700 flex items-center gap-1"
               >
                 Все заказы <ArrowRight size={12} />
@@ -526,7 +568,7 @@ export const Dashboard: React.FC = () => {
                   <div 
                     key={sale.id} 
                     className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg transition-colors cursor-pointer" 
-                    onClick={() => window.location.href = `/sales/${sale.id}`}
+                    onClick={() => navigate(`/sales/${sale.id}`)}
                   >
                     <div className="flex-1">
                       <div className="flex items-center gap-2 flex-wrap">
@@ -584,7 +626,7 @@ export const Dashboard: React.FC = () => {
                 <h2 className="text-lg font-semibold text-gray-900">Новые клиенты</h2>
               </div>
               <button 
-                onClick={() => window.location.href = '/clients'}
+                onClick={() => navigate('/clients')}
                 className="text-xs text-primary-600 hover:text-primary-700 flex items-center gap-1"
               >
                 Все клиенты <ArrowRight size={12} />
@@ -604,7 +646,7 @@ export const Dashboard: React.FC = () => {
                   <div 
                     key={client.id} 
                     className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg transition-colors cursor-pointer"
-                    onClick={() => window.location.href = `/clients/${client.id}`}
+                    onClick={() => navigate(`/clients/${client.id}`)}
                   >
                     <div className="flex-1">
                       <p className="font-medium text-gray-900 text-sm">{client.name}</p>

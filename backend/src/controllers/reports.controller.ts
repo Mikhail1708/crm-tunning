@@ -1,10 +1,12 @@
 // backend/src/controllers/reports.controller.ts
-// backend/src/controllers/reports.controller.ts
 import { Response } from 'express';
 import { PrismaClient, Prisma } from '@prisma/client';
 import { RequestWithUser, CreateExpenseDTO, SalesStats, ProductProfitReport } from '../types';
+import fs from 'fs';
+import path from 'path';
 
 const prisma = new PrismaClient();
+
 export const getSummary = async (req: RequestWithUser, res: Response): Promise<void> => {
   try {
     // Получаем только оплаченные заказы
@@ -482,6 +484,8 @@ export const getDatabaseDump = async (req: RequestWithUser, res: Response): Prom
       return;
     }
     
+    console.log('📦 Создание дампа базы данных...');
+    
     const [users, products, categories, categoryFields, productCharacteristics, sales, saleDocuments, saleDocumentItems, expenses, clients] = await Promise.all([
       prisma.user.findMany(),
       prisma.product.findMany({
@@ -493,8 +497,7 @@ export const getDatabaseDump = async (req: RequestWithUser, res: Response): Prom
           },
           characteristics: {
             include: { field: true }
-          },
-          saleDocumentItems: true
+          }
         }
       }),
       prisma.category.findMany({
@@ -517,7 +520,7 @@ export const getDatabaseDump = async (req: RequestWithUser, res: Response): Prom
     
     const dump = {
       exportedAt: new Date().toISOString(),
-      version: '1.0',
+      version: '2.0',
       data: {
         users: users.map(({ id, ...rest }) => rest),
         products: products.map(({ id, ...rest }) => rest),
@@ -532,7 +535,18 @@ export const getDatabaseDump = async (req: RequestWithUser, res: Response): Prom
       }
     };
     
-    console.log('✅ Экспорт базы данных завершен');
+    // Сохраняем в файл
+    const backupDir = path.join(process.cwd(), 'backups');
+    if (!fs.existsSync(backupDir)) {
+      fs.mkdirSync(backupDir, { recursive: true });
+    }
+    
+    const filename = `backup_${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
+    const filepath = path.join(backupDir, filename);
+    fs.writeFileSync(filepath, JSON.stringify(dump, null, 2), 'utf-8');
+    
+    console.log(`✅ Дамп сохранен: ${filepath}`);
+    console.log(`✅ Экспорт базы данных завершен`);
     res.json(dump);
   } catch (error) {
     console.error('Error creating database dump:', error);
@@ -542,7 +556,7 @@ export const getDatabaseDump = async (req: RequestWithUser, res: Response): Prom
 
 /**
  * POST /api/reports/restore
- * Восстановление базы данных из дампа
+ * Восстановление базы данных из дампа (ПОЛНОСТЬЮ ПЕРЕРАБОТАНО)
  */
 export const restoreDatabase = async (req: RequestWithUser, res: Response): Promise<void> => {
   try {
@@ -558,41 +572,77 @@ export const restoreDatabase = async (req: RequestWithUser, res: Response): Prom
       return;
     }
     
-    console.log('Начинаем восстановление базы данных...');
+    console.log('🔄 Начинаем восстановление базы данных...');
     
+    // Выполняем восстановление в транзакции
     await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-      // Очищаем все таблицы в правильном порядке
-      await tx.saleDocumentItem.deleteMany();
-      await tx.sale.deleteMany();
-      await tx.saleDocument.deleteMany();
-      await tx.productCharacteristic.deleteMany();
-      await tx.expense.deleteMany();
-      await tx.client.deleteMany();
+      // ==================== ШАГ 1: ОЧИСТКА БД ====================
+      console.log('🗑️ Очистка базы данных...');
       
+      // Удаляем элементы документов
+      await tx.saleDocumentItem.deleteMany();
+      console.log('  - saleDocumentItems удалены');
+      
+      // Удаляем продажи
+      await tx.sale.deleteMany();
+      console.log('  - sales удалены');
+      
+      // Удаляем документы продаж
+      await tx.saleDocument.deleteMany();
+      console.log('  - saleDocuments удалены');
+      
+      // Удаляем характеристики товаров
+      await tx.productCharacteristic.deleteMany();
+      console.log('  - productCharacteristics удалены');
+      
+      // Удаляем расходы
+      await tx.expense.deleteMany();
+      console.log('  - expenses удалены');
+      
+      // Удаляем клиентов
+      await tx.client.deleteMany();
+      console.log('  - clients удалены');
+      
+      // Удаляем связи товаров с категориями
       try {
-        await tx.productCategory.deleteMany();
+        await tx.$executeRaw`TRUNCATE TABLE "ProductCategory" RESTART IDENTITY CASCADE;`;
       } catch (error) {
-        console.log('ProductCategory table may not exist, skipping...');
+        console.log('  - ProductCategory удалены (или таблица не существует)');
       }
       
+      // Удаляем товары
       await tx.product.deleteMany();
-      await tx.categoryField.deleteMany();
-      await tx.category.deleteMany();
+      console.log('  - products удалены');
       
+      // Удаляем поля категорий
+      await tx.categoryField.deleteMany();
+      console.log('  - categoryFields удалены');
+      
+      // Удаляем категории
+      await tx.category.deleteMany();
+      console.log('  - categories удалены');
+      
+      // Удаляем не-админ пользователей
       await tx.user.deleteMany({
         where: {
           role: { not: 'admin' }
         }
       });
+      console.log('  - non-admin users удалены');
       
-      // Маппы для соответствия ID
+      console.log('✅ Очистка завершена');
+      
+      // ==================== ШАГ 2: ВОССТАНОВЛЕНИЕ ====================
+      console.log('📥 Восстановление данных...');
+      
+      // Маппы для соответствия старых ID новым
       const categoryIdMap = new Map<number, number>();
       const fieldIdMap = new Map<number, number>();
       const productIdMap = new Map<number, number>();
       const clientIdMap = new Map<number, number>();
       const documentIdMap = new Map<number, number>();
       
-      // Восстанавливаем категории
+      // 2.1 Восстанавливаем категории
       if (dump.data.categories && dump.data.categories.length > 0) {
         for (const category of dump.data.categories) {
           const oldId = category.id;
@@ -602,12 +652,13 @@ export const restoreDatabase = async (req: RequestWithUser, res: Response): Prom
           });
           categoryIdMap.set(oldId, newCategory.id);
         }
-        console.log(`Восстановлено ${dump.data.categories.length} категорий`);
+        console.log(`  ✅ Восстановлено ${dump.data.categories.length} категорий`);
       }
       
-      // Восстанавливаем поля категорий
+      // 2.2 Восстанавливаем поля категорий
       if (dump.data.categoryFields && dump.data.categoryFields.length > 0) {
         for (const field of dump.data.categoryFields) {
+          const oldId = field.id;
           const { id, values, categoryId, ...fieldData } = field;
           const newCategoryId = categoryIdMap.get(categoryId);
           if (newCategoryId) {
@@ -617,27 +668,17 @@ export const restoreDatabase = async (req: RequestWithUser, res: Response): Prom
                 categoryId: newCategoryId
               }
             });
-            fieldIdMap.set(id, newField.id);
+            fieldIdMap.set(oldId, newField.id);
           }
         }
-        console.log(`Восстановлено ${dump.data.categoryFields.length} полей категорий`);
+        console.log(`  ✅ Восстановлено ${dump.data.categoryFields.length} полей категорий`);
       }
       
-      // Восстанавливаем товары
+      // 2.3 Восстанавливаем товары
       if (dump.data.products && dump.data.products.length > 0) {
         for (const product of dump.data.products) {
           const oldId = product.id;
-          const {
-            id,
-            categories,
-            characteristics,
-            sales,
-            saleDocumentItems,
-            productCategory,
-            category,
-            categoryId,
-            ...productData
-          } = product;
+          const { id, categories, characteristics, sales, saleDocumentItems, productCategory, category, categoryId, ...productData } = product;
           
           if (!productData.costBreakdown) {
             productData.costBreakdown = [];
@@ -647,36 +688,51 @@ export const restoreDatabase = async (req: RequestWithUser, res: Response): Prom
             data: productData
           });
           productIdMap.set(oldId, newProduct.id);
+        }
+        console.log(`  ✅ Восстановлено ${dump.data.products.length} товаров`);
+        
+        // Восстанавливаем связи товаров с категориями
+        for (const product of dump.data.products) {
+          const newProductId = productIdMap.get(product.id);
+          if (!newProductId) continue;
           
-          // Восстанавливаем связи с категориями
-          if (categoryId && categoryIdMap.has(categoryId)) {
-            await tx.productCategory.create({
-              data: {
-                productId: newProduct.id,
-                categoryId: categoryIdMap.get(categoryId)!
-              }
-            });
-          }
-          
-          if (categories && Array.isArray(categories)) {
-            for (const cat of categories) {
-              const catId = cat.categoryId || cat.id;
-              if (categoryIdMap.has(catId)) {
-                await tx.productCategory.create({
-                  data: {
-                    productId: newProduct.id,
-                    categoryId: categoryIdMap.get(catId)!
-                  }
-                });
+          // Связи из product.categories
+          if (product.categories && Array.isArray(product.categories)) {
+            for (const pc of product.categories) {
+              const catId = pc.categoryId || pc.category?.id;
+              if (catId && categoryIdMap.has(catId)) {
+                try {
+                  await tx.$executeRaw`
+                    INSERT INTO "ProductCategory" ("productId", "categoryId")
+                    VALUES (${newProductId}, ${categoryIdMap.get(catId)})
+                    ON CONFLICT DO NOTHING
+                  `;
+                } catch (error) {
+                  console.log(`    ⚠️ Не удалось добавить связь товара ${newProductId} с категорией ${catId}`);
+                }
               }
             }
           }
+          
+          // Связи из categoryId (старая структура)
+          if (product.categoryId && categoryIdMap.has(product.categoryId)) {
+            try {
+              await tx.$executeRaw`
+                INSERT INTO "ProductCategory" ("productId", "categoryId")
+                VALUES (${newProductId}, ${categoryIdMap.get(product.categoryId)})
+                ON CONFLICT DO NOTHING
+              `;
+            } catch (error) {
+              console.log(`    ⚠️ Не удалось добавить связь товара ${newProductId} с категорией ${product.categoryId}`);
+            }
+          }
         }
-        console.log(`Восстановлено ${dump.data.products.length} товаров`);
+        console.log(`  ✅ Восстановлены связи товаров с категориями`);
       }
       
-      // Восстанавливаем характеристики товаров
+      // 2.4 Восстанавливаем характеристики товаров
       if (dump.data.productCharacteristics && dump.data.productCharacteristics.length > 0) {
+        let restored = 0;
         for (const char of dump.data.productCharacteristics) {
           const { id, productId, fieldId, ...charData } = char;
           const newProductId = productIdMap.get(productId);
@@ -690,12 +746,13 @@ export const restoreDatabase = async (req: RequestWithUser, res: Response): Prom
                 fieldId: newFieldId
               }
             });
+            restored++;
           }
         }
-        console.log(`Восстановлено ${dump.data.productCharacteristics.length} характеристик`);
+        console.log(`  ✅ Восстановлено ${restored} характеристик`);
       }
       
-      // Восстанавливаем клиентов
+      // 2.5 Восстанавливаем клиентов
       if (dump.data.clients && dump.data.clients.length > 0) {
         for (const client of dump.data.clients) {
           const oldId = client.id;
@@ -705,34 +762,18 @@ export const restoreDatabase = async (req: RequestWithUser, res: Response): Prom
           });
           clientIdMap.set(oldId, newClient.id);
         }
-        console.log(`Восстановлено ${dump.data.clients.length} клиентов`);
+        console.log(`  ✅ Восстановлено ${dump.data.clients.length} клиентов`);
       }
       
-      // Восстанавливаем документы продаж
+      // 2.6 Восстанавливаем документы продаж
       if (dump.data.saleDocuments && dump.data.saleDocuments.length > 0) {
         for (const doc of dump.data.saleDocuments) {
           const oldId = doc.id;
+          const { id, items, sales, client, ...docData } = doc;
           
-          const cleanDocData: any = {
-            documentNumber: doc.documentNumber,
-            documentType: doc.documentType,
-            clientName: doc.clientName,
-            clientPhone: doc.clientPhone,
-            customerName: doc.customerName,
-            customerPhone: doc.customerPhone,
-            customerEmail: doc.customerEmail,
-            customerAddress: doc.customerAddress,
-            subtotal: doc.subtotal,
-            discount: doc.discount,
-            total: doc.total,
-            tax: doc.tax,
-            paymentMethod: doc.paymentMethod,
-            paymentStatus: doc.paymentStatus,
-            saleDate: doc.saleDate,
-            createdAt: doc.createdAt,
-            updatedAt: doc.updatedAt
-          };
+          const cleanDocData: any = { ...docData };
           
+          // Устанавливаем clientId если есть
           if (doc.clientId && clientIdMap.has(doc.clientId)) {
             cleanDocData.clientId = clientIdMap.get(doc.clientId);
           } else if (doc.client?.id && clientIdMap.has(doc.client.id)) {
@@ -744,11 +785,12 @@ export const restoreDatabase = async (req: RequestWithUser, res: Response): Prom
           });
           documentIdMap.set(oldId, newDoc.id);
         }
-        console.log(`Восстановлено ${dump.data.saleDocuments.length} документов`);
+        console.log(`  ✅ Восстановлено ${dump.data.saleDocuments.length} документов`);
       }
       
-      // Восстанавливаем элементы документов
+      // 2.7 Восстанавливаем элементы документов
       if (dump.data.saleDocumentItems && dump.data.saleDocumentItems.length > 0) {
+        let restored = 0;
         for (const item of dump.data.saleDocumentItems) {
           const { id, documentId, productId, ...itemData } = item;
           const newDocumentId = documentIdMap.get(documentId);
@@ -762,73 +804,54 @@ export const restoreDatabase = async (req: RequestWithUser, res: Response): Prom
                 productId: newProductId
               }
             });
-          } else {
-            console.log(`⚠️ Пропущен элемент документа: documentId=${documentId}, productId=${productId}`);
+            restored++;
           }
         }
-        console.log(`Восстановлено ${dump.data.saleDocumentItems.length} элементов документов`);
+        console.log(`  ✅ Восстановлено ${restored} элементов документов`);
       }
       
-      // Восстанавливаем продажи - ИСПРАВЛЕННАЯ ВЕРСИЯ
+      // 2.8 Восстанавливаем продажи
       if (dump.data.sales && dump.data.sales.length > 0) {
-        let restoredCount = 0;
-        let skippedCount = 0;
-        
+        let restored = 0;
         for (const sale of dump.data.sales) {
-          const {
-            id,
-            product,
-            document,
-            ...saleData
-          } = sale;
-          
+          const { id, product, document, ...saleData } = sale;
           const newProductId = productIdMap.get(sale.productId);
-          const newDocumentId = sale.documentId ? documentIdMap.get(sale.documentId) : null;
           
-          // Проверяем, что productId существует
           if (!newProductId) {
-            console.log(`⚠️ Пропущена продажа: productId ${sale.productId} не найден в маппе`);
-            skippedCount++;
             continue;
           }
           
           const dataToCreate: any = { ...saleData };
           dataToCreate.productId = newProductId;
           
-          // Добавляем documentId только если он существует
-          if (newDocumentId) {
-            dataToCreate.documentId = newDocumentId;
+          if (sale.documentId && documentIdMap.has(sale.documentId)) {
+            dataToCreate.documentId = documentIdMap.get(sale.documentId);
           }
           
-          // Удаляем старые ID, которые могли остаться
           delete dataToCreate.id;
           
           try {
-            await tx.sale.create({
-              data: dataToCreate
-            });
-            restoredCount++;
+            await tx.sale.create({ data: dataToCreate });
+            restored++;
           } catch (err) {
-            console.error(`❌ Ошибка при создании продажи:`, err);
-            skippedCount++;
+            console.log(`    ⚠️ Ошибка при создании продажи:`, err);
           }
         }
-        console.log(`Восстановлено ${restoredCount} продаж, пропущено ${skippedCount}`);
+        console.log(`  ✅ Восстановлено ${restored} продаж`);
       }
       
-      // Восстанавливаем расходы
+      // 2.9 Восстанавливаем расходы
       if (dump.data.expenses && dump.data.expenses.length > 0) {
         for (const expense of dump.data.expenses) {
           const { id, ...expenseData } = expense;
-          await tx.expense.create({
-            data: expenseData
-          });
+          await tx.expense.create({ data: expenseData });
         }
-        console.log(`Восстановлено ${dump.data.expenses.length} расходов`);
+        console.log(`  ✅ Восстановлено ${dump.data.expenses.length} расходов`);
       }
       
-      // Восстанавливаем пользователей
+      // 2.10 Восстанавливаем пользователей (не админов)
       if (dump.data.users && dump.data.users.length > 0) {
+        let restored = 0;
         for (const user of dump.data.users) {
           if (user.role !== 'admin') {
             const { id, ...userData } = user;
@@ -836,22 +859,27 @@ export const restoreDatabase = async (req: RequestWithUser, res: Response): Prom
               where: { email: userData.email }
             });
             if (!existingUser) {
-              await tx.user.create({
-                data: userData
-              });
+              await tx.user.create({ data: userData });
+              restored++;
             }
           }
         }
-        console.log(`Восстановлены пользователи (кроме администратора)`);
+        console.log(`  ✅ Восстановлено ${restored} пользователей`);
       }
     });
     
     console.log('✅ Восстановление базы данных завершено успешно!');
-    res.json({ message: 'База данных успешно восстановлена из дампа' });
+    res.json({ 
+      success: true,
+      message: 'База данных успешно восстановлена из дампа',
+      timestamp: new Date().toISOString()
+    });
     
   } catch (error) {
-    console.error('Error restoring database:', error);
-    res.status(500).json({ message: `Ошибка восстановления базы данных: ${error instanceof Error ? error.message : 'Unknown error'}` });
+    console.error('❌ Error restoring database:', error);
+    res.status(500).json({ 
+      message: `Ошибка восстановления базы данных: ${error instanceof Error ? error.message : 'Unknown error'}` 
+    });
   }
 };
 
@@ -875,7 +903,7 @@ export const clearDatabase = async (req: RequestWithUser, res: Response): Promis
       await tx.client.deleteMany();
       
       try {
-        await tx.productCategory.deleteMany();
+        await tx.$executeRaw`TRUNCATE TABLE "ProductCategory" RESTART IDENTITY CASCADE;`;
       } catch (error) {
         console.log('ProductCategory table may not exist, skipping...');
       }

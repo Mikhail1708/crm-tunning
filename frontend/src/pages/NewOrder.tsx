@@ -1,5 +1,5 @@
 // frontend/src/pages/NewOrder.tsx
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { productsApi } from '../api/products';
 import { categoriesApi } from '../api/categories';
@@ -8,7 +8,7 @@ import { clientsApi } from '../api/clients';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { formatPrice } from '../utils/formatters';
-import { Product, Category, Client } from '../types';
+import { Product, Category, CategoryField, Client } from '../types';
 import { 
   Plus, 
   Minus, 
@@ -28,7 +28,15 @@ import {
   AlertCircle,
   CheckCircle,
   MapPin,
-  AlignLeft
+  AlignLeft,
+  Filter,
+  SlidersHorizontal,
+  Tag,
+  DollarSign,
+  Boxes,
+  RefreshCw,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -49,6 +57,15 @@ interface Totals {
   totalWithDiscount: number;
   totalProfit: number;
   discountPercent: number;
+}
+
+interface FilterState {
+  search: string;
+  categoryIds: number[];
+  priceMin: number | '';
+  priceMax: number | '';
+  stockStatus: 'all' | 'low' | 'out' | 'in';
+  characteristics: Record<string, string | string[]>;
 }
 
 // Функция валидации телефона
@@ -108,6 +125,156 @@ const parseFullName = (fullName: string): { firstName: string; lastName: string;
   return { firstName, lastName, middleName };
 };
 
+// Компонент выбора нескольких категорий
+interface CategoryMultiSelectProps {
+  categories: Category[];
+  selectedIds: number[];
+  onChange: (ids: number[]) => void;
+  className?: string;
+}
+
+const CategoryMultiSelect: React.FC<CategoryMultiSelectProps> = ({ categories, selectedIds, onChange, className }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const toggleCategory = (categoryId: number) => {
+    if (selectedIds.includes(categoryId)) {
+      onChange(selectedIds.filter(id => id !== categoryId));
+    } else {
+      onChange([...selectedIds, categoryId]);
+    }
+  };
+
+  const selectedCategories = categories.filter(c => selectedIds.includes(c.id));
+  const displayText = selectedCategories.length === 0 
+    ? 'Все категории' 
+    : selectedCategories.map(c => c.name).join(', ');
+
+  return (
+    <div className={`relative ${className || ''}`} ref={dropdownRef}>
+      <button
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-full px-3 py-2 text-left rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-500 flex items-center justify-between bg-white text-sm"
+      >
+        <span className="truncate">{displayText}</span>
+        <ChevronDown size={14} className={`text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+      </button>
+      
+      {isOpen && (
+        <div className="absolute z-20 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+          <div className="p-2 border-b border-gray-100">
+            <button
+              type="button"
+              onClick={() => onChange([])}
+              className="text-xs text-primary-600 hover:text-primary-700"
+            >
+              Сбросить все
+            </button>
+          </div>
+          {categories.map(category => (
+            <div
+              key={category.id}
+              onClick={() => toggleCategory(category.id)}
+              className="flex items-center gap-2 px-3 py-2 hover:bg-gray-50 cursor-pointer"
+            >
+              {selectedIds.includes(category.id) ? (
+                <CheckCircle size={14} className="text-primary-600" />
+              ) : (
+                <div className="w-3.5 h-3.5 rounded-full border border-gray-300" />
+              )}
+              <span className="text-sm">{category.name}</span>
+              {category._count?.products !== undefined && (
+                <span className="text-xs text-gray-400 ml-auto">({category._count.products})</span>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// Компонент фильтра по характеристикам
+interface CharacteristicFilterProps {
+  fields: CategoryField[];
+  values: Record<string, string | string[]>;
+  onChange: (fieldId: string, value: string | string[]) => void;
+  onClear: (fieldId: string) => void;
+}
+
+const CharacteristicFilter: React.FC<CharacteristicFilterProps> = ({ fields, values, onChange, onClear }) => {
+  if (fields.length === 0) return null;
+
+  return (
+    <div className="space-y-3">
+      <h4 className="font-medium text-gray-700 text-xs flex items-center gap-1">
+        <Tag size={12} />
+        Характеристики
+      </h4>
+      <div className="grid grid-cols-2 gap-2">
+        {fields.map((field) => {
+          const currentValue = values[field.id] || '';
+          
+          if (field.fieldType === 'select' || field.fieldType === 'multiselect') {
+            let options: string[] = [];
+            if (field.options) {
+              if (typeof field.options === 'string') {
+                try {
+                  options = JSON.parse(field.options);
+                } catch {
+                  options = field.options.split(',').map(s => s.trim());
+                }
+              } else if (Array.isArray(field.options)) {
+                options = field.options;
+              }
+            }
+            
+            return (
+              <div key={field.id} className="space-y-0.5">
+                <label className="text-xs text-gray-500">{field.name}</label>
+                <select
+                  value={typeof currentValue === 'string' ? currentValue : ''}
+                  onChange={(e) => onChange(field.id.toString(), e.target.value)}
+                  className="w-full px-2 py-1 text-xs rounded border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                >
+                  <option value="">Все</option>
+                  {options.map(opt => (
+                    <option key={opt} value={opt}>{opt}</option>
+                  ))}
+                </select>
+              </div>
+            );
+          }
+          
+          return (
+            <div key={field.id} className="space-y-0.5">
+              <label className="text-xs text-gray-500">{field.name}</label>
+              <input
+                type="text"
+                value={currentValue as string || ''}
+                onChange={(e) => onChange(field.id.toString(), e.target.value)}
+                placeholder="Любое значение"
+                className="w-full px-2 py-1 text-xs rounded border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-500"
+              />
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
 // Компонент поиска клиента
 interface ClientSearchProps {
   selectedClient: Client | null;
@@ -162,20 +329,17 @@ const ClientSearch: React.FC<ClientSearchProps> = ({ selectedClient, onSelect, o
       .trim() || selectedClient.firstName;
     
     return (
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+      <div className="bg-blue-50 border border-blue-200 rounded-lg p-2">
         <div className="flex justify-between items-start">
-          <div>
-            <p className="font-medium text-gray-900">{fullName}</p>
-            <p className="text-sm text-gray-600 mt-0.5">📞 {selectedClient.phone}</p>
+          <div className="flex-1">
+            <p className="font-medium text-gray-900 text-sm">{fullName}</p>
+            <p className="text-xs text-gray-600 mt-0.5">📞 {selectedClient.phone}</p>
             {selectedClient.city && (
-              <p className="text-sm text-gray-600 mt-0.5">🏙️ {selectedClient.city}</p>
-            )}
-            {selectedClient.carModel && (
-              <p className="text-sm text-gray-600">🚗 {selectedClient.carModel}</p>
+              <p className="text-xs text-gray-600">🏙️ {selectedClient.city}</p>
             )}
           </div>
           <button onClick={onClear} className="p-1 hover:bg-blue-100 rounded">
-            <X size={16} className="text-gray-500" />
+            <X size={14} className="text-gray-500" />
           </button>
         </div>
       </div>
@@ -185,20 +349,20 @@ const ClientSearch: React.FC<ClientSearchProps> = ({ selectedClient, onSelect, o
   return (
     <div ref={searchRef} className="relative">
       <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={14} />
         <input
           type="text"
           placeholder="Поиск клиента по имени или телефону..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          className="w-full pl-9 pr-3 py-2 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm"
+          className="w-full pl-8 pr-3 py-1.5 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm"
         />
       </div>
       
       {showResults && (results.length > 0 || loading) && (
         <div className="absolute z-10 w-full mt-1 bg-white border rounded-lg shadow-lg max-h-48 overflow-y-auto">
           {loading ? (
-            <div className="p-3 text-center text-gray-500 text-sm">Поиск...</div>
+            <div className="p-2 text-center text-gray-500 text-xs">Поиск...</div>
           ) : (
             results.map(client => {
               const fullName = [client.lastName, client.firstName, client.middleName]
@@ -217,9 +381,6 @@ const ClientSearch: React.FC<ClientSearchProps> = ({ selectedClient, onSelect, o
                 >
                   <div className="font-medium text-sm">{fullName}</div>
                   <div className="text-xs text-gray-500">{client.phone}</div>
-                  {client.city && (
-                    <div className="text-xs text-gray-400 mt-0.5">🏙️ {client.city}</div>
-                  )}
                 </div>
               );
             })
@@ -230,7 +391,7 @@ const ClientSearch: React.FC<ClientSearchProps> = ({ selectedClient, onSelect, o
   );
 };
 
-// Компонент строки товара в каталоге
+// Компонент строки товара в каталоге с возможностью добавления
 interface ProductRowProps {
   product: Product;
   isInCart: boolean;
@@ -290,43 +451,44 @@ const ProductRow: React.FC<ProductRowProps> = ({ product, isInCart, onAddToCart 
     setPriceError('');
   };
 
-  const margin = ((product.retail_price - product.cost_price) / product.cost_price) * 100;
+  const margin = product.cost_price > 0 
+    ? ((product.retail_price - product.cost_price) / product.cost_price) * 100 
+    : 0;
 
   return (
-    <tr className={`hover:bg-gray-50 ${isInCart ? 'bg-green-50' : ''}`}>
-      <td className="px-4 py-3">
-        <div className="flex items-center gap-2">
-          <div className="font-medium text-gray-900">{product.name}</div>
-          {isInCart && (
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs bg-green-100 text-green-700 rounded-full">
-              <CheckCircle size={10} />
-              В корзине
+    <div className={`border-b border-gray-100 p-3 hover:bg-gray-50 transition-colors ${isInCart ? 'bg-green-50' : ''}`}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="font-medium text-gray-900 text-sm">{product.name}</span>
+            {isInCart && (
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-xs bg-green-100 text-green-700 rounded-full">
+                <CheckCircle size={10} />
+                В корзине
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-3 mt-1 text-xs text-gray-500">
+            <span>Арт: {product.article}</span>
+            <span>Маржа: {margin.toFixed(0)}%</span>
+            <span className={`font-medium ${product.stock <= product.min_stock ? 'text-yellow-600' : 'text-green-600'}`}>
+              Остаток: {product.stock} шт.
             </span>
-          )}
+          </div>
+          <div className="flex items-center gap-3 mt-1 text-xs">
+            <span>Себест: {formatPrice(product.cost_price)}</span>
+            <span>Розница: {formatPrice(product.retail_price)}</span>
+          </div>
         </div>
-        <div className="text-xs text-gray-500 mt-0.5">
-          Маржа: {margin.toFixed(1)}%
-        </div>
-      </td>
-      <td className="px-4 py-3 text-sm text-gray-500">{product.article}</td>
-      <td className="px-4 py-3 text-right text-sm">{formatPrice(product.cost_price)}</td>
-      <td className="px-4 py-3 text-right text-sm">{formatPrice(product.retail_price)}</td>
-      <td className="px-4 py-3 text-center">
-        <span className={`text-sm font-medium ${
-          product.stock <= product.min_stock ? 'text-yellow-600' : 'text-green-600'
-        }`}>
-          {product.stock} шт.
-        </span>
-      </td>
-      <td className="px-4 py-3">
+        
         {!isInCart ? (
-          <div className="flex flex-col gap-2">
-            <div className="flex gap-2">
+          <div className="flex flex-col items-end gap-2">
+            <div className="flex items-center gap-2">
               <input
                 type="number"
                 value={quantity}
                 onChange={handleQuantityChange}
-                className="w-16 px-2 py-1 text-sm rounded border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                className="w-14 px-2 py-1 text-sm rounded border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-500"
                 min={1}
                 max={product.stock}
               />
@@ -340,24 +502,22 @@ const ProductRow: React.FC<ProductRowProps> = ({ product, isInCart, onAddToCart 
               <button
                 onClick={handleAdd}
                 disabled={!!quantityError || !!priceError || product.stock === 0}
-                className="p-1 text-primary-600 hover:bg-primary-50 rounded transition-colors disabled:opacity-50"
+                className="p-1.5 text-primary-600 hover:bg-primary-50 rounded transition-colors disabled:opacity-50"
               >
                 <Plus size={18} />
               </button>
             </div>
             {(quantityError || priceError) && (
-              <div className="text-xs text-red-500">
-                {quantityError || priceError}
-              </div>
+              <div className="text-xs text-red-500">{quantityError || priceError}</div>
             )}
           </div>
         ) : (
-          <div className="text-center text-sm text-green-600 font-medium">
+          <div className="text-sm text-green-600 font-medium px-3 py-2 bg-green-100 rounded-lg">
             В корзине
           </div>
         )}
-      </td>
-    </tr>
+      </div>
+    </div>
   );
 };
 
@@ -411,11 +571,11 @@ const CartItemComponent: React.FC<CartItemComponentProps> = ({ item, onUpdateQua
   const profit = (item.selling_price - item.cost_price) * item.quantity;
 
   return (
-    <div className="border border-gray-200 rounded-lg p-3">
+    <div className="border border-gray-200 rounded-lg p-2">
       <div className="flex justify-between items-start">
         <div className="flex-1">
           <p className="font-medium text-gray-900 text-sm">{item.name}</p>
-          <p className="text-xs text-gray-500 mt-0.5">Арт. {item.article}</p>
+          <p className="text-xs text-gray-500">Арт. {item.article}</p>
           <div className="flex items-center gap-2 mt-1">
             <span className="text-xs text-gray-500">Себест: {formatPrice(item.cost_price)}</span>
             <span className="text-xs text-green-600">Прибыль: +{formatPrice(profit)}</span>
@@ -473,8 +633,7 @@ export const NewOrder: React.FC = () => {
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
-  const [searchTerm, setSearchTerm] = useState<string>('');
-  const [selectedCategory, setSelectedCategory] = useState<string>('');
+  const [showFilters, setShowFilters] = useState<boolean>(false);
   
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
   
@@ -483,7 +642,7 @@ export const NewOrder: React.FC = () => {
   const [customerPhone, setCustomerPhone] = useState<string>('');
   const [customerEmail, setCustomerEmail] = useState<string>('');
   const [customerCity, setCustomerCity] = useState<string>('');
-  const [description, setDescription] = useState<string>(''); // 🔸 НОВОЕ ПОЛЕ
+  const [description, setDescription] = useState<string>('');
   
   const [phoneError, setPhoneError] = useState<string>('');
   
@@ -491,12 +650,37 @@ export const NewOrder: React.FC = () => {
   const [orderLoading, setOrderLoading] = useState<boolean>(false);
   
   const [autoCreatedClient, setAutoCreatedClient] = useState<Client | null>(null);
+  
+  // Фильтры
+  const [filters, setFilters] = useState<FilterState>({
+    search: '',
+    categoryIds: [],
+    priceMin: '',
+    priceMax: '',
+    stockStatus: 'all',
+    characteristics: {}
+  });
+
+  // Получение уникальных полей характеристик из выбранных категорий
+  const availableCharacteristicFields = useMemo(() => {
+    const fieldsMap = new Map<number, CategoryField>();
+    categories.forEach(category => {
+      if (filters.categoryIds.includes(category.id) && category.fields) {
+        category.fields.forEach(field => {
+          if (!fieldsMap.has(field.id)) {
+            fieldsMap.set(field.id, field);
+          }
+        });
+      }
+    });
+    return Array.from(fieldsMap.values());
+  }, [categories, filters.categoryIds]);
 
   const cartProductIds = useMemo(() => {
     return new Set(cartItems.map(item => item.id));
   }, [cartItems]);
 
-  // Загрузка данных при монтировании и при изменении clientId
+  // Загрузка данных
   useEffect(() => {
     loadProducts();
     loadCategories();
@@ -535,7 +719,6 @@ export const NewOrder: React.FC = () => {
       const response = await clientsApi.getById(id);
       const client = response.data;
       setSelectedClient(client);
-      // Формируем ФИО из полей
       const fullName = [client.lastName, client.firstName, client.middleName]
         .filter(Boolean)
         .join(' ')
@@ -582,6 +765,93 @@ export const NewOrder: React.FC = () => {
     
     if (selectedClient) setSelectedClient(null);
   };
+
+  // Сброс фильтров
+  const clearAllFilters = useCallback(() => {
+    setFilters({
+      search: '',
+      categoryIds: [],
+      priceMin: '',
+      priceMax: '',
+      stockStatus: 'all',
+      characteristics: {}
+    });
+  }, []);
+
+  // Обновление фильтра характеристик
+  const handleCharacteristicFilterChange = useCallback((fieldId: string, value: string | string[]) => {
+    setFilters(prev => ({
+      ...prev,
+      characteristics: {
+        ...prev.characteristics,
+        [fieldId]: value || ''
+      }
+    }));
+  }, []);
+
+  // Фильтрация товаров
+  const filteredProducts = useMemo(() => {
+    let filtered = products.filter(p => p.stock > 0);
+    
+    // Поиск по тексту
+    if (filters.search) {
+      const searchLower = filters.search.toLowerCase();
+      filtered = filtered.filter(p => 
+        p.name?.toLowerCase().includes(searchLower) ||
+        p.article?.toLowerCase().includes(searchLower)
+      );
+    }
+    
+    // Фильтр по категориям
+    if (filters.categoryIds.length > 0) {
+      filtered = filtered.filter(p => {
+        const productCategoryIds = p.categories?.map(c => c.id) || p.categoryIds || [];
+        return filters.categoryIds.some(catId => productCategoryIds.includes(catId));
+      });
+    }
+    
+    // Фильтр по цене
+    if (filters.priceMin !== '') {
+      filtered = filtered.filter(p => p.retail_price >= filters.priceMin);
+    }
+    if (filters.priceMax !== '') {
+      filtered = filtered.filter(p => p.retail_price <= filters.priceMax);
+    }
+    
+    // Фильтр по остатку
+    if (filters.stockStatus !== 'all') {
+      filtered = filtered.filter(p => {
+        if (filters.stockStatus === 'low') return p.stock <= (p.min_stock || 5);
+        if (filters.stockStatus === 'out') return p.stock === 0;
+        if (filters.stockStatus === 'in') return p.stock > 0;
+        return true;
+      });
+    }
+    
+    // Фильтр по характеристикам
+    if (Object.keys(filters.characteristics).length > 0) {
+      filtered = filtered.filter(p => {
+        const productChars = p.characteristics || {};
+        for (const [fieldId, filterValue] of Object.entries(filters.characteristics)) {
+          if (!filterValue) continue;
+          
+          const field = availableCharacteristicFields.find(f => f.id.toString() === fieldId);
+          if (!field) continue;
+          
+          const productValue = productChars[field.name];
+          if (!productValue) return false;
+          
+          const productValueStr = Array.isArray(productValue) ? productValue.join(', ') : String(productValue);
+          const filterValueStr = Array.isArray(filterValue) ? filterValue.join(', ') : String(filterValue);
+          
+          if (!productValueStr.toLowerCase().includes(filterValueStr.toLowerCase())) return false;
+        }
+        return true;
+      });
+    }
+    
+    return filtered;
+  }, [products, filters, availableCharacteristicFields]);
 
   const autoCreateClient = async (): Promise<Client | null> => {
     if (!customerName || !customerPhone) return null;
@@ -686,7 +956,7 @@ export const NewOrder: React.FC = () => {
         customerPhone: customerPhone,
         customerEmail: customerEmail || null,
         customerAddress: null,
-        description: description || null, // 🔸 НОВОЕ ПОЛЕ
+        description: description || null,
         items: cartItems.map(item => ({
           productId: item.id,
           quantity: item.quantity,
@@ -726,33 +996,6 @@ export const NewOrder: React.FC = () => {
   };
 
   const totals = calculateTotals();
-
-  const filteredProducts = useMemo(() => {
-    let filtered = products.filter(p => p.stock > 0);
-    
-    if (searchTerm) {
-      const searchLower = searchTerm.toLowerCase();
-      filtered = filtered.filter(p => 
-        p.name?.toLowerCase().includes(searchLower) ||
-        p.article?.toLowerCase().includes(searchLower)
-      );
-    }
-    
-    if (selectedCategory) {
-      const categoryId = parseInt(selectedCategory);
-      filtered = filtered.filter(p => {
-        if (p.categories && Array.isArray(p.categories)) {
-          return p.categories.some(cat => cat.id === categoryId);
-        }
-        if (p.categoryIds && Array.isArray(p.categoryIds)) {
-          return p.categoryIds.includes(categoryId);
-        }
-        return false;
-      });
-    }
-    
-    return filtered;
-  }, [products, searchTerm, selectedCategory]);
 
   const addToCart = (product: Product, quantity: number, price: number): void => {
     if (quantity < 1) {
@@ -842,6 +1085,8 @@ export const NewOrder: React.FC = () => {
     toast.success('Товар удален из заказа');
   };
 
+  const hasActiveFilters = filters.search || filters.categoryIds.length > 0 || filters.priceMin !== '' || filters.priceMax !== '' || filters.stockStatus !== 'all' || Object.keys(filters.characteristics).length > 0;
+
   return (
     <div className="space-y-6 animate-fade-in">
       {/* Header */}
@@ -859,79 +1104,210 @@ export const NewOrder: React.FC = () => {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Левая колонка - список товаров */}
+        {/* Левая колонка - каталог товаров с фильтрацией */}
         <div className="lg:col-span-2 space-y-4">
           <div className="bg-white rounded-xl shadow-sm border border-gray-200">
             <div className="p-4 border-b border-gray-200">
-              <h2 className="text-lg font-semibold text-gray-900">Каталог товаров</h2>
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-semibold text-gray-900">Каталог товаров</h2>
+                <button
+                  onClick={() => setShowFilters(!showFilters)}
+                  className={`flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg transition-colors ${
+                    showFilters || hasActiveFilters
+                      ? 'bg-primary-50 text-primary-600'
+                      : 'text-gray-500 hover:bg-gray-100'
+                  }`}
+                >
+                  <SlidersHorizontal size={16} />
+                  Фильтры
+                  {hasActiveFilters && !showFilters && (
+                    <span className="w-2 h-2 bg-primary-500 rounded-full"></span>
+                  )}
+                </button>
+              </div>
               
-              <div className="flex flex-wrap gap-3 mt-3">
-                <div className="flex-1 min-w-[200px]">
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-                    <input
-                      type="text"
-                      placeholder="Поиск по названию или артикулу..."
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                      className="w-full pl-10 pr-3 py-2 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm"
+              {/* Поисковая строка */}
+              <div className="relative mt-3">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+                <input
+                  type="text"
+                  placeholder="Поиск по названию или артикулу..."
+                  value={filters.search}
+                  onChange={(e) => setFilters(prev => ({ ...prev, search: e.target.value }))}
+                  className="w-full pl-9 pr-3 py-2 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm"
+                />
+              </div>
+              
+              {/* Панель фильтров */}
+              {showFilters && (
+                <div className="mt-4 pt-4 border-t border-gray-100 space-y-4">
+                  {/* Категории */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1.5 flex items-center gap-2">
+                      <Tag size={14} />
+                      Категории
+                    </label>
+                    <CategoryMultiSelect
+                      categories={categories}
+                      selectedIds={filters.categoryIds}
+                      onChange={(ids) => setFilters(prev => ({ ...prev, categoryIds: ids }))}
                     />
                   </div>
+                  
+                  {/* Цена */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1.5 flex items-center gap-2">
+                      <DollarSign size={14} />
+                      Цена
+                    </label>
+                    <div className="flex gap-2">
+                      <input
+                        type="number"
+                        placeholder="от"
+                        value={filters.priceMin === '' ? '' : filters.priceMin}
+                        onChange={(e) => setFilters(prev => ({ ...prev, priceMin: e.target.value === '' ? '' : Number(e.target.value) }))}
+                        className="w-full px-3 py-1.5 text-sm rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                      />
+                      <input
+                        type="number"
+                        placeholder="до"
+                        value={filters.priceMax === '' ? '' : filters.priceMax}
+                        onChange={(e) => setFilters(prev => ({ ...prev, priceMax: e.target.value === '' ? '' : Number(e.target.value) }))}
+                        className="w-full px-3 py-1.5 text-sm rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                      />
+                    </div>
+                  </div>
+                  
+                  {/* Остаток */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1.5 flex items-center gap-2">
+                      <Boxes size={14} />
+                      Остаток
+                    </label>
+                    <div className="flex flex-wrap gap-2">
+                      {[
+                        { value: 'all', label: 'Все', color: 'gray' },
+                        { value: 'in', label: 'В наличии', color: 'green' },
+                        { value: 'low', label: 'Низкий', color: 'yellow' },
+                        { value: 'out', label: 'Нет', color: 'red' }
+                      ].map(option => (
+                        <button
+                          key={option.value}
+                          onClick={() => setFilters(prev => ({ ...prev, stockStatus: option.value as any }))}
+                          className={`px-2 py-1 text-xs rounded-full transition-colors ${
+                            filters.stockStatus === option.value
+                              ? `bg-${option.color}-600 text-white`
+                              : `bg-${option.color}-50 text-${option.color}-700 hover:bg-${option.color}-100`
+                          }`}
+                        >
+                          {option.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  
+                  {/* Характеристики */}
+                  {availableCharacteristicFields.length > 0 && (
+                    <CharacteristicFilter
+                      fields={availableCharacteristicFields}
+                      values={filters.characteristics}
+                      onChange={handleCharacteristicFilterChange}
+                      onClear={(fieldId) => {
+                        setFilters(prev => {
+                          const newChars = { ...prev.characteristics };
+                          delete newChars[fieldId];
+                          return { ...prev, characteristics: newChars };
+                        });
+                      }}
+                    />
+                  )}
+                  
+                  {/* Активные фильтры */}
+                  {hasActiveFilters && (
+                    <div className="flex flex-wrap gap-1 pt-2">
+                      {filters.categoryIds.map(id => {
+                        const cat = categories.find(c => c.id === id);
+                        return cat && (
+                          <span key={id} className="inline-flex items-center gap-1 px-2 py-0.5 text-xs bg-primary-100 text-primary-700 rounded-full">
+                            {cat.name}
+                            <button onClick={() => setFilters(prev => ({ ...prev, categoryIds: prev.categoryIds.filter(i => i !== id) }))}>
+                              <X size={10} />
+                            </button>
+                          </span>
+                        );
+                      })}
+                      {(filters.priceMin !== '' || filters.priceMax !== '') && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs bg-blue-100 text-blue-700 rounded-full">
+                          {filters.priceMin || '0'} - {filters.priceMax || '∞'} ₽
+                          <button onClick={() => setFilters(prev => ({ ...prev, priceMin: '', priceMax: '' }))}>
+                            <X size={10} />
+                          </button>
+                        </span>
+                      )}
+                      {filters.stockStatus !== 'all' && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs bg-yellow-100 text-yellow-700 rounded-full">
+                          {filters.stockStatus === 'in' && 'В наличии'}
+                          {filters.stockStatus === 'low' && 'Низкий остаток'}
+                          {filters.stockStatus === 'out' && 'Нет в наличии'}
+                          <button onClick={() => setFilters(prev => ({ ...prev, stockStatus: 'all' }))}>
+                            <X size={10} />
+                          </button>
+                        </span>
+                      )}
+                      {hasActiveFilters && (
+                        <button
+                          onClick={clearAllFilters}
+                          className="inline-flex items-center gap-1 px-2 py-0.5 text-xs bg-gray-100 text-gray-600 rounded-full hover:bg-gray-200"
+                        >
+                          <RefreshCw size={10} />
+                          Сбросить всё
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
-                <select
-                  value={selectedCategory}
-                  onChange={(e) => setSelectedCategory(e.target.value)}
-                  className="px-3 py-2 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm"
-                >
-                  <option value="">Все категории</option>
-                  {categories.map(category => (
-                    <option key={category.id} value={category.id}>{category.name}</option>
-                  ))}
-                </select>
-              </div>
+              )}
             </div>
 
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-gray-50 border-b border-gray-200">
-                  <tr>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Товар</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Артикул</th>
-                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Себест.</th>
-                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Розница</th>
-                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Остаток</th>
-                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Действия</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-200">
-                  {loading ? (
-                    <tr>
-                      <td colSpan={6} className="text-center py-8 text-gray-500">Загрузка...</td>
-                    </tr>
-                  ) : filteredProducts.length === 0 ? (
-                    <tr>
-                      <td colSpan={6} className="text-center py-8 text-gray-500">
-                        <Package size={32} className="mx-auto mb-2 opacity-50" />
-                        Товары не найдены
-                      </td>
-                    </tr>
-                  ) : (
-                    filteredProducts.map(product => (
-                      <ProductRow
-                        key={product.id}
-                        product={product}
-                        isInCart={cartProductIds.has(product.id)}
-                        onAddToCart={addToCart}
-                      />
-                    ))
+            {/* Список товаров */}
+            <div className="divide-y divide-gray-100 max-h-[60vh] overflow-y-auto">
+              {loading ? (
+                <div className="text-center py-8 text-gray-500">Загрузка...</div>
+              ) : filteredProducts.length === 0 ? (
+                <div className="text-center py-8 text-gray-500">
+                  <Package size={32} className="mx-auto mb-2 opacity-50" />
+                  <p className="text-sm">Товары не найдены</p>
+                  {hasActiveFilters && (
+                    <button
+                      onClick={clearAllFilters}
+                      className="mt-2 text-xs text-primary-600 hover:underline"
+                    >
+                      Сбросить фильтры
+                    </button>
                   )}
-                </tbody>
-              </table>
+                </div>
+              ) : (
+                filteredProducts.map(product => (
+                  <ProductRow
+                    key={product.id}
+                    product={product}
+                    isInCart={cartProductIds.has(product.id)}
+                    onAddToCart={addToCart}
+                  />
+                ))
+              )}
             </div>
+            
+            {/* Счетчик результатов */}
+            {!loading && filteredProducts.length > 0 && (
+              <div className="p-3 border-t border-gray-100 text-center text-xs text-gray-400">
+                Найдено товаров: {filteredProducts.length}
+              </div>
+            )}
           </div>
         </div>
 
-        {/* Правая колонка - корзина */}
+        {/* Правая колонка - корзина и данные клиента */}
         <div className="space-y-4">
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 sticky top-4">
             <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
@@ -944,6 +1320,7 @@ export const NewOrder: React.FC = () => {
                 <div className="text-center py-8 text-gray-500">
                   <ShoppingCart size={48} className="mx-auto mb-2 opacity-50" />
                   <p className="text-sm">Корзина пуста</p>
+                  <p className="text-xs text-gray-400 mt-1">Добавьте товары из каталога</p>
                 </div>
               ) : (
                 cartItems.map(item => (
@@ -999,8 +1376,8 @@ export const NewOrder: React.FC = () => {
 
             {/* Поиск клиента */}
             <div className="border-t pt-4 mt-4">
-              <h3 className="font-medium text-gray-900 flex items-center gap-2 mb-2">
-                <Users size={16} />
+              <h3 className="font-medium text-gray-900 flex items-center gap-2 mb-2 text-sm">
+                <Users size={14} />
                 Клиент
               </h3>
               <ClientSearch
@@ -1011,11 +1388,11 @@ export const NewOrder: React.FC = () => {
             </div>
 
             {/* Данные покупателя */}
-            <div className="space-y-3 mt-4">
-              <h3 className="font-medium text-gray-900">Данные покупателя</h3>
+            <div className="space-y-2 mt-4">
+              <h3 className="font-medium text-gray-900 text-sm">Данные покупателя</h3>
               
               <div className="relative">
-                <User className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+                <User className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={14} />
                 <input
                   type="text"
                   placeholder="Имя покупателя *"
@@ -1024,41 +1401,41 @@ export const NewOrder: React.FC = () => {
                     setCustomerName(e.target.value);
                     if (selectedClient) setSelectedClient(null);
                   }}
-                  className="w-full pl-9 pr-3 py-2 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm"
+                  className="w-full pl-8 pr-3 py-1.5 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm"
                   required
                 />
               </div>
               
               <div className="relative">
-                <Phone className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+                <Phone className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={14} />
                 <input
                   type="tel"
                   placeholder="Телефон *"
                   value={customerPhone}
                   onChange={handlePhoneChange}
-                  className={`w-full pl-9 pr-3 py-2 rounded-lg border ${
+                  className={`w-full pl-8 pr-3 py-1.5 rounded-lg border ${
                     phoneError ? 'border-red-500' : 'border-gray-200'
                   } focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm`}
                   required
                 />
               </div>
               {phoneError && (
-                <p className="text-xs text-red-500 -mt-2">{phoneError}</p>
+                <p className="text-xs text-red-500">{phoneError}</p>
               )}
               
               <div className="relative">
-                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={14} />
                 <input
                   type="email"
                   placeholder="Email"
                   value={customerEmail}
                   onChange={(e) => setCustomerEmail(e.target.value)}
-                  className="w-full pl-9 pr-3 py-2 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm"
+                  className="w-full pl-8 pr-3 py-1.5 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm"
                 />
               </div>
               
               <div className="relative">
-                <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+                <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={14} />
                 <input
                   type="text"
                   placeholder="Город"
@@ -1067,23 +1444,20 @@ export const NewOrder: React.FC = () => {
                     setCustomerCity(e.target.value);
                     if (selectedClient) setSelectedClient(null);
                   }}
-                  className="w-full pl-9 pr-3 py-2 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm"
+                  className="w-full pl-8 pr-3 py-1.5 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm"
                 />
               </div>
 
-              {/* 🔸 НОВОЕ ПОЛЕ - Комментарий к заказу */}
+              {/* Комментарий к заказу */}
               <div className="relative">
-                <AlignLeft className="absolute left-3 top-3 text-gray-400" size={16} />
+                <AlignLeft className="absolute left-3 top-2.5 text-gray-400" size={14} />
                 <textarea
-                  placeholder="Комментарий к заказу (например: особые пожелания, срочность, примечания)"
+                  placeholder="Комментарий к заказу"
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
-                  rows={3}
-                  className="w-full pl-9 pr-3 py-2 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm resize-none"
+                  rows={2}
+                  className="w-full pl-8 pr-3 py-1.5 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm resize-none"
                 />
-                <p className="text-xs text-gray-400 mt-1">
-                  Здесь можно указать любую дополнительную информацию по заказу
-                </p>
               </div>
             </div>
 

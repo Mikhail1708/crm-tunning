@@ -1,5 +1,6 @@
 // frontend/src/pages/Products.tsx
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { productsApi } from '../api/products';
 import { categoriesApi } from '../api/categories';
 import { Button } from '../components/ui/Button';
@@ -24,7 +25,15 @@ import {
   Loader,
   Filter,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  X,
+  SlidersHorizontal,
+  Tag,
+  DollarSign,
+  Boxes,
+  RefreshCw,
+  CheckSquare,
+  Square
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -47,6 +56,180 @@ interface ProductsStats {
   lowStock: number;
 }
 
+interface FilterState {
+  search: string;
+  categoryIds: number[];
+  priceMin: number | '';
+  priceMax: number | '';
+  stockStatus: 'all' | 'low' | 'out' | 'in';
+  characteristics: Record<string, string | string[]>;
+}
+
+// Компонент фильтра по характеристикам
+interface CharacteristicFilterProps {
+  fields: CategoryField[];
+  values: Record<string, string | string[]>;
+  onChange: (fieldId: string, value: string | string[]) => void;
+  onClear: (fieldId: string) => void;
+}
+
+const CharacteristicFilter: React.FC<CharacteristicFilterProps> = ({ fields, values, onChange, onClear }) => {
+  if (fields.length === 0) return null;
+
+  return (
+    <div className="space-y-4">
+      <h4 className="font-medium text-gray-700 text-sm flex items-center gap-2">
+        <Tag size={14} />
+        Характеристики
+      </h4>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {fields.map((field) => {
+          const currentValue = values[field.id] || '';
+          
+          if (field.fieldType === 'select' || field.fieldType === 'multiselect') {
+            let options: string[] = [];
+            if (field.options) {
+              if (typeof field.options === 'string') {
+                try {
+                  options = JSON.parse(field.options);
+                } catch {
+                  options = field.options.split(',').map(s => s.trim());
+                }
+              } else if (Array.isArray(field.options)) {
+                options = field.options;
+              }
+            }
+            
+            return (
+              <div key={field.id} className="space-y-1">
+                <label className="text-xs font-medium text-gray-600">{field.name}</label>
+                <select
+                  value={typeof currentValue === 'string' ? currentValue : ''}
+                  onChange={(e) => onChange(field.id.toString(), e.target.value)}
+                  className="w-full px-3 py-1.5 text-sm rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                >
+                  <option value="">Все</option>
+                  {options.map(opt => (
+                    <option key={opt} value={opt}>{opt}</option>
+                  ))}
+                </select>
+                {currentValue && (
+                  <button
+                    onClick={() => onClear(field.id.toString())}
+                    className="text-xs text-red-500 hover:text-red-600"
+                  >
+                    Очистить
+                  </button>
+                )}
+              </div>
+            );
+          }
+          
+          return (
+            <div key={field.id} className="space-y-1">
+              <label className="text-xs font-medium text-gray-600">{field.name}</label>
+              <input
+                type="text"
+                value={currentValue as string || ''}
+                onChange={(e) => onChange(field.id.toString(), e.target.value)}
+                placeholder={`Фильтр по ${field.name.toLowerCase()}`}
+                className="w-full px-3 py-1.5 text-sm rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-500"
+              />
+              {currentValue && (
+                <button
+                  onClick={() => onClear(field.id.toString())}
+                  className="text-xs text-red-500 hover:text-red-600"
+                >
+                  Очистить
+                </button>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
+// Компонент выбора нескольких категорий
+interface CategoryMultiSelectProps {
+  categories: Category[];
+  selectedIds: number[];
+  onChange: (ids: number[]) => void;
+}
+
+const CategoryMultiSelect: React.FC<CategoryMultiSelectProps> = ({ categories, selectedIds, onChange }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const dropdownRef = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const toggleCategory = (categoryId: number) => {
+    if (selectedIds.includes(categoryId)) {
+      onChange(selectedIds.filter(id => id !== categoryId));
+    } else {
+      onChange([...selectedIds, categoryId]);
+    }
+  };
+
+  const selectedCategories = categories.filter(c => selectedIds.includes(c.id));
+  const displayText = selectedCategories.length === 0 
+    ? 'Все категории' 
+    : selectedCategories.map(c => c.name).join(', ');
+
+  return (
+    <div className="relative" ref={dropdownRef}>
+      <button
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-full px-4 py-2 text-left rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-500 flex items-center justify-between bg-white"
+      >
+        <span className="text-sm truncate">{displayText}</span>
+        <ChevronDown size={16} className={`text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+      </button>
+      
+      {isOpen && (
+        <div className="absolute z-20 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+          <div className="p-2 border-b border-gray-100">
+            <button
+              type="button"
+              onClick={() => onChange([])}
+              className="text-xs text-primary-600 hover:text-primary-700"
+            >
+              Сбросить все
+            </button>
+          </div>
+          {categories.map(category => (
+            <div
+              key={category.id}
+              onClick={() => toggleCategory(category.id)}
+              className="flex items-center gap-2 px-3 py-2 hover:bg-gray-50 cursor-pointer"
+            >
+              {selectedIds.includes(category.id) ? (
+                <CheckSquare size={16} className="text-primary-600" />
+              ) : (
+                <Square size={16} className="text-gray-400" />
+              )}
+              <span className="text-sm">{category.name}</span>
+              {category._count?.products !== undefined && (
+                <span className="text-xs text-gray-400 ml-auto">({category._count.products})</span>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
 // Мемоизированный компонент строки товара
 const ProductRow = React.memo(({ 
   product, 
@@ -61,7 +244,9 @@ const ProductRow = React.memo(({
   onEdit: (product: Product) => void;
   onDelete: (id: number, name: string) => void;
 }) => {
-  const margin = ((product.retail_price - product.cost_price) / product.cost_price) * 100;
+  const margin = product.cost_price > 0 
+    ? ((product.retail_price - product.cost_price) / product.cost_price) * 100 
+    : 0;
   const stockStatus = getStockStatus(product.stock, product.min_stock);
   const hasCharacteristics = product.characteristics && Object.keys(product.characteristics).length > 0;
 
@@ -189,7 +374,7 @@ const ProductRow = React.memo(({
 
 ProductRow.displayName = 'ProductRow';
 
-// Мемоизированный компонент статистики
+// Компонент статистики
 const StatsCards = React.memo(({ stats }: { stats: ProductsStats }) => (
   <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
     <Card>
@@ -210,7 +395,7 @@ const StatsCards = React.memo(({ stats }: { stats: ProductsStats }) => (
             <p className="text-sm text-gray-500">Общий остаток</p>
             <p className="text-2xl font-bold text-gray-900">{stats.totalStock} шт.</p>
           </div>
-          <Package size={32} className="text-blue-600 opacity-50" />
+          <Boxes size={32} className="text-blue-600 opacity-50" />
         </div>
       </CardBody>
     </Card>
@@ -221,7 +406,7 @@ const StatsCards = React.memo(({ stats }: { stats: ProductsStats }) => (
             <p className="text-sm text-gray-500">Стоимость запасов</p>
             <p className="text-2xl font-bold text-gray-900">{formatPrice(stats.totalValue)}</p>
           </div>
-          <Package size={32} className="text-green-600 opacity-50" />
+          <DollarSign size={32} className="text-green-600 opacity-50" />
         </div>
       </CardBody>
     </Card>
@@ -242,17 +427,31 @@ const StatsCards = React.memo(({ stats }: { stats: ProductsStats }) => (
 StatsCards.displayName = 'StatsCards';
 
 export const Products: React.FC = () => {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
-  const [searchTerm, setSearchTerm] = useState<string>('');
-  const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string>('');
   const [modalOpen, setModalOpen] = useState<boolean>(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [selectedCategoryFields, setSelectedCategoryFields] = useState<CategoryField[]>([]);
   const [expandedRows, setExpandedRows] = useState<Record<number, boolean>>({});
-  const [showFilters, setShowFilters] = useState<boolean>(false);
+  const [showFilters, setShowFilters] = useState<boolean>(() => {
+    return searchParams.toString().length > 0;
+  });
   
+  // Фильтры
+  const [filters, setFilters] = useState<FilterState>({
+    search: searchParams.get('search') || '',
+    categoryIds: searchParams.get('categories')?.split(',').map(Number).filter(Boolean) || [],
+    priceMin: searchParams.get('priceMin') ? Number(searchParams.get('priceMin')) : '',
+    priceMax: searchParams.get('priceMax') ? Number(searchParams.get('priceMax')) : '',
+    stockStatus: (searchParams.get('stockStatus') as any) || 'all',
+    characteristics: {}
+  });
+
+  const debouncedSearch = useDebounce(filters.search, 300);
+
+  // Форма товара
   const [formData, setFormData] = useState<ProductFormData>({
     name: '',
     article: '',
@@ -266,12 +465,42 @@ export const Products: React.FC = () => {
   });
   const [characteristics, setCharacteristics] = useState<ProductCharacteristic>({});
 
-  const debouncedSearch = useDebounce(searchTerm, 300);
+  // Получение уникальных полей характеристик из выбранных категорий
+  const availableCharacteristicFields = useMemo(() => {
+    const fieldsMap = new Map<number, CategoryField>();
+    categories.forEach(category => {
+      if (filters.categoryIds.includes(category.id) && category.fields) {
+        category.fields.forEach(field => {
+          if (!fieldsMap.has(field.id)) {
+            fieldsMap.set(field.id, field);
+          }
+        });
+      }
+    });
+    return Array.from(fieldsMap.values());
+  }, [categories, filters.categoryIds]);
 
+  // Сохранение фильтров в URL
+  const updateUrlParams = useCallback((newFilters: FilterState) => {
+    const params: Record<string, string> = {};
+    if (newFilters.search) params.search = newFilters.search;
+    if (newFilters.categoryIds.length > 0) params.categories = newFilters.categoryIds.join(',');
+    if (newFilters.priceMin) params.priceMin = String(newFilters.priceMin);
+    if (newFilters.priceMax) params.priceMax = String(newFilters.priceMax);
+    if (newFilters.stockStatus !== 'all') params.stockStatus = newFilters.stockStatus;
+    setSearchParams(params);
+  }, [setSearchParams]);
+
+  // Загрузка данных
   useEffect(() => {
     loadProducts();
     loadCategories();
   }, []);
+
+  // Синхронизация фильтров с URL
+  useEffect(() => {
+    updateUrlParams(filters);
+  }, [filters.search, filters.categoryIds, filters.priceMin, filters.priceMax, filters.stockStatus, updateUrlParams]);
 
   const loadProducts = useCallback(async (): Promise<void> => {
     try {
@@ -295,43 +524,123 @@ export const Products: React.FC = () => {
     }
   }, []);
 
-  const filterProducts = useCallback((product: Product): boolean => {
-    const searchLower = debouncedSearch.toLowerCase().trim();
+  // Фильтрация товаров
+  const filteredProducts = useMemo(() => {
+    let filtered = [...products];
     
-    if (!searchLower) return true;
-    
-    if (product.name?.toLowerCase().includes(searchLower)) return true;
-    if (product.article?.toLowerCase().includes(searchLower)) return true;
-    if (product.categories?.some(cat => cat.name?.toLowerCase().includes(searchLower))) return true;
-    
-    if (product.characteristics) {
-      for (const [key, value] of Object.entries(product.characteristics)) {
-        const stringValue = Array.isArray(value) ? value.join(' ') : String(value);
-        if (stringValue.toLowerCase().includes(searchLower)) {
-          return true;
+    // Поиск по тексту
+    if (debouncedSearch) {
+      const searchLower = debouncedSearch.toLowerCase();
+      filtered = filtered.filter(product => {
+        if (product.name?.toLowerCase().includes(searchLower)) return true;
+        if (product.article?.toLowerCase().includes(searchLower)) return true;
+        if (product.categories?.some(cat => cat.name?.toLowerCase().includes(searchLower))) return true;
+        if (product.characteristics) {
+          for (const [, value] of Object.entries(product.characteristics)) {
+            const stringValue = Array.isArray(value) ? value.join(' ') : String(value);
+            if (stringValue.toLowerCase().includes(searchLower)) return true;
+          }
         }
-      }
+        return false;
+      });
     }
     
-    return false;
-  }, [debouncedSearch]);
+    // Фильтр по категориям (если выбраны)
+    if (filters.categoryIds.length > 0) {
+      filtered = filtered.filter(product => {
+        const productCategoryIds = product.categories?.map(c => c.id) || product.categoryIds || [];
+        return filters.categoryIds.some(catId => productCategoryIds.includes(catId));
+      });
+    }
+    
+    // Фильтр по цене
+    if (filters.priceMin !== '') {
+      filtered = filtered.filter(product => product.retail_price >= filters.priceMin);
+    }
+    if (filters.priceMax !== '') {
+      filtered = filtered.filter(product => product.retail_price <= filters.priceMax);
+    }
+    
+    // Фильтр по остатку
+    if (filters.stockStatus !== 'all') {
+      filtered = filtered.filter(product => {
+        if (filters.stockStatus === 'low') return product.stock <= (product.min_stock || 5);
+        if (filters.stockStatus === 'out') return product.stock === 0;
+        if (filters.stockStatus === 'in') return product.stock > 0;
+        return true;
+      });
+    }
+    
+    // Фильтр по характеристикам
+    if (Object.keys(filters.characteristics).length > 0) {
+      filtered = filtered.filter(product => {
+        const productChars = product.characteristics || {};
+        for (const [fieldId, filterValue] of Object.entries(filters.characteristics)) {
+          if (!filterValue) continue;
+          
+          const field = availableCharacteristicFields.find(f => f.id.toString() === fieldId);
+          if (!field) continue;
+          
+          const productValue = productChars[field.name];
+          if (!productValue) return false;
+          
+          if (field.fieldType === 'multiselect' && Array.isArray(filterValue)) {
+            const productValues = Array.isArray(productValue) ? productValue : [String(productValue)];
+            const hasMatch = filterValue.some(v => productValues.includes(v));
+            if (!hasMatch) return false;
+          } else if (typeof filterValue === 'string') {
+            const productValueStr = Array.isArray(productValue) ? productValue.join(', ') : String(productValue);
+            if (!productValueStr.toLowerCase().includes(filterValue.toLowerCase())) return false;
+          }
+        }
+        return true;
+      });
+    }
+    
+    return filtered;
+  }, [products, debouncedSearch, filters, availableCharacteristicFields]);
 
-  const filterByCategory = useCallback((product: Product): boolean => {
-    if (!selectedCategoryFilter) return true;
-    return product.categoryIds?.includes(parseInt(selectedCategoryFilter));
-  }, [selectedCategoryFilter]);
-
-  const filteredProducts = useMemo(() => {
-    return products.filter(filterProducts).filter(filterByCategory);
-  }, [products, filterProducts, filterByCategory]);
-
+  // Подсчёт статистики для отфильтрованных товаров
   const stats: ProductsStats = useMemo(() => ({
-    total: products.length,
-    totalStock: products.reduce((sum, p) => sum + (p.stock || 0), 0),
-    totalValue: products.reduce((sum, p) => sum + ((p.stock || 0) * (p.cost_price || 0)), 0),
-    lowStock: products.filter(p => (p.stock || 0) <= (p.min_stock || 0)).length,
-  }), [products]);
+    total: filteredProducts.length,
+    totalStock: filteredProducts.reduce((sum, p) => sum + (p.stock || 0), 0),
+    totalValue: filteredProducts.reduce((sum, p) => sum + ((p.stock || 0) * (p.cost_price || 0)), 0),
+    lowStock: filteredProducts.filter(p => (p.stock || 0) <= (p.min_stock || 0)).length,
+  }), [filteredProducts]);
 
+  // Сброс всех фильтров
+  const clearAllFilters = useCallback(() => {
+    setFilters({
+      search: '',
+      categoryIds: [],
+      priceMin: '',
+      priceMax: '',
+      stockStatus: 'all',
+      characteristics: {}
+    });
+    toast.success('Все фильтры сброшены');
+  }, []);
+
+  // Обновление фильтра характеристик
+  const handleCharacteristicFilterChange = useCallback((fieldId: string, value: string | string[]) => {
+    setFilters(prev => ({
+      ...prev,
+      characteristics: {
+        ...prev.characteristics,
+        [fieldId]: value || ''
+      }
+    }));
+  }, []);
+
+  const handleClearCharacteristicFilter = useCallback((fieldId: string) => {
+    setFilters(prev => {
+      const newChars = { ...prev.characteristics };
+      delete newChars[fieldId];
+      return { ...prev, characteristics: newChars };
+    });
+  }, []);
+
+  // Форма товара
   const handleBasicFieldChange = useCallback((field: keyof ProductFormData, value: any) => {
     setFormData(prev => ({ ...prev, [field]: value }));
   }, []);
@@ -475,6 +784,8 @@ export const Products: React.FC = () => {
     setExpandedRows(prev => ({ ...prev, [productId]: !prev[productId] }));
   }, []);
 
+  const hasActiveFilters = filters.search || filters.categoryIds.length > 0 || filters.priceMin !== '' || filters.priceMax !== '' || filters.stockStatus !== 'all' || Object.keys(filters.characteristics).length > 0;
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-96">
@@ -509,42 +820,173 @@ export const Products: React.FC = () => {
       <Card>
         <CardBody className="p-4">
           <div className="space-y-3">
+            {/* Поисковая строка */}
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
               <Input
                 type="text"
                 placeholder="Поиск по названию, артикулу, категории или характеристикам..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                value={filters.search}
+                onChange={(e) => setFilters(prev => ({ ...prev, search: e.target.value }))}
                 className="pl-10"
               />
             </div>
             
-            <button
-              onClick={() => setShowFilters(!showFilters)}
-              className="flex items-center gap-2 text-sm text-gray-600 hover:text-primary-600 transition-colors"
-            >
-              <Filter size={16} />
-              {showFilters ? 'Скрыть фильтры' : 'Показать фильтры'}
-            </button>
+            {/* Кнопка показа/скрытия фильтров и сброс */}
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <button
+                onClick={() => setShowFilters(!showFilters)}
+                className="flex items-center gap-2 text-sm text-gray-600 hover:text-primary-600 transition-colors"
+              >
+                <SlidersHorizontal size={16} />
+                {showFilters ? 'Скрыть фильтры' : 'Показать фильтры'}
+                {hasActiveFilters && !showFilters && (
+                  <span className="ml-1 w-2 h-2 bg-primary-500 rounded-full"></span>
+                )}
+              </button>
+              
+              {hasActiveFilters && (
+                <button
+                  onClick={clearAllFilters}
+                  className="flex items-center gap-2 text-sm text-red-500 hover:text-red-600 transition-colors"
+                >
+                  <RefreshCw size={14} />
+                  Сбросить все фильтры
+                </button>
+              )}
+            </div>
             
+            {/* Расширенные фильтры */}
             {showFilters && (
-              <div className="pt-3 border-t border-gray-100">
-                <div className="space-y-2">
-                  <label className="block text-sm font-medium text-gray-700">Фильтр по категории</label>
-                  <select
-                    value={selectedCategoryFilter}
-                    onChange={(e) => setSelectedCategoryFilter(e.target.value)}
-                    className="w-full md:w-64 px-4 py-2 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-500"
-                  >
-                    <option value="">Все категории</option>
-                    {categories.map(category => (
-                      <option key={category.id} value={category.id}>
-                        {category.name}
-                      </option>
-                    ))}
-                  </select>
+              <div className="pt-3 border-t border-gray-100 space-y-4">
+                {/* Категории */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
+                    <Tag size={14} />
+                    Категории (можно выбрать несколько)
+                  </label>
+                  <CategoryMultiSelect
+                    categories={categories}
+                    selectedIds={filters.categoryIds}
+                    onChange={(ids) => setFilters(prev => ({ ...prev, categoryIds: ids }))}
+                  />
                 </div>
+                
+                {/* Цена */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
+                    <DollarSign size={14} />
+                    Цена (розничная)
+                  </label>
+                  <div className="flex gap-3">
+                    <input
+                      type="number"
+                      placeholder="от"
+                      value={filters.priceMin === '' ? '' : filters.priceMin}
+                      onChange={(e) => setFilters(prev => ({ ...prev, priceMin: e.target.value === '' ? '' : Number(e.target.value) }))}
+                      className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                    />
+                    <input
+                      type="number"
+                      placeholder="до"
+                      value={filters.priceMax === '' ? '' : filters.priceMax}
+                      onChange={(e) => setFilters(prev => ({ ...prev, priceMax: e.target.value === '' ? '' : Number(e.target.value) }))}
+                      className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                    />
+                  </div>
+                </div>
+                
+                {/* Статус остатка */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
+                    <Boxes size={14} />
+                    Остаток на складе
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    {[
+                      { value: 'all', label: 'Все', color: 'gray' },
+                      { value: 'in', label: 'В наличии (>0)', color: 'green' },
+                      { value: 'low', label: 'Низкий остаток', color: 'yellow' },
+                      { value: 'out', label: 'Нет в наличии', color: 'red' }
+                    ].map(option => (
+                      <button
+                        key={option.value}
+                        onClick={() => setFilters(prev => ({ ...prev, stockStatus: option.value as any }))}
+                        className={`px-3 py-1.5 text-sm rounded-full transition-colors ${
+                          filters.stockStatus === option.value
+                            ? `bg-${option.color}-600 text-white`
+                            : `bg-${option.color}-50 text-${option.color}-700 hover:bg-${option.color}-100`
+                        }`}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                
+                {/* Характеристики (динамические из выбранных категорий) */}
+                {availableCharacteristicFields.length > 0 && (
+                  <CharacteristicFilter
+                    fields={availableCharacteristicFields}
+                    values={filters.characteristics}
+                    onChange={handleCharacteristicFilterChange}
+                    onClear={handleClearCharacteristicFilter}
+                  />
+                )}
+                
+                {/* Индикатор активных фильтров */}
+                {hasActiveFilters && (
+                  <div className="pt-2 flex flex-wrap gap-2">
+                    {filters.categoryIds.map(id => {
+                      const cat = categories.find(c => c.id === id);
+                      return cat && (
+                        <span key={id} className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-primary-100 text-primary-700 rounded-full">
+                          {cat.name}
+                          <button onClick={() => setFilters(prev => ({ ...prev, categoryIds: prev.categoryIds.filter(i => i !== id) }))}>
+                            <X size={12} />
+                          </button>
+                        </span>
+                      );
+                    })}
+                    {(filters.priceMin !== '' || filters.priceMax !== '') && (
+                      <span className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded-full">
+                        Цена: {filters.priceMin || '0'} - {filters.priceMax || '∞'}
+                        <button onClick={() => setFilters(prev => ({ ...prev, priceMin: '', priceMax: '' }))}>
+                          <X size={12} />
+                        </button>
+                      </span>
+                    )}
+                    {filters.stockStatus !== 'all' && (
+                      <span className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-yellow-100 text-yellow-700 rounded-full">
+                        {filters.stockStatus === 'in' && 'В наличии'}
+                        {filters.stockStatus === 'low' && 'Низкий остаток'}
+                        {filters.stockStatus === 'out' && 'Нет в наличии'}
+                        <button onClick={() => setFilters(prev => ({ ...prev, stockStatus: 'all' }))}>
+                          <X size={12} />
+                        </button>
+                      </span>
+                    )}
+                    {Object.entries(filters.characteristics).map(([fieldId, value]) => {
+                      const field = availableCharacteristicFields.find(f => f.id.toString() === fieldId);
+                      return field && value && (
+                        <span key={fieldId} className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-purple-100 text-purple-700 rounded-full">
+                          {field.name}: {Array.isArray(value) ? value.join(', ') : value}
+                          <button onClick={() => handleClearCharacteristicFilter(fieldId)}>
+                            <X size={12} />
+                          </button>
+                        </span>
+                      );
+                    })}
+                    {filters.search && (
+                      <span className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded-full">
+                        Поиск: {filters.search}
+                        <button onClick={() => setFilters(prev => ({ ...prev, search: '' }))}>
+                          <X size={12} />
+                        </button>
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -554,39 +996,52 @@ export const Products: React.FC = () => {
       {/* Products Table */}
       <Card>
         <CardBody className="p-0">
-          <Table>
-            <Thead>
-              <Tr>
-                <Th className="w-8"></Th>
-                <Th>Артикул</Th>
-                <Th>Название</Th>
-                <Th>Категории</Th>
-                <Th>Себест.</Th>
-                <Th>Розница</Th>
-                <Th>Маржа</Th>
-                <Th>Остаток</Th>
-                <Th>Характеристики</Th>
-                <Th>Действия</Th>
-              </Tr>
-            </Thead>
-            <Tbody>
-              {filteredProducts.map((product) => (
-                <ProductRow
-                  key={product.id}
-                  product={product}
-                  isExpanded={expandedRows[product.id]}
-                  onToggleExpand={toggleRowExpand}
-                  onEdit={handleOpenModal}
-                  onDelete={handleDelete}
-                />
-              ))}
-            </Tbody>
-          </Table>
+          <div className="overflow-x-auto">
+            <Table>
+              <Thead>
+                <Tr>
+                  <Th className="w-8"></Th>
+                  <Th>Артикул</Th>
+                  <Th>Название</Th>
+                  <Th>Категории</Th>
+                  <Th>Себест.</Th>
+                  <Th>Розница</Th>
+                  <Th>Маржа</Th>
+                  <Th>Остаток</Th>
+                  <Th>Характеристики</Th>
+                  <Th>Действия</Th>
+                </Tr>
+              </Thead>
+              <Tbody>
+                {filteredProducts.map((product) => (
+                  <ProductRow
+                    key={product.id}
+                    product={product}
+                    isExpanded={expandedRows[product.id]}
+                    onToggleExpand={toggleRowExpand}
+                    onEdit={handleOpenModal}
+                    onDelete={handleDelete}
+                  />
+                ))}
+              </Tbody>
+            </Table>
+          </div>
           {filteredProducts.length === 0 && (
             <div className="text-center py-12 text-gray-500">
               <Package size={48} className="mx-auto mb-3 opacity-50" />
               <p>Товары не найдены</p>
-              {searchTerm && (
+              {hasActiveFilters && (
+                <p className="text-sm mt-2">
+                  Попробуйте изменить параметры фильтрации
+                  <button
+                    onClick={clearAllFilters}
+                    className="ml-2 text-primary-600 hover:underline"
+                  >
+                    Сбросить фильтры
+                  </button>
+                </p>
+              )}
+              {filters.search && !hasActiveFilters && (
                 <p className="text-sm mt-2">Попробуйте изменить поисковый запрос</p>
               )}
             </div>
