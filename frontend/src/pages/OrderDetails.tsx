@@ -8,7 +8,9 @@ import { formatPrice, formatDate } from '../utils/formatters';
 import { PrintDocument, ReceiptType, LegalEntityData } from '../components/ui/PrintDocument';
 import { ReceiptTypeModal } from '../components/ui/ReceiptTypeModal';
 import { LegalEntityModal } from '../components/ui/LegalEntityModal';
-import { SaleDocument } from '../types';
+import { SaleDocument, OrderStatus } from '../types';
+import { OrderStatusBadge } from '../components/ui/OrderStatusBadge';
+import { OrderStatusSelect } from '../components/ui/OrderStatusSelect';
 import { 
   ArrowLeft, 
   Printer, 
@@ -22,9 +24,13 @@ import {
   Package,
   DollarSign,
   CheckCircle,
-  XCircle
+  XCircle,
+  Truck,
+  MessageSquare
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+
+const STORAGE_KEY = 'order_statuses';
 
 export const OrderDetails: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -37,6 +43,20 @@ export const OrderDetails: React.FC = () => {
   const [showReceiptTypeModal, setShowReceiptTypeModal] = useState<boolean>(false);
   const [showLegalEntityModal, setShowLegalEntityModal] = useState<boolean>(false);
   const [legalData, setLegalData] = useState<LegalEntityData | null>(null);
+
+  // Статус заказа из localStorage
+  const [orderStatus, setOrderStatus] = useState<OrderStatus>(() => {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) {
+      try {
+        const statuses = JSON.parse(saved);
+        return statuses[Number(id)] || 'ordered';
+      } catch {
+        return 'ordered';
+      }
+    }
+    return 'ordered';
+  });
 
   useEffect(() => {
     loadOrder();
@@ -54,6 +74,24 @@ export const OrderDetails: React.FC = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  // Функция изменения статуса
+  const handleStatusChange = (orderId: number, newStatus: OrderStatus): void => {
+    setOrderStatus(newStatus);
+    
+    // Обновляем в localStorage
+    const saved = localStorage.getItem(STORAGE_KEY);
+    const statuses = saved ? JSON.parse(saved) : {};
+    statuses[orderId] = newStatus;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(statuses));
+    
+    const statusLabels: Record<OrderStatus, string> = {
+      ordered: 'Оформлен',
+      assembling: 'Собирается',
+      shipped: 'Отправлен'
+    };
+    toast.success(`Статус заказа: ${statusLabels[newStatus]}`);
   };
 
   // Просто отметить как оплаченный (без чека)
@@ -84,10 +122,8 @@ export const OrderDetails: React.FC = () => {
     setShowReceiptTypeModal(false);
     
     if (type === 'legal') {
-      // Для юр лица открываем форму с реквизитами
       setShowLegalEntityModal(true);
     } else {
-      // Для физ лица сразу генерируем чек
       generateAndPrintReceipt('individual', null);
     }
   };
@@ -105,21 +141,18 @@ export const OrderDetails: React.FC = () => {
     
     setGenerating(true);
     try {
-      // Если заказ еще не оплачен - отмечаем как оплаченный
       if (order.paymentStatus !== 'paid') {
         await saleDocumentsApi.updatePaymentStatus(order.id, 'paid');
         const updatedOrder = { ...order, paymentStatus: 'paid' };
         setOrder(updatedOrder);
       }
       
-      // Обновляем тип документа на receipt
       await saleDocumentsApi.update(order.id, { documentType: 'receipt' });
       const finalOrder = { ...order, documentType: 'receipt', paymentStatus: 'paid' };
       setOrder(finalOrder);
       
       toast.success(type === 'individual' ? 'Чек сформирован' : 'Счет-фактура сформирован');
       
-      // Печатаем документ
       const { print } = PrintDocument({ 
         order: finalOrder, 
         type: 'receipt',
@@ -191,25 +224,24 @@ export const OrderDetails: React.FC = () => {
   return (
     <div className="space-y-6 animate-fade-in">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-4">
         <div className="flex items-center gap-4">
           <button
             onClick={() => navigate('/sales')}
-            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+            className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
           >
             <ArrowLeft size={24} />
           </button>
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">
+            <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
               Заказ №{order.documentNumber}
             </h1>
-            <p className="text-gray-500 mt-1">
+            <p className="text-gray-500 dark:text-gray-400 mt-1">
               Создан {formatDate(order.saleDate)}
             </p>
           </div>
         </div>
         <div className="flex gap-2">
-          {/* Кнопка "Чек" - открывает выбор типа */}
           <Button
             onClick={handleOpenReceiptModal}
             disabled={generating}
@@ -229,83 +261,133 @@ export const OrderDetails: React.FC = () => {
         </div>
       </div>
 
-      {/* Статус заказа */}
-      <div className={`p-4 rounded-lg ${
-        order.paymentStatus === 'paid' 
-          ? 'bg-green-50 border border-green-200' 
-          : 'bg-yellow-50 border border-yellow-200'
-      }`}>
-        <div className="flex items-center justify-between flex-wrap gap-3">
-          <div className="flex items-center gap-2">
-            {order.paymentStatus === 'paid' ? (
-              <CheckCircle className="text-green-600" size={20} />
-            ) : (
-              <XCircle className="text-yellow-600" size={20} />
-            )}
-            <span className={`font-medium ${
-              order.paymentStatus === 'paid' ? 'text-green-700' : 'text-yellow-700'
-            }`}>
-              {order.paymentStatus === 'paid' ? 'Заказ оплачен' : 'Заказ ожидает оплаты'}
-            </span>
-            {order.documentType === 'receipt' && (
-              <span className="ml-2 px-2 py-1 bg-green-100 text-green-700 text-xs rounded-full">
-                Чек выдан
+      {/* Статус заказа и оплаты */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Блок статуса заказа */}
+        <div className={`p-4 rounded-lg border ${
+          orderStatus === 'ordered' 
+            ? 'bg-blue-50 border-blue-200 dark:bg-blue-900/20 dark:border-blue-800' 
+            : orderStatus === 'assembling'
+            ? 'bg-yellow-50 border-yellow-200 dark:bg-yellow-900/20 dark:border-yellow-800'
+            : 'bg-green-50 border-green-200 dark:bg-green-900/20 dark:border-green-800'
+        }`}>
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <div className="flex items-center gap-2">
+              <Truck size={20} className={
+                orderStatus === 'ordered' 
+                  ? 'text-blue-600' 
+                  : orderStatus === 'assembling'
+                  ? 'text-yellow-600'
+                  : 'text-green-600'
+              } />
+              <span className="font-medium">Статус выполнения заказа</span>
+            </div>
+            <OrderStatusSelect
+              orderId={order.id}
+              currentStatus={orderStatus}
+              onStatusChange={handleStatusChange}
+              size="md"
+            />
+          </div>
+          <div className="mt-3">
+            <OrderStatusBadge status={orderStatus} size="lg" showIcon={true} />
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
+              {orderStatus === 'ordered' && 'Заказ принят, ожидает обработки'}
+              {orderStatus === 'assembling' && 'Идет сборка и подготовка заказа'}
+              {orderStatus === 'shipped' && 'Заказ передан клиенту'}
+            </p>
+          </div>
+        </div>
+
+        {/* Блок статуса оплаты */}
+        <div className={`p-4 rounded-lg border ${
+          order.paymentStatus === 'paid' 
+            ? 'bg-green-50 border-green-200 dark:bg-green-900/20 dark:border-green-800' 
+            : 'bg-yellow-50 border-yellow-200 dark:bg-yellow-900/20 dark:border-yellow-800'
+        }`}>
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <div className="flex items-center gap-2">
+              {order.paymentStatus === 'paid' ? (
+                <CheckCircle className="text-green-600" size={20} />
+              ) : (
+                <XCircle className="text-yellow-600" size={20} />
+              )}
+              <span className={`font-medium ${
+                order.paymentStatus === 'paid' ? 'text-green-700 dark:text-green-400' : 'text-yellow-700 dark:text-yellow-400'
+              }`}>
+                {order.paymentStatus === 'paid' ? 'Заказ оплачен' : 'Заказ ожидает оплаты'}
               </span>
-            )}
-            {order.documentType === 'invoice' && (
-              <span className="ml-2 px-2 py-1 bg-blue-100 text-blue-700 text-xs rounded-full">
-                Счет выставлен
-              </span>
+              {order.documentType === 'receipt' && (
+                <span className="ml-2 px-2 py-1 bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 text-xs rounded-full">
+                  Чек выдан
+                </span>
+              )}
+              {order.documentType === 'invoice' && (
+                <span className="ml-2 px-2 py-1 bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 text-xs rounded-full">
+                  Счет выставлен
+                </span>
+              )}
+            </div>
+            
+            {order.paymentStatus !== 'paid' && (
+              <Button
+                onClick={handleMarkAsPaid}
+                disabled={generating}
+                icon={CreditCard}
+                variant="secondary"
+                size="sm"
+              >
+                {generating ? 'Обработка...' : 'Отметить как оплаченный'}
+              </Button>
             )}
           </div>
-          
-          {/* Кнопка "Отметить как оплаченный" - только если не оплачен */}
-          {order.paymentStatus !== 'paid' && (
-            <Button
-              onClick={handleMarkAsPaid}
-              disabled={generating}
-              icon={CreditCard}
-              variant="secondary"
-              size="sm"
-            >
-              {generating ? 'Обработка...' : 'Отметить как оплаченный'}
-            </Button>
-          )}
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Информация о покупателе */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
             <User size={20} />
             Информация о покупателе
           </h2>
           <div className="space-y-3">
             {(order.customerName || order.clientName) && (
-              <div className="flex items-center gap-2 text-gray-600">
+              <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
                 <User size={16} />
                 <span>{order.customerName || order.clientName}</span>
               </div>
             )}
             {(order.customerPhone || order.clientPhone) && (
-              <div className="flex items-center gap-2 text-gray-600">
+              <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
                 <Phone size={16} />
                 <span>{order.customerPhone || order.clientPhone}</span>
               </div>
             )}
             {order.customerEmail && (
-              <div className="flex items-center gap-2 text-gray-600">
+              <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
                 <Mail size={16} />
                 <span>{order.customerEmail}</span>
               </div>
             )}
             {order.customerAddress && (
-              <div className="flex items-center gap-2 text-gray-600">
+              <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
                 <MapPin size={16} />
                 <span>{order.customerAddress}</span>
               </div>
             )}
+
+            {/* 🔸 НОВОЕ - Отображение комментария к заказу */}
+            {order.description && (
+              <div className="flex items-start gap-2 text-gray-600 dark:text-gray-400 mt-2 pt-2 border-t border-gray-100 dark:border-gray-700">
+                <MessageSquare size={16} className="flex-shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <span className="text-xs text-gray-400 block mb-0.5">Комментарий к заказу:</span>
+                  <span className="text-sm">{order.description}</span>
+                </div>
+              </div>
+            )}
+
             {!order.customerName && !order.clientName && !order.customerPhone && (
               <p className="text-gray-500 text-sm">Данные не указаны</p>
             )}
@@ -313,15 +395,15 @@ export const OrderDetails: React.FC = () => {
         </div>
 
         {/* Итоги */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
             <DollarSign size={20} />
             Итоги заказа
           </h2>
           <div className="space-y-3">
             <div className="flex justify-between">
-              <span className="text-gray-600">Сумма:</span>
-              <span>{formatPrice(order.subtotal)}</span>
+              <span className="text-gray-600 dark:text-gray-400">Сумма:</span>
+              <span className="dark:text-gray-300">{formatPrice(order.subtotal)}</span>
             </div>
             {order.discount > 0 && (
               <div className="flex justify-between text-green-600">
@@ -329,12 +411,12 @@ export const OrderDetails: React.FC = () => {
                 <span>-{formatPrice(order.discount)}</span>
               </div>
             )}
-            <div className="flex justify-between text-lg font-bold pt-2 border-t">
-              <span>Итого:</span>
+            <div className="flex justify-between text-lg font-bold pt-2 border-t border-gray-200 dark:border-gray-700">
+              <span className="dark:text-white">Итого:</span>
               <span className="text-primary-600">{formatPrice(order.total)}</span>
             </div>
             <div className="flex justify-between pt-2">
-              <span className="text-gray-600">Статус оплаты:</span>
+              <span className="text-gray-600 dark:text-gray-400">Статус оплаты:</span>
               <span className={order.paymentStatus === 'paid' ? 'text-green-600 font-medium' : 'text-yellow-600 font-medium'}>
                 {order.paymentStatus === 'paid' ? 'Оплачено' : 'Не оплачено'}
               </span>
@@ -344,9 +426,9 @@ export const OrderDetails: React.FC = () => {
       </div>
 
       {/* Список товаров */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-        <div className="p-6 border-b border-gray-200">
-          <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
+        <div className="p-6 border-b border-gray-200 dark:border-gray-700">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
             <Package size={20} />
             Состав заказа
           </h2>
@@ -366,16 +448,16 @@ export const OrderDetails: React.FC = () => {
               {order.items && order.items.length > 0 ? (
                 order.items.map((item, idx) => (
                   <Tr key={idx}>
-                    <Td>{idx + 1}</Td>
-                    <Td className="font-medium">{item.productName}</Td>
-                    <Td>{item.quantity} {item.isWork ? 'н/ч' : 'шт'}</Td>
-                    <Td>{formatPrice(item.price)}</Td>
-                    <Td className="font-semibold">{formatPrice(item.total)}</Td>
+                    <Td className="dark:text-gray-300">{idx + 1}</Td>
+                    <Td className="font-medium dark:text-white">{item.productName}</Td>
+                    <Td className="dark:text-gray-300">{item.quantity} {item.isWork ? 'н/ч' : 'шт'}</Td>
+                    <Td className="dark:text-gray-300">{formatPrice(item.price)}</Td>
+                    <Td className="font-semibold dark:text-gray-300">{formatPrice(item.total)}</Td>
                   </Tr>
                 ))
               ) : (
                 <Tr>
-                  <Td colSpan={5} className="text-center text-gray-500 py-8">
+                  <Td colSpan={5} className="text-center text-gray-500 dark:text-gray-400 py-8">
                     Нет товаров в заказе
                   </Td>
                 </Tr>
@@ -398,14 +480,13 @@ export const OrderDetails: React.FC = () => {
         )}
       </div>
 
-      {/* Модальное окно выбора типа чека */}
+      {/* Модальные окна */}
       <ReceiptTypeModal
         isOpen={showReceiptTypeModal}
         onClose={() => setShowReceiptTypeModal(false)}
         onSelect={handleReceiptTypeSelect}
       />
 
-      {/* Модальное окно для реквизитов юр лица */}
       <LegalEntityModal
         isOpen={showLegalEntityModal}
         onClose={() => setShowLegalEntityModal(false)}

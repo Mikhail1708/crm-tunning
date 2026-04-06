@@ -1,4 +1,6 @@
 // backend/src/types/index.ts
+// Добавляем поле description в CreateSaleDocumentDTO
+
 import { Request } from 'express';
 
 // Тип для пользователя в запросе
@@ -73,6 +75,7 @@ export interface CreateSaleDocumentDTO {
   customerPhone?: string;
   customerEmail?: string;
   customerAddress?: string;
+  description?: string;  // 🔸 НОВОЕ ПОЛЕ
   items: Array<{
     productId: number;
     quantity: number;

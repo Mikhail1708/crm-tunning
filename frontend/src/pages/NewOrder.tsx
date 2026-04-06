@@ -27,7 +27,8 @@ import {
   Percent,
   AlertCircle,
   CheckCircle,
-  MapPin
+  MapPin,
+  AlignLeft
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -482,6 +483,7 @@ export const NewOrder: React.FC = () => {
   const [customerPhone, setCustomerPhone] = useState<string>('');
   const [customerEmail, setCustomerEmail] = useState<string>('');
   const [customerCity, setCustomerCity] = useState<string>('');
+  const [description, setDescription] = useState<string>(''); // 🔸 НОВОЕ ПОЛЕ
   
   const [phoneError, setPhoneError] = useState<string>('');
   
@@ -684,6 +686,7 @@ export const NewOrder: React.FC = () => {
         customerPhone: customerPhone,
         customerEmail: customerEmail || null,
         customerAddress: null,
+        description: description || null, // 🔸 НОВОЕ ПОЛЕ
         items: cartItems.map(item => ({
           productId: item.id,
           quantity: item.quantity,
@@ -1066,6 +1069,21 @@ export const NewOrder: React.FC = () => {
                   }}
                   className="w-full pl-9 pr-3 py-2 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm"
                 />
+              </div>
+
+              {/* 🔸 НОВОЕ ПОЛЕ - Комментарий к заказу */}
+              <div className="relative">
+                <AlignLeft className="absolute left-3 top-3 text-gray-400" size={16} />
+                <textarea
+                  placeholder="Комментарий к заказу (например: особые пожелания, срочность, примечания)"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  rows={3}
+                  className="w-full pl-9 pr-3 py-2 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm resize-none"
+                />
+                <p className="text-xs text-gray-400 mt-1">
+                  Здесь можно указать любую дополнительную информацию по заказу
+                </p>
               </div>
             </div>
 

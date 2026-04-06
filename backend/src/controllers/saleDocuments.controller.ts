@@ -1,4 +1,6 @@
 // backend/src/controllers/saleDocuments.controller.ts
+// Добавляем поддержку поля description
+
 import { Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { RequestWithUser, CreateSaleDocumentDTO } from '../types';
@@ -113,6 +115,7 @@ export const createSaleDocument = async (req: RequestWithUser, res: Response): P
       customerPhone,
       customerEmail,
       customerAddress,
+      description,  // 🔸 НОВОЕ ПОЛЕ
       items,
       discount = 0,
       paymentMethod,
@@ -165,13 +168,14 @@ export const createSaleDocument = async (req: RequestWithUser, res: Response): P
           customerPhone: customerPhone || finalClientPhone,
           customerEmail,
           customerAddress,
+          description: description || null,  // 🔸 НОВОЕ ПОЛЕ
           subtotal,
           discount,
           total,
           paymentMethod,
           paymentStatus,
           saleDate: new Date(),
-          createdBy: sellerId  // Сохраняем ID создателя
+          createdBy: sellerId
         }
       });
       
@@ -273,7 +277,8 @@ export const updateSaleDocument = async (req: RequestWithUser, res: Response): P
       customerName,
       customerPhone,
       customerEmail,
-      customerAddress
+      customerAddress,
+      description  // 🔸 НОВОЕ ПОЛЕ
     } = req.body;
     
     const updateData: any = {
@@ -282,7 +287,8 @@ export const updateSaleDocument = async (req: RequestWithUser, res: Response): P
       customerName,
       customerPhone,
       customerEmail,
-      customerAddress
+      customerAddress,
+      description: description || null  // 🔸 НОВОЕ ПОЛЕ
     };
     
     if (clientId !== undefined) {

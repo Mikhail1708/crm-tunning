@@ -95,6 +95,9 @@ export interface SaleDocumentItem {
   isWork?: boolean;
 }
 
+// 🔸 НОВЫЙ ТИП: статус заказа (только для фронта)
+export type OrderStatus = 'ordered' | 'assembling' | 'shipped';
+
 export interface SaleDocument {
   id: number;
   documentNumber: string;
@@ -115,6 +118,8 @@ export interface SaleDocument {
   saleDate: string;
   createdAt: string;
   updatedAt: string;
+  description?: string;  // 🔸 НОВОЕ ПОЛЕ - комментарий к заказу
+  orderStatus?: OrderStatus;
 }
 
 export interface Sale {

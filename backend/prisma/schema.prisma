@@ -156,6 +156,7 @@ model SaleDocument {
   customerPhone  String?
   customerEmail  String?
   customerAddress String?
+   description    String?            // 🔸 НОВОЕ ПОЛЕ - комментарий к заказу
   subtotal       Float
   discount       Float              @default(0)
   total          Float
