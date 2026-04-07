@@ -79,6 +79,7 @@ export interface Client {
   orders?: SaleDocument[];
   createdAt: string;
   updatedAt: string;
+  discountPercent?: number;  // 🆕 Скидка клиента в %
 }
 
 export interface SaleDocumentItem {
@@ -95,7 +96,6 @@ export interface SaleDocumentItem {
   isWork?: boolean;
 }
 
-// 🔸 НОВЫЙ ТИП: статус заказа (только для фронта)
 export type OrderStatus = 'ordered' | 'assembling' | 'shipped';
 
 export interface SaleDocument {
@@ -118,8 +118,10 @@ export interface SaleDocument {
   saleDate: string;
   createdAt: string;
   updatedAt: string;
-  description?: string;  // 🔸 НОВОЕ ПОЛЕ - комментарий к заказу
+  description?: string;
   orderStatus?: OrderStatus;
+  clientDiscount?: number;      // 🆕 Скидка клиента при создании заказа
+  clientDiscountAmount?: number; // 🆕 Сумма скидки клиента
 }
 
 export interface Sale {

@@ -1,5 +1,3 @@
-// backend/prisma/schema.prisma
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -138,6 +136,9 @@ model Client {
   notes       String?   @db.Text
   totalOrders Int       @default(0)
   totalSpent  Float     @default(0)
+  discountPercent Int   @default(0)           // 🆕 Скидка клиента в %
+  discountUpdatedAt DateTime?                 // 🆕 Когда изменена скидка
+  discountUpdatedBy Int?                      // 🆕 Кто изменил скидку (userId)
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
   
@@ -156,7 +157,7 @@ model SaleDocument {
   customerPhone  String?
   customerEmail  String?
   customerAddress String?
-   description    String?            // 🔸 НОВОЕ ПОЛЕ - комментарий к заказу
+  description    String?            // комментарий к заказу
   subtotal       Float
   discount       Float              @default(0)
   total          Float

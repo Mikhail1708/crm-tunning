@@ -1,7 +1,7 @@
 // frontend/src/pages/Clients.tsx
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Search, Edit2, Trash2, User, Phone, Mail, Car, ChevronLeft, ChevronRight, Calendar, MapPin } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, User, Phone, Mail, Car, ChevronLeft, ChevronRight, Calendar, MapPin, Percent } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { clientsApi } from '../api/clients';
 import { Button } from '../components/ui/Button';
@@ -23,6 +23,7 @@ interface ClientFormData {
   carYear: string;
   carNumber: string;
   notes: string;
+  discountPercent: number;  // 🆕 Скидка
 }
 
 interface ClientsStats {
@@ -86,7 +87,8 @@ export const Clients: React.FC = () => {
     carModel: '',
     carYear: '',
     carNumber: '',
-    notes: ''
+    notes: '',
+    discountPercent: 0
   });
   const [stats, setStats] = useState<ClientsStats | null>(null);
 
@@ -96,33 +98,32 @@ export const Clients: React.FC = () => {
   }, [search, sortBy, sortOrder, page]);
 
   const fetchClients = async () => {
-  try {
-    setLoading(true);
-    const response = await clientsApi.getAll();
-    
-    // Исправление: проверяем структуру ответа
-    let clientsData = [];
-    if (response.data && Array.isArray(response.data)) {
-      clientsData = response.data;
-    } else if (response.data && Array.isArray(response.data.clients)) {
-      clientsData = response.data.clients;
-    } else if (Array.isArray(response)) {
-      clientsData = response;
-    } else if (response.data && response.data.data && Array.isArray(response.data.data)) {
-      clientsData = response.data.data;
-    } else {
-      clientsData = [];
-      console.warn('Unexpected API response structure:', response);
+    try {
+      setLoading(true);
+      const response = await clientsApi.getAll();
+      
+      let clientsData = [];
+      if (response.data && Array.isArray(response.data)) {
+        clientsData = response.data;
+      } else if (response.data && Array.isArray(response.data.clients)) {
+        clientsData = response.data.clients;
+      } else if (Array.isArray(response)) {
+        clientsData = response;
+      } else if (response.data && response.data.data && Array.isArray(response.data.data)) {
+        clientsData = response.data.data;
+      } else {
+        clientsData = [];
+        console.warn('Unexpected API response structure:', response);
+      }
+      
+      setClients(clientsData);
+    } catch (error) {
+      console.error('Error fetching clients:', error);
+      toast.error('Ошибка загрузки клиентов');
+    } finally {
+      setLoading(false);
     }
-    
-    setClients(clientsData);
-  } catch (error) {
-    console.error('Error fetching clients:', error);
-    toast.error('Ошибка загрузки клиентов');
-  } finally {
-    setLoading(false);
-  }
-};
+  };
 
   const fetchStats = async (): Promise<void> => {
     try {
@@ -196,7 +197,8 @@ export const Clients: React.FC = () => {
     
     const clientData = {
       ...formData,
-      phone: cleanPhone
+      phone: cleanPhone,
+      discountPercent: formData.discountPercent || 0
     };
     
     try {
@@ -213,7 +215,8 @@ export const Clients: React.FC = () => {
       setPhoneError('');
       setFormData({
         firstName: '', lastName: '', middleName: '', phone: '', email: '',
-        birthDate: '', city: '', carModel: '', carYear: '', carNumber: '', notes: ''
+        birthDate: '', city: '', carModel: '', carYear: '', carNumber: '', notes: '',
+        discountPercent: 0
       });
       fetchClients();
       fetchStats();
@@ -237,7 +240,8 @@ export const Clients: React.FC = () => {
       carModel: client.carModel || '',
       carYear: client.carYear || '',
       carNumber: client.carNumber || '',
-      notes: client.notes || ''
+      notes: client.notes || '',
+      discountPercent: client.discountPercent || 0
     });
     setCarYearError('');
     setPhoneError('');
@@ -266,7 +270,8 @@ export const Clients: React.FC = () => {
           setPhoneError('');
           setFormData({
             firstName: '', lastName: '', middleName: '', phone: '', email: '',
-            birthDate: '', city: '', carModel: '', carYear: '', carNumber: '', notes: ''
+            birthDate: '', city: '', carModel: '', carYear: '', carNumber: '', notes: '',
+            discountPercent: 0
           });
           setShowClientModal(true);
         }}>
@@ -319,6 +324,7 @@ export const Clients: React.FC = () => {
           <option value="totalOrders">Количество заказов</option>
           <option value="lastName">Фамилия</option>
           <option value="city">Город</option>
+          <option value="discountPercent">Скидка</option>
         </select>
         <select
           className="px-3 py-2 border rounded-lg"
@@ -342,14 +348,15 @@ export const Clients: React.FC = () => {
                 <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Автомобиль</th>
                 <th className="px-4 py-3 text-right text-sm font-medium text-gray-600">Заказов</th>
                 <th className="px-4 py-3 text-right text-sm font-medium text-gray-600">На сумму</th>
+                <th className="px-4 py-3 text-center text-sm font-medium text-gray-600">Скидка</th>
                 <th className="px-4 py-3 text-right text-sm font-medium text-gray-600">Действия</th>
               </tr>
             </thead>
             <tbody className="divide-y">
               {loading ? (
-                <tr><td colSpan={7} className="text-center py-8">Загрузка...</td></tr>
+                <tr><td colSpan={8} className="text-center py-8">Загрузка...</td></tr>
               ) : clients.length === 0 ? (
-                <tr><td colSpan={7} className="text-center py-8 text-gray-500">Нет клиентов</td></tr>
+                <tr><td colSpan={8} className="text-center py-8 text-gray-500">Нет клиентов</td></tr>
               ) : (
                 clients.map(client => (
                   <tr
@@ -394,6 +401,16 @@ export const Clients: React.FC = () => {
                     </td>
                     <td className="px-4 py-3 text-right">{client.totalOrders}</td>
                     <td className="px-4 py-3 text-right font-medium">{formatPrice(client.totalSpent || 0)}</td>
+                    <td className="px-4 py-3 text-center">
+                      {client.discountPercent && client.discountPercent > 0 ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium bg-green-100 text-green-700 rounded-full">
+                          <Percent size={10} />
+                          {client.discountPercent}%
+                        </span>
+                      ) : (
+                        <span className="text-gray-400 text-xs">—</span>
+                      )}
+                    </td>
                     <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
                       <div className="flex justify-end gap-2">
                         <button
@@ -568,6 +585,38 @@ export const Clients: React.FC = () => {
                 placeholder="А123ВС77"
               />
             </div>
+          </div>
+
+          {/* 🆕 Поле скидки */}
+          <div className="mt-4">
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              <Percent size={14} className="inline mr-1" />
+              Персональная скидка (%)
+            </label>
+            <div className="flex items-center gap-3">
+              <input
+                type="range"
+                min="0"
+                max="100"
+                step="1"
+                value={formData.discountPercent}
+                onChange={(e) => setFormData({ ...formData, discountPercent: parseInt(e.target.value) })}
+                className="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-green-600"
+              />
+              <input
+                type="number"
+                value={formData.discountPercent}
+                onChange={(e) => setFormData({ ...formData, discountPercent: Math.min(100, Math.max(0, parseInt(e.target.value) || 0)) })}
+                className="w-20 px-2 py-1 text-center border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                min="0"
+                max="100"
+                step="1"
+              />
+              <span className="text-sm text-gray-500">%</span>
+            </div>
+            <p className="text-xs text-gray-400 mt-1">
+              Скидка будет автоматически применяться ко всем заказам этого клиента
+            </p>
           </div>
           
           <div className="mt-4">

@@ -40,3 +40,10 @@ export const getStockStatus = (stock: number, minStock: number): StockStatus => 
   if (stock <= minStock) return { text: 'Мало', color: 'text-yellow-600', bg: 'bg-yellow-50' };
   return { text: 'В наличии', color: 'text-green-600', bg: 'bg-green-50' };
 };
+
+// 🆕 Форматирование скидки для отображения
+export const formatDiscount = (percent: number): string => {
+  if (percent <= 0) return '';
+  if (percent % 1 === 0) return `${percent}%`;
+  return `${percent.toFixed(1)}%`;
+};

@@ -3,7 +3,7 @@ import fs from 'fs';
 import path from 'path';
 
 export interface LogEntry {
-  id: number;
+  id: number;  // оставляем number
   userId: number;
   userName: string;
   userRole: string;
@@ -94,7 +94,7 @@ class AuditService {
     userAgent?: string
   ): Promise<LogEntry> {
     const logEntry: LogEntry = {
-      id: Date.now(),
+      id: Date.now() + Math.floor(Math.random() * 10000), // Числовой уникальный ID
       userId: user.id,
       userName: user.name,
       userRole: user.role,

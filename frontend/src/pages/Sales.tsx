@@ -66,7 +66,7 @@ export const Sales: React.FC = () => {
     try {
       setLoading(true);
       const { data } = await saleDocumentsApi.getAll();
-      console.log('Loaded documents:', data);
+      //console.log('Loaded documents:', data);
       setDocuments(data);
     } catch (error) {
       console.error('Error loading documents:', error);

@@ -337,6 +337,9 @@ const ClientSearch: React.FC<ClientSearchProps> = ({ selectedClient, onSelect, o
             {selectedClient.city && (
               <p className="text-xs text-gray-600">🏙️ {selectedClient.city}</p>
             )}
+            {selectedClient.discountPercent && selectedClient.discountPercent > 0 && (
+              <p className="text-xs text-green-600 mt-0.5">🎯 Скидка: {selectedClient.discountPercent}%</p>
+            )}
           </div>
           <button onClick={onClear} className="p-1 hover:bg-blue-100 rounded">
             <X size={14} className="text-gray-500" />
@@ -381,6 +384,9 @@ const ClientSearch: React.FC<ClientSearchProps> = ({ selectedClient, onSelect, o
                 >
                   <div className="font-medium text-sm">{fullName}</div>
                   <div className="text-xs text-gray-500">{client.phone}</div>
+                  {client.discountPercent && client.discountPercent > 0 && (
+                    <div className="text-xs text-green-600">Скидка: {client.discountPercent}%</div>
+                  )}
                 </div>
               );
             })
@@ -638,6 +644,7 @@ export const NewOrder: React.FC = () => {
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
   
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
+  const [clientDiscount, setClientDiscount] = useState<number>(0); // 🆕 Скидка клиента
   const [customerName, setCustomerName] = useState<string>('');
   const [customerPhone, setCustomerPhone] = useState<string>('');
   const [customerEmail, setCustomerEmail] = useState<string>('');
@@ -727,8 +734,9 @@ export const NewOrder: React.FC = () => {
       setCustomerPhone(client.phone);
       setCustomerEmail(client.email || '');
       setCustomerCity(client.city || '');
+      setClientDiscount(client.discountPercent || 0); // 🆕 Устанавливаем скидку клиента
       setPhoneError('');
-      toast.success(`Выбран клиент: ${fullName}`);
+      toast.success(`Выбран клиент: ${fullName}${client.discountPercent ? ` (скидка ${client.discountPercent}%)` : ''}`);
     } catch (error) {
       console.error('Error loading client:', error);
       toast.error('Ошибка загрузки данных клиента');
@@ -745,14 +753,16 @@ export const NewOrder: React.FC = () => {
     setCustomerPhone(client.phone);
     setCustomerEmail(client.email || '');
     setCustomerCity(client.city || '');
+    setClientDiscount(client.discountPercent || 0); // 🆕 Устанавливаем скидку клиента
     setAutoCreatedClient(null);
     setPhoneError('');
-    toast.success(`Выбран клиент: ${fullName}`);
+    toast.success(`Выбран клиент: ${fullName}${client.discountPercent ? ` (скидка ${client.discountPercent}%)` : ''}`);
   };
 
   const handleClearClient = (): void => {
     setSelectedClient(null);
     setAutoCreatedClient(null);
+    setClientDiscount(0); // 🆕 Сбрасываем скидку клиента
   };
 
   const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>): void => {
@@ -882,8 +892,9 @@ export const NewOrder: React.FC = () => {
         setCustomerPhone(existingClient.phone);
         setCustomerEmail(existingClient.email || '');
         setCustomerCity(existingClient.city || '');
+        setClientDiscount(existingClient.discountPercent || 0); // 🆕 Устанавливаем скидку клиента
         setPhoneError('');
-        toast.success(`Найден существующий клиент: ${fullName}`);
+        toast.success(`Найден существующий клиент: ${fullName}${existingClient.discountPercent ? ` (скидка ${existingClient.discountPercent}%)` : ''}`);
         return existingClient;
       }
       
@@ -903,6 +914,7 @@ export const NewOrder: React.FC = () => {
       
       setSelectedClient(newClient);
       setAutoCreatedClient(newClient);
+      setClientDiscount(0); // 🆕 У нового клиента скидка 0
       toast.success(`Клиент "${customerName}" успешно добавлен в базу!`);
       return newClient;
       
@@ -949,6 +961,12 @@ export const NewOrder: React.FC = () => {
         }
       }
       
+      // Рассчитываем общую сумму для применения скидки клиента
+      const subtotal = cartItems.reduce((sum, item) => sum + (item.selling_price * item.quantity), 0);
+      const clientDiscountAmount = subtotal * (clientDiscount / 100);
+      const manualDiscount = subtotal * (discountPercent / 100);
+      const totalDiscount = clientDiscountAmount + manualDiscount;
+      
       const orderData = {
         documentType: 'order' as const,
         clientId: finalClientId,
@@ -962,7 +980,7 @@ export const NewOrder: React.FC = () => {
           quantity: item.quantity,
           price: item.selling_price
         })),
-        discount: totals.discountAmount,
+        discount: totalDiscount,
         paymentMethod: 'cash',
         paymentStatus: 'unpaid' as const
       };
@@ -982,7 +1000,9 @@ export const NewOrder: React.FC = () => {
 
   const calculateTotals = (): Totals => {
     const subtotal = cartItems.reduce((sum, item) => sum + (item.selling_price * item.quantity), 0);
-    const discountAmount = subtotal * (discountPercent / 100);
+    const clientDiscountAmount = subtotal * (clientDiscount / 100);
+    const manualDiscountAmount = subtotal * (discountPercent / 100);
+    const discountAmount = clientDiscountAmount + manualDiscountAmount;
     const totalWithDiscount = subtotal - discountAmount;
     const totalProfit = cartItems.reduce((sum, item) => sum + ((item.selling_price - item.cost_price) * item.quantity), 0);
     
@@ -1345,10 +1365,22 @@ export const NewOrder: React.FC = () => {
                   <span className="text-gray-600">Прибыль:</span>
                   <span className="font-medium text-green-600">{formatPrice(totals.totalProfit)}</span>
                 </div>
+                
+                {/* 🆕 Отображение скидки клиента */}
+                {clientDiscount > 0 && (
+                  <div className="flex justify-between text-sm text-green-600 bg-green-50 p-2 rounded-lg">
+                    <span className="flex items-center gap-1">
+                      <Percent size={14} />
+                      Скидка клиента ({clientDiscount}%):
+                    </span>
+                    <span className="font-medium">-{formatPrice(totals.subtotal * (clientDiscount / 100))}</span>
+                  </div>
+                )}
+                
                 <div className="flex justify-between items-center">
                   <div className="flex items-center gap-2">
                     <Percent size={14} className="text-gray-400" />
-                    <span className="text-gray-600 text-sm">Скидка:</span>
+                    <span className="text-gray-600 text-sm">Доп. скидка:</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <input
@@ -1364,9 +1396,10 @@ export const NewOrder: React.FC = () => {
                       max={100}
                     />
                     <span className="text-gray-600 text-sm">%</span>
-                    <span className="text-gray-600 text-sm">(-{formatPrice(totals.discountAmount)})</span>
+                    <span className="text-gray-600 text-sm">(-{formatPrice(totals.subtotal * (discountPercent / 100))})</span>
                   </div>
                 </div>
+                
                 <div className="flex justify-between text-lg font-bold pt-2 border-t">
                   <span>Итого:</span>
                   <span className="text-primary-600">{formatPrice(totals.totalWithDiscount)}</span>

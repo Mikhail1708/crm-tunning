@@ -6,13 +6,16 @@ import { saleDocumentsApi } from '../api/saleDocuments';
 import { Button } from '../components/ui/Button';
 import { Card, CardBody, CardHeader } from '../components/ui/Card';
 import { formatPrice, formatDate } from '../utils/formatters';
-import { ArrowLeft, Phone, Mail, MapPin, Car, ShoppingBag, Calendar, CreditCard, Plus } from 'lucide-react';
-import toast from 'react-hot-toast';
+import { ArrowLeft, Phone, Mail, MapPin, Car, ShoppingBag, Calendar, CreditCard, Plus, Percent, Edit2 } from 'lucide-react';
+import { toast } from 'react-hot-toast';
+import { Modal } from '../components/ui/Modal';
+import { Input } from '../components/ui/Input';
 
 interface Client {
   id: number;
   firstName: string;
   lastName: string;
+  middleName?: string;
   phone: string;
   email?: string;
   city?: string;
@@ -20,6 +23,7 @@ interface Client {
   carYear?: number;
   carNumber?: string;
   createdAt: string;
+  discountPercent?: number;  // 🆕
 }
 
 interface Order {
@@ -42,6 +46,9 @@ export const ClientDetails: React.FC = () => {
   const [client, setClient] = useState<Client | null>(null);
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
+  const [showDiscountModal, setShowDiscountModal] = useState<boolean>(false);
+  const [discountPercent, setDiscountPercent] = useState<number>(0);
+  const [updatingDiscount, setUpdatingDiscount] = useState<boolean>(false);
 
   useEffect(() => {
     if (id) {
@@ -57,6 +64,7 @@ export const ClientDetails: React.FC = () => {
         saleDocumentsApi.getByClientId(clientId)
       ]);
       setClient(clientRes.data);
+      setDiscountPercent(clientRes.data.discountPercent || 0);
       setOrders(ordersRes.data || []);
     } catch (error) {
       console.error('Error loading client data:', error);
@@ -67,41 +75,36 @@ export const ClientDetails: React.FC = () => {
     }
   };
 
+  const handleUpdateDiscount = async () => {
+    if (!client) return;
+    
+    setUpdatingDiscount(true);
+    try {
+      await clientsApi.updateDiscount(client.id, discountPercent);
+      setClient({ ...client, discountPercent });
+      toast.success(`Скидка клиента изменена на ${discountPercent}%`);
+      setShowDiscountModal(false);
+    } catch (error) {
+      console.error('Error updating discount:', error);
+      toast.error('Ошибка обновления скидки');
+    } finally {
+      setUpdatingDiscount(false);
+    }
+  };
+
   const getFullName = (): string => {
     if (!client) return '';
-    return `${client.firstName} ${client.lastName}`;
+    const parts = [client.lastName, client.firstName, client.middleName].filter(Boolean);
+    return parts.join(' ') || 'Без имени';
   };
 
-  // Только ОПЛАЧЕННЫЕ заказы
   const paidOrders = orders.filter(order => order.paymentStatus === 'paid');
-  
-  // Сумма только по оплаченным заказам
-  const getTotalSpent = (): number => {
-    return paidOrders.reduce((sum, order) => sum + order.total, 0);
-  };
-  
-  // Средний чек только по оплаченным заказам
-  const getAverageCheck = (): number => {
-    if (paidOrders.length === 0) return 0;
-    return getTotalSpent() / paidOrders.length;
-  };
-  
-  // Количество неоплаченных заказов
-  const getUnpaidCount = (): number => {
-    return orders.filter(order => order.paymentStatus !== 'paid').length;
-  };
-  
-  // Сумма неоплаченных заказов
-  const getUnpaidTotal = (): number => {
-    return orders
-      .filter(order => order.paymentStatus !== 'paid')
-      .reduce((sum, order) => sum + order.total, 0);
-  };
+  const getTotalSpent = (): number => paidOrders.reduce((sum, order) => sum + order.total, 0);
+  const getAverageCheck = (): number => paidOrders.length === 0 ? 0 : getTotalSpent() / paidOrders.length;
+  const getUnpaidCount = (): number => orders.filter(order => order.paymentStatus !== 'paid').length;
+  const getUnpaidTotal = (): number => orders.filter(order => order.paymentStatus !== 'paid').reduce((sum, order) => sum + order.total, 0);
 
-  // Переход на создание нового заказа с предзаполненным клиентом
-  const handleNewOrder = () => {
-    navigate(`/sales/new?clientId=${client?.id}`);
-  };
+  const handleNewOrder = () => navigate(`/sales/new?clientId=${client?.id}`);
 
   if (loading) {
     return (
@@ -124,7 +127,6 @@ export const ClientDetails: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      {/* Верхняя панель с кнопкой назад и новой заказ */}
       <div className="flex justify-between items-center">
         <button
           onClick={() => navigate('/clients')}
@@ -133,11 +135,8 @@ export const ClientDetails: React.FC = () => {
           <ArrowLeft size={20} />
           Назад к списку
         </button>
-        
-        
       </div>
 
-      {/* Информация о клиенте */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <Card className="lg:col-span-2">
           <CardHeader>
@@ -146,7 +145,27 @@ export const ClientDetails: React.FC = () => {
                 <h2 className="text-xl font-semibold text-gray-900">{getFullName()}</h2>
                 <p className="text-sm text-gray-500">Клиент с {formatDate(client.createdAt)}</p>
               </div>
-              
+              {/* 🆕 Бейдж со скидкой и кнопка редактирования */}
+              <div className="flex items-center gap-2">
+                {client.discountPercent && client.discountPercent > 0 ? (
+                  <span className="inline-flex items-center gap-1 px-3 py-1.5 bg-green-100 text-green-700 rounded-full text-sm font-medium">
+                    <Percent size={14} />
+                    Скидка {client.discountPercent}%
+                  </span>
+                ) : (
+                  <span className="text-sm text-gray-400">Нет скидки</span>
+                )}
+                <button
+                  onClick={() => {
+                    setDiscountPercent(client.discountPercent || 0);
+                    setShowDiscountModal(true);
+                  }}
+                  className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                  title="Изменить скидку"
+                >
+                  <Edit2 size={16} />
+                </button>
+              </div>
             </div>
           </CardHeader>
           <CardBody className="space-y-4">
@@ -193,7 +212,6 @@ export const ClientDetails: React.FC = () => {
           </CardBody>
         </Card>
 
-        {/* Статистика */}
         <Card>
           <CardHeader>
             <h3 className="font-semibold text-gray-900">Статистика</h3>
@@ -225,7 +243,6 @@ export const ClientDetails: React.FC = () => {
         </Card>
       </div>
 
-      {/* История заказов */}
       <Card>
         <CardHeader>
           <div className="flex justify-between items-center">
@@ -238,12 +255,7 @@ export const ClientDetails: React.FC = () => {
                 </span>
               )}
             </h3>
-            <Button
-              onClick={handleNewOrder}
-              icon={Plus}
-              variant="secondary"
-              size="sm"
-            >
+            <Button onClick={handleNewOrder} icon={Plus} variant="secondary" size="sm">
               Новый заказ
             </Button>
           </div>
@@ -252,11 +264,7 @@ export const ClientDetails: React.FC = () => {
           {orders.length === 0 ? (
             <div className="text-center py-8">
               <p className="text-gray-500">У клиента пока нет заказов</p>
-              <Button
-                onClick={handleNewOrder}
-                variant="primary"
-                className="mt-4"
-              >
+              <Button onClick={handleNewOrder} variant="primary" className="mt-4">
                 Создать первый заказ
               </Button>
             </div>
@@ -298,6 +306,61 @@ export const ClientDetails: React.FC = () => {
           )}
         </CardBody>
       </Card>
+
+      {/* 🆕 Модалка изменения скидки */}
+      <Modal
+        isOpen={showDiscountModal}
+        onClose={() => setShowDiscountModal(false)}
+        title="Персональная скидка клиента"
+        size="sm"
+      >
+        <div className="space-y-4">
+          <div className="text-center">
+            <p className="text-sm text-gray-500 mb-2">Текущая скидка</p>
+            <p className="text-3xl font-bold text-green-600">{discountPercent}%</p>
+          </div>
+          
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Изменить скидку
+            </label>
+            <div className="flex items-center gap-3">
+              <input
+                type="range"
+                min="0"
+                max="100"
+                step="1"
+                value={discountPercent}
+                onChange={(e) => setDiscountPercent(parseInt(e.target.value))}
+                className="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-green-600"
+              />
+              <input
+                type="number"
+                value={discountPercent}
+                onChange={(e) => setDiscountPercent(Math.min(100, Math.max(0, parseInt(e.target.value) || 0)))}
+                className="w-20 px-2 py-1 text-center border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                min="0"
+                max="100"
+                step="1"
+              />
+              <span className="text-sm text-gray-500">%</span>
+            </div>
+          </div>
+          
+          <p className="text-xs text-gray-400">
+            Скидка будет автоматически применяться ко всем новым заказам этого клиента
+          </p>
+          
+          <div className="flex justify-end gap-3 pt-4 border-t">
+            <Button variant="secondary" onClick={() => setShowDiscountModal(false)}>
+              Отмена
+            </Button>
+            <Button onClick={handleUpdateDiscount} loading={updatingDiscount}>
+              Сохранить
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 };

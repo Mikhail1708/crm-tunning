@@ -1,6 +1,4 @@
 // backend/src/types/index.ts
-// Добавляем поле description в CreateSaleDocumentDTO
-
 import { Request } from 'express';
 
 // Тип для пользователя в запросе
@@ -63,9 +61,15 @@ export interface CreateClientDTO {
   carVin?: string;
   carNumber?: string;
   notes?: string;
+  discountPercent?: number;  // 🆕 Скидка клиента
 }
 
 export interface UpdateClientDTO extends Partial<CreateClientDTO> {}
+
+// DTO для обновления скидки клиента
+export interface UpdateClientDiscountDTO {
+  discountPercent: number;
+}
 
 // DTO для документов продаж
 export interface CreateSaleDocumentDTO {
@@ -75,7 +79,7 @@ export interface CreateSaleDocumentDTO {
   customerPhone?: string;
   customerEmail?: string;
   customerAddress?: string;
-  description?: string;  // 🔸 НОВОЕ ПОЛЕ
+  description?: string;
   items: Array<{
     productId: number;
     quantity: number;

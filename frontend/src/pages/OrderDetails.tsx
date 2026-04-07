@@ -26,7 +26,8 @@ import {
   CheckCircle,
   XCircle,
   Truck,
-  MessageSquare
+  MessageSquare,
+  Percent
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -377,7 +378,7 @@ export const OrderDetails: React.FC = () => {
               </div>
             )}
 
-            {/* 🔸 НОВОЕ - Отображение комментария к заказу */}
+            {/* Отображение комментария к заказу */}
             {order.description && (
               <div className="flex items-start gap-2 text-gray-600 dark:text-gray-400 mt-2 pt-2 border-t border-gray-100 dark:border-gray-700">
                 <MessageSquare size={16} className="flex-shrink-0 mt-0.5" />
@@ -405,12 +406,34 @@ export const OrderDetails: React.FC = () => {
               <span className="text-gray-600 dark:text-gray-400">Сумма:</span>
               <span className="dark:text-gray-300">{formatPrice(order.subtotal)}</span>
             </div>
-            {order.discount > 0 && (
-              <div className="flex justify-between text-green-600">
-                <span>Скидка:</span>
+            
+            {/* 🆕 Скидка клиента (если была применена) */}
+            {order.clientDiscount && order.clientDiscount > 0 && (
+              <div className="flex justify-between text-sm text-green-600">
+                <span className="flex items-center gap-1">
+                  <Percent size={14} />
+                  Скидка клиента ({order.clientDiscount}%):
+                </span>
+                <span>-{formatPrice(order.clientDiscountAmount || 0)}</span>
+              </div>
+            )}
+            
+            {/* Ручная скидка (если есть) */}
+            {order.discount > 0 && (!order.clientDiscount || order.discount !== order.clientDiscountAmount) && (
+              <div className="flex justify-between text-sm text-green-600">
+                <span>Ручная скидка:</span>
                 <span>-{formatPrice(order.discount)}</span>
               </div>
             )}
+            
+            {/* Общая скидка (если есть обе) */}
+            {order.clientDiscount && order.clientDiscount > 0 && order.discount > 0 && order.discount !== order.clientDiscountAmount && (
+              <div className="flex justify-between text-sm text-blue-600 pt-1 border-t border-gray-100">
+                <span className="font-medium">Общая скидка:</span>
+                <span className="font-medium">-{formatPrice(order.discount + (order.clientDiscountAmount || 0))}</span>
+              </div>
+            )}
+            
             <div className="flex justify-between text-lg font-bold pt-2 border-t border-gray-200 dark:border-gray-700">
               <span className="dark:text-white">Итого:</span>
               <span className="text-primary-600">{formatPrice(order.total)}</span>
@@ -421,6 +444,14 @@ export const OrderDetails: React.FC = () => {
                 {order.paymentStatus === 'paid' ? 'Оплачено' : 'Не оплачено'}
               </span>
             </div>
+            
+            {/* Информация о продавце */}
+            {(order as any).sellerName && (
+              <div className="flex justify-between pt-2 text-xs text-gray-400 border-t border-gray-100">
+                <span>Продавец:</span>
+                <span>{(order as any).sellerName}</span>
+              </div>
+            )}
           </div>
         </div>
       </div>

@@ -1,6 +1,4 @@
 // backend/src/controllers/saleDocuments.controller.ts
-// Добавляем поддержку поля description
-
 import { Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { RequestWithUser, CreateSaleDocumentDTO } from '../types';
@@ -115,7 +113,7 @@ export const createSaleDocument = async (req: RequestWithUser, res: Response): P
       customerPhone,
       customerEmail,
       customerAddress,
-      description,  // 🔸 НОВОЕ ПОЛЕ
+      description,
       items,
       discount = 0,
       paymentMethod,
@@ -130,6 +128,7 @@ export const createSaleDocument = async (req: RequestWithUser, res: Response): P
     let finalClientName = customerName;
     let finalClientPhone = customerPhone;
     let client = null;
+    let clientDiscount = 0;
     
     if (clientId) {
       client = await prisma.client.findUnique({
@@ -142,6 +141,7 @@ export const createSaleDocument = async (req: RequestWithUser, res: Response): P
           .join(' ')
           .trim() || client.firstName;
         finalClientPhone = client.phone;
+        clientDiscount = client.discountPercent || 0;  // 🆕 Получаем скидку клиента
       }
     }
     
@@ -151,9 +151,11 @@ export const createSaleDocument = async (req: RequestWithUser, res: Response): P
     const random = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
     const documentNumber = `${prefix}-${dateStr}-${random}`;
     
-    // Рассчитываем суммы
+    // Рассчитываем суммы с учётом скидки клиента
     const subtotal = items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-    const total = subtotal - discount;
+    const clientDiscountAmount = subtotal * (clientDiscount / 100);
+    const totalDiscount = discount + clientDiscountAmount;
+    const total = subtotal - totalDiscount;
     
     const result = await prisma.$transaction(async (tx) => {
       // Создаем документ с указанием создателя
@@ -168,9 +170,9 @@ export const createSaleDocument = async (req: RequestWithUser, res: Response): P
           customerPhone: customerPhone || finalClientPhone,
           customerEmail,
           customerAddress,
-          description: description || null,  // 🔸 НОВОЕ ПОЛЕ
+          description: description || null,
           subtotal,
-          discount,
+          discount: totalDiscount,  // Сохраняем общую скидку
           total,
           paymentMethod,
           paymentStatus,
@@ -248,12 +250,17 @@ export const createSaleDocument = async (req: RequestWithUser, res: Response): P
         });
       }
       
-      return { document, sales, sellerName };
+      return { document, sales, sellerName, clientDiscount, clientDiscountAmount };
     });
     
-    // Возвращаем документ с именем продавца
+    // Возвращаем документ с именем продавца и информацией о скидке клиента
     res.status(201).json({
-      document: { ...result.document, sellerName: result.sellerName },
+      document: { 
+        ...result.document, 
+        sellerName: result.sellerName,
+        clientDiscount: result.clientDiscount,
+        clientDiscountAmount: result.clientDiscountAmount
+      },
       sales: result.sales
     });
   } catch (error) {
@@ -278,7 +285,7 @@ export const updateSaleDocument = async (req: RequestWithUser, res: Response): P
       customerPhone,
       customerEmail,
       customerAddress,
-      description  // 🔸 НОВОЕ ПОЛЕ
+      description
     } = req.body;
     
     const updateData: any = {
@@ -288,7 +295,7 @@ export const updateSaleDocument = async (req: RequestWithUser, res: Response): P
       customerPhone,
       customerEmail,
       customerAddress,
-      description: description || null  // 🔸 НОВОЕ ПОЛЕ
+      description: description || null
     };
     
     if (clientId !== undefined) {

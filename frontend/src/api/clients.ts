@@ -16,6 +16,7 @@ export interface CreateClientData {
   carNumber?: string;
   carVin?: string;
   notes?: string;
+  discountPercent?: number;  // 🆕 Скидка при создании
 }
 
 export type UpdateClientData = Partial<CreateClientData>;
@@ -53,4 +54,10 @@ export const clientsApi = {
     newClientsThisMonth: number;
     topClients: Client[];
   }>> => api.get('/clients/stats'),
+
+  // 🆕 Обновить только скидку клиента
+  updateDiscount: (id: number, discountPercent: number): Promise<ApiResponse<{ 
+    message: string; 
+    client: { id: number; discountPercent: number; discountUpdatedAt: string | null } 
+  }>> => api.patch(`/clients/${id}/discount`, { discountPercent }),
 };

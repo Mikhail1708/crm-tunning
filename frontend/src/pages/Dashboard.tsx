@@ -85,7 +85,7 @@ export const Dashboard: React.FC = () => {
     try {
       setLoading(true);
       
-      console.log('🔄 Loading dashboard data...', force ? '(force refresh)' : '');
+      //console.log('🔄 Loading dashboard data...', force ? '(force refresh)' : '');
       
       const [productsRes, lowStockRes, clientsRes, salesRes] = await Promise.all([
         productsApi.getAll(),
@@ -95,12 +95,12 @@ export const Dashboard: React.FC = () => {
       ]);
       
       // 🔸 ЛОГИРУЕМ СТРУКТУРУ ДАННЫХ ДЛЯ ОТЛАДКИ
-      console.log('📊 API Responses:', {
-        products: productsRes.data,
-        lowStock: lowStockRes.data,
-        clients: clientsRes.data,
-        sales: salesRes.data
-      });
+      //console.log('📊 API Responses:', {
+       // products: productsRes.data,
+       // lowStock: lowStockRes.data,
+       // clients: clientsRes.data,
+       // sales: salesRes.data
+     // });
       
       const allProducts = productsRes.data || [];
       const allSales = salesRes.data || [];
@@ -131,7 +131,7 @@ export const Dashboard: React.FC = () => {
         }
       }
       
-      console.log('👥 Clients loaded:', { clients: clients.length, totalClients });
+      //console.log('👥 Clients loaded:', { clients: clients.length, totalClients });
       
       // Фильтруем ТОЛЬКО ОПЛАЧЕННЫЕ заказы
       const paidSales = allSales.filter(sale => {
@@ -297,7 +297,7 @@ export const Dashboard: React.FC = () => {
         };
       });
       
-      console.log('📋 Recent clients:', recentClientsData);
+      //console.log('📋 Recent clients:', recentClientsData);
       setRecentClients(recentClientsData);
       
     } catch (error) {

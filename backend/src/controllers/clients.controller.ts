@@ -1,7 +1,8 @@
 // backend/src/controllers/clients.controller.ts
 import { Response } from 'express';
 import { PrismaClient } from '@prisma/client';
-import { RequestWithUser, CreateClientDTO } from '../types';
+import { RequestWithUser, CreateClientDTO, UpdateClientDiscountDTO } from '../types';
+import auditService from '../services/audit.service';
 
 const prisma = new PrismaClient();
 
@@ -122,7 +123,8 @@ export const createClient = async (req: RequestWithUser, res: Response): Promise
       carYear,
       carVin,
       carNumber,
-      notes
+      notes,
+      discountPercent
     } = data;
     
     // Проверяем обязательное поле
@@ -141,6 +143,12 @@ export const createClient = async (req: RequestWithUser, res: Response): Promise
       return;
     }
     
+    // Валидация скидки
+    let finalDiscount = 0;
+    if (discountPercent !== undefined) {
+      finalDiscount = Math.min(100, Math.max(0, discountPercent));
+    }
+    
     const client = await prisma.client.create({
       data: {
         firstName,
@@ -157,9 +165,21 @@ export const createClient = async (req: RequestWithUser, res: Response): Promise
         carYear: carYear ? parseInt(carYear as any) : null,
         carVin,
         carNumber,
-        notes
+        notes,
+        discountPercent: finalDiscount,
+        discountUpdatedAt: finalDiscount > 0 ? new Date() : null,
+        discountUpdatedBy: req.user?.id
       }
     });
+    
+    // Логируем создание клиента со скидкой
+    if (finalDiscount > 0 && req.user) {
+      await auditService.log(
+        { id: req.user.id, name: req.user.name, role: req.user.role },
+        `Создан клиент "${firstName} ${lastName || ''}" со скидкой ${finalDiscount}%`,
+        { clientId: client.id, discountPercent: finalDiscount }
+      );
+    }
     
     res.status(201).json(client);
   } catch (error) {
@@ -183,6 +203,7 @@ export const updateClient = async (req: RequestWithUser, res: Response): Promise
     }
     
     const updateData = req.body;
+    const oldClient = await prisma.client.findUnique({ where: { id: clientId } });
     
     // Если обновляется телефон, проверяем уникальность
     if (updateData.phone) {
@@ -199,6 +220,20 @@ export const updateClient = async (req: RequestWithUser, res: Response): Promise
       }
     }
     
+    // Валидация скидки
+    let discountChanged = false;
+    let oldDiscount = oldClient?.discountPercent || 0;
+    let newDiscount = updateData.discountPercent !== undefined 
+      ? Math.min(100, Math.max(0, updateData.discountPercent)) 
+      : oldDiscount;
+    
+    if (updateData.discountPercent !== undefined && oldDiscount !== newDiscount) {
+      discountChanged = true;
+      updateData.discountPercent = newDiscount;
+      updateData.discountUpdatedAt = new Date();
+      updateData.discountUpdatedBy = req.user?.id;
+    }
+    
     const client = await prisma.client.update({
       where: { id: clientId },
       data: {
@@ -207,6 +242,15 @@ export const updateClient = async (req: RequestWithUser, res: Response): Promise
         carYear: updateData.carYear ? parseInt(updateData.carYear) : undefined
       }
     });
+    
+    // Логируем изменение скидки
+    if (discountChanged && req.user) {
+      await auditService.log(
+        { id: req.user.id, name: req.user.name, role: req.user.role },
+        `Изменена скидка клиента "${client.firstName} ${client.lastName || ''}" с ${oldDiscount}% на ${newDiscount}%`,
+        { clientId, oldDiscount, newDiscount }
+      );
+    }
     
     res.json(client);
   } catch (error) {
@@ -310,7 +354,8 @@ export const getClientsStats = async (req: RequestWithUser, res: Response): Prom
         lastName: true,
         phone: true,
         totalOrders: true,
-        totalSpent: true
+        totalSpent: true,
+        discountPercent: true
       }
     });
     
@@ -331,5 +376,69 @@ export const getClientsStats = async (req: RequestWithUser, res: Response): Prom
   } catch (error) {
     console.error('Error in getClientsStats:', error);
     res.status(500).json({ error: error instanceof Error ? error.message : 'Ошибка получения статистики' });
+  }
+};
+
+/**
+ * PATCH /api/clients/:id/discount
+ * Обновить только скидку клиента
+ */
+export const updateClientDiscount = async (req: RequestWithUser, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const clientId = parseInt(id);
+    const { discountPercent }: UpdateClientDiscountDTO = req.body;
+    
+    if (isNaN(clientId)) {
+      res.status(400).json({ error: 'Неверный ID клиента' });
+      return;
+    }
+    
+    if (discountPercent === undefined || isNaN(discountPercent)) {
+      res.status(400).json({ error: 'Укажите discountPercent (0-100)' });
+      return;
+    }
+    
+    const validDiscount = Math.min(100, Math.max(0, discountPercent));
+    
+    const oldClient = await prisma.client.findUnique({
+      where: { id: clientId },
+      select: { firstName: true, lastName: true, discountPercent: true }
+    });
+    
+    if (!oldClient) {
+      res.status(404).json({ error: 'Клиент не найден' });
+      return;
+    }
+    
+    const client = await prisma.client.update({
+      where: { id: clientId },
+      data: {
+        discountPercent: validDiscount,
+        discountUpdatedAt: new Date(),
+        discountUpdatedBy: req.user?.id
+      }
+    });
+    
+    // Логируем изменение скидки
+    if (req.user) {
+      await auditService.log(
+        { id: req.user.id, name: req.user.name, role: req.user.role },
+        `Изменена скидка клиента "${oldClient.firstName} ${oldClient.lastName || ''}" с ${oldClient.discountPercent}% на ${validDiscount}%`,
+        { clientId, oldDiscount: oldClient.discountPercent, newDiscount: validDiscount }
+      );
+    }
+    
+    res.json({ 
+      message: 'Скидка клиента обновлена',
+      client: {
+        id: client.id,
+        discountPercent: client.discountPercent,
+        discountUpdatedAt: client.discountUpdatedAt
+      }
+    });
+  } catch (error) {
+    console.error('Error in updateClientDiscount:', error);
+    res.status(500).json({ error: error instanceof Error ? error.message : 'Ошибка обновления скидки' });
   }
 };
