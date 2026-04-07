@@ -1,5 +1,5 @@
 // frontend/src/pages/Reports.tsx
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { reportsApi } from '../api/reports';
 import { saleDocumentsApi } from '../api/saleDocuments';
 import { productsApi } from '../api/products';
@@ -330,32 +330,72 @@ interface AnalyticsFiltersProps {
 const AnalyticsFiltersComponent: React.FC<AnalyticsFiltersProps> = ({ 
   filters, onFilterChange, onReset, products, clients 
 }) => {
-  const [productSearch, setProductSearch] = useState<string>('');
-  const [clientSearch, setClientSearch] = useState<string>('');
+  const [productSearch, setProductSearch] = useState<string>(filters.product?.name || '');
+  const [clientSearch, setClientSearch] = useState<string>(() => {
+    if (filters.client) {
+      const fullName = [filters.client.lastName, filters.client.firstName, filters.client.middleName]
+        .filter(Boolean)
+        .join(' ');
+      return fullName;
+    }
+    return '';
+  });
   const [citySearch, setCitySearch] = useState<string>(filters.city || '');
   const [showProductDropdown, setShowProductDropdown] = useState<boolean>(false);
   const [showClientDropdown, setShowClientDropdown] = useState<boolean>(false);
+  
+  const productSearchRef = useRef<HTMLDivElement>(null);
+  const clientSearchRef = useRef<HTMLDivElement>(null);
 
+  // Закрытие дропдаунов при клике вне области
   useEffect(() => {
-    setCitySearch(filters.city || '');
-  }, [filters.city]);
+    const handleClickOutside = (event: MouseEvent) => {
+      if (productSearchRef.current && !productSearchRef.current.contains(event.target as Node)) {
+        setShowProductDropdown(false);
+      }
+      if (clientSearchRef.current && !clientSearchRef.current.contains(event.target as Node)) {
+        setShowClientDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
-  const filteredProducts = products.filter(p => 
-    p.name.toLowerCase().includes(productSearch.toLowerCase()) ||
-    p.article?.toLowerCase().includes(productSearch.toLowerCase())
-  );
+  // Фильтрация продуктов
+  const filteredProducts = useMemo(() => {
+    if (!productSearch.trim()) return products;
+    const searchLower = productSearch.toLowerCase();
+    return products.filter(p => 
+      p.name.toLowerCase().includes(searchLower) ||
+      p.article?.toLowerCase().includes(searchLower)
+    );
+  }, [products, productSearch]);
 
-  const filteredClients = clients.filter(c => {
-    const fullName = [c.lastName, c.firstName, c.middleName].filter(Boolean).join(' ').toLowerCase();
-    return fullName.includes(clientSearch.toLowerCase()) ||
-           c.phone.includes(clientSearch) ||
-           c.city?.toLowerCase().includes(clientSearch.toLowerCase());
-  });
+  // Фильтрация клиентов
+  const filteredClients = useMemo(() => {
+    if (!clientSearch.trim()) return clients;
+    const searchLower = clientSearch.toLowerCase();
+    return clients.filter(c => {
+      const fullName = [c.lastName, c.firstName, c.middleName].filter(Boolean).join(' ').toLowerCase();
+      return fullName.includes(searchLower) ||
+             c.phone.includes(clientSearch) ||
+             (c.city && c.city.toLowerCase().includes(searchLower));
+    });
+  }, [clients, clientSearch]);
 
-  const handleCityChange = (e: React.ChangeEvent<HTMLInputElement>): void => {
-    const value = e.target.value;
-    setCitySearch(value);
-    onFilterChange('city', value || null);
+  const handleProductSelect = (product: Product): void => {
+    onFilterChange('product', product);
+    setProductSearch(product.name);
+    setShowProductDropdown(false);
+  };
+
+  const handleClientSelect = (client: Client): void => {
+    onFilterChange('client', client);
+    const fullName = [client.lastName, client.firstName, client.middleName]
+      .filter(Boolean)
+      .join(' ');
+    setClientSearch(fullName);
+    setShowClientDropdown(false);
   };
 
   const handleResetProduct = (): void => {
@@ -371,6 +411,12 @@ const AnalyticsFiltersComponent: React.FC<AnalyticsFiltersProps> = ({
   const handleResetCity = (): void => {
     onFilterChange('city', null);
     setCitySearch('');
+  };
+
+  const handleCityChange = (e: React.ChangeEvent<HTMLInputElement>): void => {
+    const value = e.target.value;
+    setCitySearch(value);
+    onFilterChange('city', value || null);
   };
 
   return (
@@ -391,30 +437,31 @@ const AnalyticsFiltersComponent: React.FC<AnalyticsFiltersProps> = ({
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="relative">
+        {/* Фильтр по товару */}
+        <div ref={productSearchRef} className="relative">
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Товар</label>
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={14} />
             <input
               type="text"
               value={productSearch}
-              onChange={(e) => setProductSearch(e.target.value)}
+              onChange={(e) => {
+                setProductSearch(e.target.value);
+                setShowProductDropdown(true);
+                if (filters.product) onFilterChange('product', null);
+              }}
               onFocus={() => setShowProductDropdown(true)}
               placeholder="Поиск товара..."
               className="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 dark:border-dark-700 dark:bg-dark-900 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
             />
           </div>
           {showProductDropdown && filteredProducts.length > 0 && (
-            <div className="absolute z-10 w-full mt-1 bg-white dark:bg-dark-800 border dark:border-dark-700 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+            <div className="absolute z-20 w-full mt-1 bg-white dark:bg-dark-800 border dark:border-dark-700 rounded-lg shadow-lg max-h-60 overflow-y-auto">
               {filteredProducts.map(product => (
                 <div
                   key={product.id}
                   className="p-2 hover:bg-gray-50 dark:hover:bg-dark-700 cursor-pointer border-b last:border-0 text-sm"
-                  onClick={() => {
-                    onFilterChange('product', product);
-                    setProductSearch(product.name);
-                    setShowProductDropdown(false);
-                  }}
+                  onClick={() => handleProductSelect(product)}
                 >
                   <div className="font-medium text-gray-900 dark:text-white">{product.name}</div>
                   <div className="text-xs text-gray-500 dark:text-gray-400">Арт: {product.article}</div>
@@ -425,42 +472,45 @@ const AnalyticsFiltersComponent: React.FC<AnalyticsFiltersProps> = ({
           {filters.product && (
             <div className="mt-1 flex items-center gap-1 text-xs bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-400 px-2 py-1 rounded-full inline-flex">
               <span>Товар: {filters.product.name}</span>
-              <button onClick={handleResetProduct} className="ml-1">
+              <button onClick={handleResetProduct} className="ml-1 hover:bg-primary-100 dark:hover:bg-primary-800 rounded-full p-0.5">
                 <X size={12} />
               </button>
             </div>
           )}
         </div>
 
-        <div className="relative">
+        {/* Фильтр по клиенту */}
+        <div ref={clientSearchRef} className="relative">
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Покупатель</label>
           <div className="relative">
             <Users className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={14} />
             <input
               type="text"
               value={clientSearch}
-              onChange={(e) => setClientSearch(e.target.value)}
+              onChange={(e) => {
+                setClientSearch(e.target.value);
+                setShowClientDropdown(true);
+                if (filters.client) onFilterChange('client', null);
+              }}
               onFocus={() => setShowClientDropdown(true)}
               placeholder="Поиск клиента..."
               className="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 dark:border-dark-700 dark:bg-dark-900 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
             />
           </div>
           {showClientDropdown && filteredClients.length > 0 && (
-            <div className="absolute z-10 w-full mt-1 bg-white dark:bg-dark-800 border dark:border-dark-700 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+            <div className="absolute z-20 w-full mt-1 bg-white dark:bg-dark-800 border dark:border-dark-700 rounded-lg shadow-lg max-h-60 overflow-y-auto">
               {filteredClients.map(client => {
-                const fullName = [client.lastName, client.firstName, client.middleName].filter(Boolean).join(' ');
+                const fullName = [client.lastName, client.firstName, client.middleName]
+                  .filter(Boolean)
+                  .join(' ') || client.firstName;
                 return (
                   <div
                     key={client.id}
                     className="p-2 hover:bg-gray-50 dark:hover:bg-dark-700 cursor-pointer border-b last:border-0 text-sm"
-                    onClick={() => {
-                      onFilterChange('client', client);
-                      setClientSearch(fullName);
-                      setShowClientDropdown(false);
-                    }}
+                    onClick={() => handleClientSelect(client)}
                   >
                     <div className="font-medium text-gray-900 dark:text-white">{fullName}</div>
-                    <div className="text-xs text-gray-500 dark:text-gray-400">{client.phone}</div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400">📞 {client.phone}</div>
                     {client.city && (
                       <div className="text-xs text-gray-400 dark:text-gray-500">🏙️ {client.city}</div>
                     )}
@@ -469,16 +519,22 @@ const AnalyticsFiltersComponent: React.FC<AnalyticsFiltersProps> = ({
               })}
             </div>
           )}
+          {showClientDropdown && filteredClients.length === 0 && clientSearch && (
+            <div className="absolute z-20 w-full mt-1 bg-white dark:bg-dark-800 border dark:border-dark-700 rounded-lg shadow-lg p-3 text-center text-sm text-gray-500">
+              Клиенты не найдены
+            </div>
+          )}
           {filters.client && (
             <div className="mt-1 flex items-center gap-1 text-xs bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-400 px-2 py-1 rounded-full inline-flex">
               <span>Клиент: {[filters.client.lastName, filters.client.firstName].filter(Boolean).join(' ')}</span>
-              <button onClick={handleResetClient} className="ml-1">
+              <button onClick={handleResetClient} className="ml-1 hover:bg-primary-100 dark:hover:bg-primary-800 rounded-full p-0.5">
                 <X size={12} />
               </button>
             </div>
           )}
         </div>
 
+        {/* Фильтр по городу */}
         <div>
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Город</label>
           <div className="relative">
@@ -495,7 +551,7 @@ const AnalyticsFiltersComponent: React.FC<AnalyticsFiltersProps> = ({
             <div className="mt-1 flex items-center gap-1 text-xs bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-400 px-2 py-1 rounded-full inline-flex">
               <MapPin size={12} />
               <span>Город: {filters.city}</span>
-              <button onClick={handleResetCity} className="ml-1">
+              <button onClick={handleResetCity} className="ml-1 hover:bg-primary-100 dark:hover:bg-primary-800 rounded-full p-0.5">
                 <X size={12} />
               </button>
             </div>
@@ -555,19 +611,37 @@ export const Reports: React.FC = () => {
   }, [period, startDate, endDate, filters]);
 
   const loadInitialData = async (): Promise<void> => {
-    try {
-      const [productsRes, clientsRes, allProductsRes] = await Promise.all([
-        productsApi.getAll(),
-        clientsApi.getAll({ limit: 1000 }),
-        productsApi.getAll()
-      ]);
-      setProducts(productsRes.data || []);
-      setClients(clientsRes.data?.data?.clients || []);
-      setAllProducts(allProductsRes.data || []);
-    } catch (error) {
-      console.error('Error loading initial data:', error);
+  try {
+    const [productsRes, clientsRes, allProductsRes] = await Promise.all([
+      productsApi.getAll(),
+      clientsApi.getAll({ limit: 1000 }),
+      productsApi.getAll()
+    ]);
+    
+    // Исправление: правильно извлекаем данные клиентов
+    let clientsData: Client[] = [];
+    if (clientsRes.data) {
+      if (Array.isArray(clientsRes.data)) {
+        clientsData = clientsRes.data;
+      } else if (clientsRes.data.data && Array.isArray(clientsRes.data.data)) {
+        clientsData = clientsRes.data.data;
+      } else if (clientsRes.data.clients && Array.isArray(clientsRes.data.clients)) {
+        clientsData = clientsRes.data.clients;
+      } else if (Array.isArray(clientsRes)) {
+        clientsData = clientsRes;
+      }
     }
-  };
+    
+    console.log('📋 Загружено клиентов:', clientsData.length);
+    
+    setProducts(productsRes.data || []);
+    setClients(clientsData);
+    setAllProducts(allProductsRes.data || []);
+  } catch (error) {
+    console.error('Error loading initial data:', error);
+    toast.error('Ошибка загрузки данных для фильтров');
+  }
+};
 
   const loadOrders = async (): Promise<void> => {
     setLoading(true);

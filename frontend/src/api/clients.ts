@@ -30,8 +30,8 @@ export interface GetClientsParams {
 }
 
 export const clientsApi = {
-  getAll: (params?: GetClientsParams): Promise<ApiResponse<PaginatedResponse<Client>>> =>
-    api.get('/clients', { params }),
+  getAll: (params?: GetClientsParams): Promise<ApiResponse<Client[] | PaginatedResponse<Client>>> =>
+  api.get('/clients', { params }),
   
   getById: (id: number): Promise<ApiResponse<Client>> =>
     api.get(`/clients/${id}`),
