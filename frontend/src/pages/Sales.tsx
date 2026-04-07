@@ -1,13 +1,12 @@
 // frontend/src/pages/Sales.tsx
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { saleDocumentsApi } from '../api/saleDocuments';
+import { saleDocumentsApi, SaleDocument } from '../api/saleDocuments';
 import { Button } from '../components/ui/Button';
 import { Card, CardBody } from '../components/ui/Card';
 import { Input } from '../components/ui/Input';
 import { Table, Thead, Tbody, Tr, Th, Td } from '../components/ui/Table';
 import { formatPrice, formatDate } from '../utils/formatters';
-import { SaleDocument, OrderStatus } from '../types';
 import { OrderStatusSelect } from '../components/ui/OrderStatusSelect';
 import { 
   ShoppingCart, 
@@ -22,6 +21,8 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
+type OrderStatus = 'ordered' | 'assembling' | 'shipped';
+
 interface SalesStats {
   total: number;
   totalRevenue: number;
@@ -30,33 +31,13 @@ interface SalesStats {
   averageCheck: number;
 }
 
-// Ключ для localStorage
-const STORAGE_KEY = 'order_statuses';
-
 export const Sales: React.FC = () => {
   const navigate = useNavigate();
   const [documents, setDocuments] = useState<SaleDocument[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<OrderStatus | 'all'>('all');
-
-  // Загрузка статусов из localStorage
-  const [orderStatuses, setOrderStatuses] = useState<Record<number, OrderStatus>>(() => {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch {
-        return {};
-      }
-    }
-    return {};
-  });
-
-  // Сохранение статусов в localStorage при изменении
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(orderStatuses));
-  }, [orderStatuses]);
+  const [updatingStatusId, setUpdatingStatusId] = useState<number | null>(null);
 
   useEffect(() => {
     loadDocuments();
@@ -66,7 +47,6 @@ export const Sales: React.FC = () => {
     try {
       setLoading(true);
       const { data } = await saleDocumentsApi.getAll();
-      //console.log('Loaded documents:', data);
       setDocuments(data);
     } catch (error) {
       console.error('Error loading documents:', error);
@@ -77,7 +57,7 @@ export const Sales: React.FC = () => {
   };
 
   const handleDelete = async (id: number, e: React.MouseEvent): Promise<void> => {
-    e.stopPropagation();
+    e.stopPropagation(); // Останавливаем всплытие
     if (confirm('Удалить заказ? Все товары вернутся на склад')) {
       try {
         await saleDocumentsApi.delete(id);
@@ -90,33 +70,43 @@ export const Sales: React.FC = () => {
   };
 
   const handleRowClick = (id: number): void => {
-    console.log('Navigating to order:', id);
     navigate(`/sales/${id}`);
   };
 
-  // Функция изменения статуса
-  const handleStatusChange = (orderId: number, newStatus: OrderStatus): void => {
-    setOrderStatuses(prev => ({
-      ...prev,
-      [orderId]: newStatus
-    }));
+  // Функция изменения статуса с сохранением в БД
+  const handleStatusChange = async (orderId: number, newStatus: OrderStatus, e: React.MouseEvent): Promise<void> => {
+    e.stopPropagation(); // 🆕 Останавливаем всплытие - это ключевое исправление!
     
-    const statusLabels: Record<OrderStatus, string> = {
-      ordered: 'Оформлен',
-      assembling: 'Собирается',
-      shipped: 'Отправлен'
-    };
-    toast.success(`Статус заказа изменен на "${statusLabels[newStatus]}"`);
+    setUpdatingStatusId(orderId);
+    try {
+      await saleDocumentsApi.updateOrderStatus(orderId, newStatus);
+      
+      // Обновляем локальное состояние
+      setDocuments(prev => prev.map(doc => 
+        doc.id === orderId ? { ...doc, orderStatus: newStatus } : doc
+      ));
+      
+      const statusLabels: Record<OrderStatus, string> = {
+        ordered: 'Оформлен',
+        assembling: 'Собирается',
+        shipped: 'Отправлен'
+      };
+      toast.success(`Статус заказа изменен на "${statusLabels[newStatus]}"`);
+    } catch (error) {
+      console.error('Error updating status:', error);
+      toast.error('Ошибка изменения статуса');
+    } finally {
+      setUpdatingStatusId(null);
+    }
   };
 
-  // Получить статус заказа (из localStorage или 'ordered' по умолчанию)
-  const getOrderStatus = (orderId: number): OrderStatus => {
-    return orderStatuses[orderId] || 'ordered';
+  // Получить статус заказа
+  const getOrderStatus = (doc: SaleDocument): OrderStatus => {
+    return (doc.orderStatus as OrderStatus) || 'ordered';
   };
 
   // Фильтрация документов
   const filterDocuments = (doc: SaleDocument): boolean => {
-    // Поиск по тексту
     if (searchTerm.trim()) {
       const searchLower = searchTerm.toLowerCase().trim();
       let matches = false;
@@ -124,6 +114,7 @@ export const Sales: React.FC = () => {
       if (doc.documentNumber?.toLowerCase().includes(searchLower)) matches = true;
       if (doc.customerName?.toLowerCase().includes(searchLower)) matches = true;
       if (doc.customerPhone?.toLowerCase().includes(searchLower)) matches = true;
+      if (doc.clientName?.toLowerCase().includes(searchLower)) matches = true;
       
       if (doc.items?.some(item => 
         item.productName?.toLowerCase().includes(searchLower) ||
@@ -135,9 +126,8 @@ export const Sales: React.FC = () => {
       if (!matches) return false;
     }
     
-    // Фильтр по статусу заказа
     if (statusFilter !== 'all') {
-      const docStatus = getOrderStatus(doc.id);
+      const docStatus = getOrderStatus(doc);
       if (docStatus !== statusFilter) return false;
     }
     
@@ -356,13 +346,17 @@ export const Sales: React.FC = () => {
                         {doc.paymentStatus === 'paid' ? 'Оплачен' : 'Не оплачен'}
                       </span>
                     </Td>
+                    {/* 🆕 Ключевое исправление - обернули в div с остановкой всплытия */}
                     <Td onClick={(e) => e.stopPropagation()}>
-                      <OrderStatusSelect
-                        orderId={doc.id}
-                        currentStatus={getOrderStatus(doc.id)}
-                        onStatusChange={handleStatusChange}
-                        size="sm"
-                      />
+                      <div onClick={(e) => e.stopPropagation()}>
+                        <OrderStatusSelect
+                          orderId={doc.id}
+                          currentStatus={getOrderStatus(doc)}
+                          onStatusChange={handleStatusChange}
+                          size="sm"
+                          isLoading={updatingStatusId === doc.id}
+                        />
+                      </div>
                     </Td>
                     <Td onClick={(e) => e.stopPropagation()}>
                       <button

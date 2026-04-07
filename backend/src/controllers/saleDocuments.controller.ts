@@ -443,7 +443,28 @@ export const getDocumentsByClient = async (req: RequestWithUser, res: Response):
     res.status(500).json({ message: 'Ошибка загрузки документов клиента' });
   }
 };
+// backend/src/controllers/saleDocuments.controller.ts
+// Добавьте эту функцию в конец файла (перед export)
 
+/**
+ * PATCH /api/sale-documents/:id/status
+ * Обновить статус заказа (ordered, assembling, shipped)
+ */
+export const updateOrderStatus = async (req: RequestWithUser, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const { orderStatus } = req.body;
+    
+    const document = await prisma.saleDocument.update({
+      where: { id: parseInt(id) },
+      data: { orderStatus: orderStatus }
+    });
+    
+    res.json(document);
+  } catch (error) {
+    res.status(500).json({ message: 'Error updating status' });
+  }
+};
 /**
  * GET /api/sale-documents/stats/clients
  * Статистика по клиентам

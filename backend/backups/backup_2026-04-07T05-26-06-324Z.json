@@ -1,0 +1,1492 @@
+{
+  "exportedAt": "2026-04-07T05:26:06.324Z",
+  "version": "3.0",
+  "data": {
+    "users": [
+      {
+        "id": 1,
+        "email": "admin@crm.ru",
+        "password": "$2b$10$zD09w0ftelbrJDiD7wpCJOZwv2cy2YGvjrJQI3wmeTSg/y/EGHTDe",
+        "name": "Администратор",
+        "role": "admin",
+        "createdAt": "2026-03-31T12:38:33.251Z",
+        "updatedAt": "2026-03-31T12:38:33.251Z"
+      },
+      {
+        "id": 2,
+        "email": "gurin@crm.ru",
+        "password": "$2b$10$mBYppKpR8hP4rlyq3bSRDe59oi1PJCoWaHQji0TocTAIzXz8pXgyC",
+        "name": "Александр Гурин",
+        "role": "manager",
+        "createdAt": "2026-03-31T02:57:14.951Z",
+        "updatedAt": "2026-03-31T02:57:14.951Z"
+      },
+      {
+        "id": 3,
+        "email": "batvenko@crm.ru",
+        "password": "$2b$10$3b1UvMgiDRE2BzedGRq7fOjzBef2vUFsTmAcrJYvw1vPLN6c1D56G",
+        "name": "Николай Батвенко",
+        "role": "manager",
+        "createdAt": "2026-03-31T02:57:14.959Z",
+        "updatedAt": "2026-03-31T02:57:14.959Z"
+      }
+    ],
+    "products": [
+      {
+        "id": 33,
+        "name": "Свап-кит Газель Бизнес 3UZ",
+        "article": "GZB-01-3UZ-1 ",
+        "cost_price": 5000,
+        "retail_price": 20000,
+        "description": "Комплект креплений для установки двигателя 1-3 UZ в Газель Бизнес",
+        "stock": 1,
+        "min_stock": 1,
+        "image_url": null,
+        "costBreakdown": [],
+        "createdAt": "2026-03-31T10:16:57.235Z",
+        "updatedAt": "2026-03-31T10:16:57.235Z"
+      },
+      {
+        "id": 34,
+        "name": "Дроп-кит клюшек переднего моста Y60\\61",
+        "article": "NPY61\\60-03-010 ",
+        "cost_price": 8000,
+        "retail_price": 18000,
+        "description": null,
+        "stock": 2,
+        "min_stock": 1,
+        "image_url": null,
+        "costBreakdown": [],
+        "createdAt": "2026-03-31T10:48:44.362Z",
+        "updatedAt": "2026-03-31T10:48:44.362Z"
+      },
+      {
+        "id": 11,
+        "name": "Фланец 1UZ ",
+        "article": "FL-1UZ ",
+        "cost_price": 600,
+        "retail_price": 1300,
+        "description": "",
+        "stock": 4,
+        "min_stock": 1,
+        "image_url": null,
+        "costBreakdown": [],
+        "createdAt": "2026-03-31T08:13:08.624Z",
+        "updatedAt": "2026-04-01T02:43:58.381Z"
+      },
+      {
+        "id": 12,
+        "name": "Свап-кит LRVQ Комплект кронштейнов двс и акп.",
+        "article": "LRD3\\4-01-VQ-1 ",
+        "cost_price": 2902,
+        "retail_price": 40000,
+        "description": "",
+        "stock": 2,
+        "min_stock": 1,
+        "image_url": null,
+        "costBreakdown": [
+          {
+            "id": 1775011722757,
+            "name": "Первичная обработка",
+            "amount": 2900
+          },
+          {
+            "id": 1775011732049,
+            "name": "Сварочные работы",
+            "amount": 1
+          },
+          {
+            "id": 1775011738061,
+            "name": "Покраска",
+            "amount": 1
+          }
+        ],
+        "createdAt": "2026-04-01T02:49:02.695Z",
+        "updatedAt": "2026-04-01T02:50:53.541Z"
+      },
+      {
+        "id": 13,
+        "name": "Комплект установки РКП VQLR",
+        "article": "LRD3\\4-01-VQ-4-001  ",
+        "cost_price": 21630,
+        "retail_price": 55000,
+        "description": "",
+        "stock": 1,
+        "min_stock": 1,
+        "image_url": null,
+        "costBreakdown": [],
+        "createdAt": "2026-03-31T10:23:34.128Z",
+        "updatedAt": "2026-04-01T02:51:50.241Z"
+      },
+      {
+        "id": 14,
+        "name": "Диффузор TB45xBosch",
+        "article": "NPY61-01-2-001  ",
+        "cost_price": 5150,
+        "retail_price": 15000,
+        "description": "Диффузор для установки вентилятора охлаждения Bosch на радиатор NPY61 (ДВС ТВ45\\ZD30)",
+        "stock": 1,
+        "min_stock": 1,
+        "image_url": null,
+        "costBreakdown": [],
+        "createdAt": "2026-03-31T08:24:03.583Z",
+        "updatedAt": "2026-04-01T02:52:39.433Z"
+      },
+      {
+        "id": 15,
+        "name": "Фланец 63mm",
+        "article": "FL-63 ",
+        "cost_price": 200,
+        "retail_price": 400,
+        "description": "",
+        "stock": 2,
+        "min_stock": 1,
+        "image_url": null,
+        "costBreakdown": [],
+        "createdAt": "2026-03-31T08:14:56.653Z",
+        "updatedAt": "2026-03-31T11:06:21.714Z"
+      },
+      {
+        "id": 16,
+        "name": "Фланец VQ F",
+        "article": "FL-VQ-F ",
+        "cost_price": 200,
+        "retail_price": 1000,
+        "description": "",
+        "stock": 8,
+        "min_stock": 1,
+        "image_url": null,
+        "costBreakdown": [],
+        "createdAt": "2026-03-31T08:12:19.895Z",
+        "updatedAt": "2026-03-31T08:17:59.767Z"
+      },
+      {
+        "id": 17,
+        "name": "Фланец VQ E",
+        "article": "FL-VQ-E ",
+        "cost_price": 200,
+        "retail_price": 1000,
+        "description": "Фланец выхлопной системы для двигателя VQ Elgrand",
+        "stock": 8,
+        "min_stock": 1,
+        "image_url": null,
+        "costBreakdown": [],
+        "createdAt": "2026-03-31T08:11:20.285Z",
+        "updatedAt": "2026-03-31T08:18:07.936Z"
+      },
+      {
+        "id": 18,
+        "name": "Фланец 57 mm",
+        "article": "FL-57",
+        "cost_price": 200,
+        "retail_price": 400,
+        "description": "",
+        "stock": 5,
+        "min_stock": 1,
+        "image_url": null,
+        "costBreakdown": [],
+        "createdAt": "2026-03-31T08:13:49.566Z",
+        "updatedAt": "2026-03-31T11:06:13.740Z"
+      },
+      {
+        "id": 19,
+        "name": "Площадка лебедки NPY61",
+        "article": "NPY61-04-5-001  ",
+        "cost_price": 4500,
+        "retail_price": 10000,
+        "description": "Площадка для установки лебедки в штатный бампер ",
+        "stock": 1,
+        "min_stock": 1,
+        "image_url": null,
+        "costBreakdown": [],
+        "createdAt": "2026-03-31T07:57:00.487Z",
+        "updatedAt": "2026-03-31T08:35:39.114Z"
+      },
+      {
+        "id": 20,
+        "name": "Диффузор ТВ48xBosch",
+        "article": "NPY61-01-2-002 ",
+        "cost_price": 5000,
+        "retail_price": 15000,
+        "description": "Диффузор для установки вентилятора охлаждения Bosch на радиатор NPY61 (типоразмер радиатора ДВС TB48)",
+        "stock": 1,
+        "min_stock": 1,
+        "image_url": null,
+        "costBreakdown": [],
+        "createdAt": "2026-03-31T08:26:48.449Z",
+        "updatedAt": "2026-03-31T08:28:36.472Z"
+      },
+      {
+        "id": 21,
+        "name": "Усиление передней части кузова Y60",
+        "article": "NPY60-02-001 ",
+        "cost_price": 2420,
+        "retail_price": 10000,
+        "description": "Комплект усиления для передней части кузова Nissan Patrol\\Safari Y60",
+        "stock": 2,
+        "min_stock": 1,
+        "image_url": null,
+        "costBreakdown": [],
+        "createdAt": "2026-03-31T08:29:24.212Z",
+        "updatedAt": "2026-03-31T08:33:50.481Z"
+      },
+      {
+        "id": 22,
+        "name": "Свап-кит 3UZ NPY61 Крепление педали газа",
+        "article": "NPY61-01-3UZ-3-001  ",
+        "cost_price": 1000,
+        "retail_price": 3000,
+        "description": "Кронштейн для установки педали газа Toyota при свапе 3UZ в NPY61",
+        "stock": 1,
+        "min_stock": 1,
+        "image_url": null,
+        "costBreakdown": [],
+        "createdAt": "2026-03-31T08:20:26.545Z",
+        "updatedAt": "2026-03-31T08:34:27.129Z"
+      },
+      {
+        "id": 23,
+        "name": "Свап-кит 3UZ Крепления двс и кпп NPY60\\61",
+        "article": "NPY61\\60-01-3UZ-1 ",
+        "cost_price": 5000,
+        "retail_price": 20000,
+        "description": "Комплект кронштейнов мотора и коробки для свапа 3UZ6AT в Nissan Patrol 60\\61 с использованием переходной плиты Reanimator_avto/",
+        "stock": 2,
+        "min_stock": 1,
+        "image_url": null,
+        "costBreakdown": [],
+        "createdAt": "2026-03-31T08:10:55.237Z",
+        "updatedAt": "2026-03-31T08:34:43.178Z"
+      },
+      {
+        "id": 24,
+        "name": "Крепление канистры на запаску 16л. NPY61",
+        "article": "NPY61-04-5-004 ",
+        "cost_price": 6630,
+        "retail_price": 16500,
+        "description": "Крепление экспедиционной канистры 16 литров на крышку багажника взамен крепления штатного запасного колеса ,с дополнительной полкой для крепления аксессуаров.",
+        "stock": 1,
+        "min_stock": 1,
+        "image_url": null,
+        "costBreakdown": [],
+        "createdAt": "2026-03-31T08:06:02.049Z",
+        "updatedAt": "2026-03-31T08:36:36.146Z"
+      },
+      {
+        "id": 25,
+        "name": "Бак в крыло NPY61",
+        "article": "NPY61-06-001 ",
+        "cost_price": 7163,
+        "retail_price": 14000,
+        "description": "",
+        "stock": 1,
+        "min_stock": 1,
+        "image_url": null,
+        "costBreakdown": [],
+        "createdAt": "2026-03-31T07:59:58.656Z",
+        "updatedAt": "2026-03-31T08:36:41.876Z"
+      },
+      {
+        "id": 26,
+        "name": "Разворот впуска VQ",
+        "article": "07-VQ-001",
+        "cost_price": 1500,
+        "retail_price": 4500,
+        "description": null,
+        "stock": 2,
+        "min_stock": 1,
+        "image_url": null,
+        "costBreakdown": [],
+        "createdAt": "2026-03-31T08:40:15.840Z",
+        "updatedAt": "2026-03-31T08:40:15.840Z"
+      },
+      {
+        "id": 27,
+        "name": "Крепление антенны NPY61",
+        "article": "NPY61-04-5-002 ",
+        "cost_price": 1000,
+        "retail_price": 3000,
+        "description": "Кронштейн крепления антенны под правую верхнюю петлю двери багажника NPY61",
+        "stock": 9,
+        "min_stock": 1,
+        "image_url": null,
+        "costBreakdown": [],
+        "createdAt": "2026-03-31T08:42:54.227Z",
+        "updatedAt": "2026-03-31T08:42:54.227Z"
+      },
+      {
+        "id": 28,
+        "name": "Кронштейн ГУР UZ\\AZ",
+        "article": "07-UZAZ-001",
+        "cost_price": 1000,
+        "retail_price": 3000,
+        "description": null,
+        "stock": 3,
+        "min_stock": 1,
+        "image_url": null,
+        "costBreakdown": [],
+        "createdAt": "2026-03-31T08:48:09.245Z",
+        "updatedAt": "2026-03-31T08:48:09.245Z"
+      },
+      {
+        "id": 29,
+        "name": "Крепление свет\\антенна правое NPY61",
+        "article": "NPY61-04-5-003R ",
+        "cost_price": 1000,
+        "retail_price": 3000,
+        "description": "Крепление антенны и дополнительной лампы под правую верхнюю петлю двери багажника Nissan Patrol Y61",
+        "stock": 1,
+        "min_stock": 1,
+        "image_url": null,
+        "costBreakdown": [],
+        "createdAt": "2026-03-31T08:51:20.427Z",
+        "updatedAt": "2026-03-31T08:52:27.356Z"
+      },
+      {
+        "id": 30,
+        "name": "Крепление свет\\антенна левое NPY61",
+        "article": "NPY61-04-5-003L ",
+        "cost_price": 1000,
+        "retail_price": 3000,
+        "description": "Крепление антенны и дополнительной лампы под левую верхнюю петлю двери багажника Nissan Patrol Y61",
+        "stock": 2,
+        "min_stock": 1,
+        "image_url": null,
+        "costBreakdown": [],
+        "createdAt": "2026-03-31T08:52:01.438Z",
+        "updatedAt": "2026-03-31T08:52:32.729Z"
+      },
+      {
+        "id": 31,
+        "name": "Свап-кит Газель Некст 3UZ",
+        "article": "GZN-01-3UZ-1 ",
+        "cost_price": 5000,
+        "retail_price": 20000,
+        "description": "Комплект креплений для установки двигателей 1-3UZ в Газель Некст",
+        "stock": 2,
+        "min_stock": 1,
+        "image_url": null,
+        "costBreakdown": [],
+        "createdAt": "2026-03-31T10:11:38.461Z",
+        "updatedAt": "2026-03-31T10:11:38.461Z"
+      },
+      {
+        "id": 32,
+        "name": "Кронштейн кондиционера Sanden\\3UZ",
+        "article": "07-3UZ-002",
+        "cost_price": 1750,
+        "retail_price": 7000,
+        "description": "Кронштейн для установки компрессора кондиционера Sanden на двигатель 3UZ-FE",
+        "stock": 1,
+        "min_stock": 1,
+        "image_url": null,
+        "costBreakdown": [],
+        "createdAt": "2026-03-31T08:55:28.750Z",
+        "updatedAt": "2026-03-31T08:55:28.750Z"
+      },
+      {
+        "id": 35,
+        "name": "Комплект задних опоры кузова TLC200",
+        "article": "TLC200-02-001 ",
+        "cost_price": 4000,
+        "retail_price": 14000,
+        "description": null,
+        "stock": 2,
+        "min_stock": 1,
+        "image_url": null,
+        "costBreakdown": [],
+        "createdAt": "2026-03-31T10:50:35.325Z",
+        "updatedAt": "2026-03-31T10:50:35.325Z"
+      },
+      {
+        "id": 36,
+        "name": "Дроп-бокс панары 4 дюйма (Зад 65 мм) NPY60\\61",
+        "article": "NPY61\\60-03-006 ",
+        "cost_price": 4150,
+        "retail_price": 9500,
+        "description": null,
+        "stock": 1,
+        "min_stock": 1,
+        "image_url": null,
+        "costBreakdown": [],
+        "createdAt": "2026-03-31T10:53:16.363Z",
+        "updatedAt": "2026-03-31T10:53:16.363Z"
+      },
+      {
+        "id": 38,
+        "name": "Дроп-кит стоек стабилизатора 2 дюйма NPY60\\61",
+        "article": "NPY61\\60-03-003  ",
+        "cost_price": 3000,
+        "retail_price": 7000,
+        "description": null,
+        "stock": 4,
+        "min_stock": 1,
+        "image_url": null,
+        "costBreakdown": [],
+        "createdAt": "2026-03-31T10:58:42.832Z",
+        "updatedAt": "2026-03-31T10:58:42.832Z"
+      },
+      {
+        "id": 40,
+        "name": "LRVQ Крепление педали газа",
+        "article": "LRD3\\4-01-VQ-3-001 ",
+        "cost_price": 3,
+        "retail_price": 5000,
+        "description": "Крепление педали газа Nissan для установки в Land Rover Discovery 3\\4 при свапе на VQ",
+        "stock": 2,
+        "min_stock": 1,
+        "image_url": null,
+        "costBreakdown": [
+          {
+            "id": 1775012175658,
+            "name": "Первчиная обработка",
+            "amount": 1
+          },
+          {
+            "id": 1775012187579,
+            "name": "Сварочные работы",
+            "amount": 1
+          },
+          {
+            "id": 1775012194585,
+            "name": "Покраска",
+            "amount": 1
+          }
+        ],
+        "createdAt": "2026-04-01T02:57:37.178Z",
+        "updatedAt": "2026-04-01T02:57:37.178Z"
+      },
+      {
+        "id": 41,
+        "name": "LRD3UZ Кронштейн педали газа Toyota (Старого образца)",
+        "article": "LRD3\\4-01-3UZ-3-003 ",
+        "cost_price": 1,
+        "retail_price": 1,
+        "description": null,
+        "stock": 2,
+        "min_stock": 1,
+        "image_url": null,
+        "costBreakdown": [],
+        "createdAt": "2026-04-01T03:01:48.078Z",
+        "updatedAt": "2026-04-01T03:01:48.078Z"
+      },
+      {
+        "id": 42,
+        "name": "Фланец 3 UZ",
+        "article": "FL-3UZ ",
+        "cost_price": 600,
+        "retail_price": 1300,
+        "description": "Фланцы выхлопной системы для двигателя 3 UZ",
+        "stock": 8,
+        "min_stock": 1,
+        "image_url": null,
+        "costBreakdown": [],
+        "createdAt": "2026-03-31T08:07:40.731Z",
+        "updatedAt": "2026-04-01T03:53:17.027Z"
+      },
+      {
+        "id": 43,
+        "name": "LRD3\\4 Кронштейн крепления привода селектора ",
+        "article": "LRD3\\4-01-3UZ-3-005 ",
+        "cost_price": 1,
+        "retail_price": 1,
+        "description": null,
+        "stock": 1,
+        "min_stock": 1,
+        "image_url": null,
+        "costBreakdown": [],
+        "createdAt": "2026-04-01T03:03:26.851Z",
+        "updatedAt": "2026-04-01T03:03:26.851Z"
+      },
+      {
+        "id": 46,
+        "name": "5VZ Комплект фланцев",
+        "article": "FL-5VZ",
+        "cost_price": 500,
+        "retail_price": 2000,
+        "description": null,
+        "stock": 1,
+        "min_stock": 1,
+        "image_url": null,
+        "costBreakdown": [],
+        "createdAt": "2026-04-01T03:51:20.427Z",
+        "updatedAt": "2026-04-01T03:53:17.024Z"
+      },
+      {
+        "id": 45,
+        "name": "LRD Крепление абсорбера ",
+        "article": "LRD3\\4-01-3-003",
+        "cost_price": 1,
+        "retail_price": 1,
+        "description": "",
+        "stock": 1,
+        "min_stock": 1,
+        "image_url": null,
+        "costBreakdown": [],
+        "createdAt": "2026-04-01T03:10:03.324Z",
+        "updatedAt": "2026-04-01T04:44:39.333Z"
+      },
+      {
+        "id": 47,
+        "name": "Усиление передней части кузова Y61",
+        "article": "NPY61-02-001 ",
+        "cost_price": 2700,
+        "retail_price": 10000,
+        "description": null,
+        "stock": 0,
+        "min_stock": 1,
+        "image_url": null,
+        "costBreakdown": [
+          {
+            "id": 1775445506412,
+            "name": "Первичная обработка",
+            "amount": 2100
+          },
+          {
+            "id": 1775445515494,
+            "name": "Сварочные работы",
+            "amount": 600
+          }
+        ],
+        "createdAt": "2026-04-06T03:18:43.713Z",
+        "updatedAt": "2026-04-06T03:23:50.877Z"
+      },
+      {
+        "id": 37,
+        "name": "Дроп-кит стоек стабилизатора 4 дюйма NPY60\\61",
+        "article": "NPY61\\60-03-004  ",
+        "cost_price": 1800,
+        "retail_price": 6000,
+        "description": null,
+        "stock": 2,
+        "min_stock": 1,
+        "image_url": null,
+        "costBreakdown": [],
+        "createdAt": "2026-03-31T10:57:33.343Z",
+        "updatedAt": "2026-04-06T04:57:16.774Z"
+      },
+      {
+        "id": 48,
+        "name": "Панель для переключателя блокировки Y61",
+        "article": "NPY61-06-001",
+        "cost_price": 1000,
+        "retail_price": 3000,
+        "description": "Панель для установки переключателя блокировок от TLC  в NPY61",
+        "stock": 2,
+        "min_stock": 1,
+        "image_url": null,
+        "costBreakdown": [],
+        "createdAt": "2026-04-06T06:48:24.337Z",
+        "updatedAt": "2026-04-06T06:49:13.068Z"
+      },
+      {
+        "id": 44,
+        "name": "LRVQ Комплект крепления селектора",
+        "article": "LRD3\\4-01-VQ-3-004 ",
+        "cost_price": 3,
+        "retail_price": 5,
+        "description": "Комплект для подключения троса селектора к акп при свапе VQ в LR Discovery 3\\4.",
+        "stock": 2,
+        "min_stock": 1,
+        "image_url": null,
+        "costBreakdown": [
+          {
+            "id": 1775012778827,
+            "name": "Первичная обработка",
+            "amount": 1
+          },
+          {
+            "id": 1775012788096,
+            "name": "Сварочные работы",
+            "amount": 1
+          },
+          {
+            "id": 1775012795568,
+            "name": "Покраска",
+            "amount": 1
+          }
+        ],
+        "createdAt": "2026-04-01T03:06:40.925Z",
+        "updatedAt": "2026-04-06T15:09:12.767Z"
+      },
+      {
+        "id": 49,
+        "name": "Рамка \"Слайдер\"",
+        "article": "06-001",
+        "cost_price": 1300,
+        "retail_price": 4000,
+        "description": "",
+        "stock": 1,
+        "min_stock": 1,
+        "image_url": null,
+        "costBreakdown": [],
+        "createdAt": "2026-04-06T10:41:57.785Z",
+        "updatedAt": "2026-04-07T03:50:34.916Z"
+      },
+      {
+        "id": 39,
+        "name": "Дроп-кит отбойников 2 дюйма NPY60\\61",
+        "article": "NPY61\\60-03-002  ",
+        "cost_price": 2600,
+        "retail_price": 6000,
+        "description": null,
+        "stock": 2,
+        "min_stock": 1,
+        "image_url": null,
+        "costBreakdown": [],
+        "createdAt": "2026-03-31T11:01:31.410Z",
+        "updatedAt": "2026-04-07T04:01:39.834Z"
+      }
+    ],
+    "categories": [
+      {
+        "id": 13,
+        "name": "Выхлопные фланцы",
+        "description": "",
+        "icon": "",
+        "sortOrder": 0,
+        "isActive": true,
+        "createdAt": "2026-03-31T08:15:15.859Z",
+        "updatedAt": "2026-03-31T08:15:15.859Z"
+      },
+      {
+        "id": 14,
+        "name": "Компоненты для свапа РАЗНОЕ",
+        "description": "",
+        "icon": "",
+        "sortOrder": 0,
+        "isActive": true,
+        "createdAt": "2026-03-31T08:22:08.499Z",
+        "updatedAt": "2026-03-31T08:22:08.499Z"
+      },
+      {
+        "id": 15,
+        "name": "Компоненты для джипов РАЗНОЕ",
+        "description": "",
+        "icon": "",
+        "sortOrder": 0,
+        "isActive": true,
+        "createdAt": "2026-03-31T08:21:42.531Z",
+        "updatedAt": "2026-03-31T08:22:24.058Z"
+      },
+      {
+        "id": 16,
+        "name": "Компоненты для рам и кузовов",
+        "description": "",
+        "icon": "",
+        "sortOrder": 0,
+        "isActive": true,
+        "createdAt": "2026-03-31T08:22:35.111Z",
+        "updatedAt": "2026-03-31T08:22:35.111Z"
+      },
+      {
+        "id": 17,
+        "name": "Компоненты для подвески, лифт комплекты",
+        "description": "",
+        "icon": "",
+        "sortOrder": 0,
+        "isActive": true,
+        "createdAt": "2026-03-31T08:22:43.676Z",
+        "updatedAt": "2026-03-31T08:22:43.676Z"
+      },
+      {
+        "id": 18,
+        "name": "Внешний обвес",
+        "description": "",
+        "icon": "",
+        "sortOrder": 0,
+        "isActive": true,
+        "createdAt": "2026-03-31T08:22:50.949Z",
+        "updatedAt": "2026-03-31T08:22:50.949Z"
+      },
+      {
+        "id": 19,
+        "name": "Компоненты для свапа",
+        "description": "",
+        "icon": "",
+        "sortOrder": 0,
+        "isActive": true,
+        "createdAt": "2026-03-31T08:26:26.686Z",
+        "updatedAt": "2026-03-31T08:26:26.686Z"
+      },
+      {
+        "id": 20,
+        "name": "Свап-кит LRD3UZ",
+        "description": "",
+        "icon": "",
+        "sortOrder": 0,
+        "isActive": true,
+        "createdAt": "2026-04-01T02:58:27.987Z",
+        "updatedAt": "2026-04-01T02:58:27.987Z"
+      },
+      {
+        "id": 21,
+        "name": "Свап-кит LRVQ",
+        "description": "",
+        "icon": "",
+        "sortOrder": 0,
+        "isActive": true,
+        "createdAt": "2026-04-01T02:50:09.460Z",
+        "updatedAt": "2026-04-01T03:06:54.763Z"
+      }
+    ],
+    "categoryFields": [
+      {
+        "id": 5,
+        "categoryId": 13,
+        "name": "Цель использования",
+        "fieldType": "select",
+        "isRequired": true,
+        "sortOrder": 0,
+        "options": "[\"3UZ\",\"VQ F\",\"VQ HR\",\"VQ E\",\"5VZ\",\"57mm\",\"63mm\",\"1UZ\"]",
+        "createdAt": "2026-03-31T08:16:55.280Z",
+        "updatedAt": "2026-03-31T08:18:39.046Z"
+      },
+      {
+        "id": 6,
+        "categoryId": 18,
+        "name": "Подкатегории",
+        "fieldType": "select",
+        "isRequired": true,
+        "sortOrder": 0,
+        "options": "[\"Багажник\",\"Бампер силовой\",\"Силовой порог\",\"Защита\",\"Внешние крепления доп элементов\"]",
+        "createdAt": "2026-03-31T08:24:02.060Z",
+        "updatedAt": "2026-03-31T08:24:02.060Z"
+      },
+      {
+        "id": 7,
+        "categoryId": 19,
+        "name": "Подкатегория",
+        "fieldType": "select",
+        "isRequired": true,
+        "sortOrder": 0,
+        "options": "[\"Крепления двс и акп\",\"Охлаждение\",\"Дополнительные крепления\",\"Детали для соединения трансмиссии\"]",
+        "createdAt": "2026-03-31T08:27:49.732Z",
+        "updatedAt": "2026-03-31T08:27:49.732Z"
+      }
+    ],
+    "productCharacteristics": [
+      {
+        "id": 28,
+        "productId": 33,
+        "fieldId": 7,
+        "value": "Крепления двс и акп",
+        "createdAt": "2026-03-31T10:16:57.238Z",
+        "updatedAt": "2026-03-31T10:16:57.238Z"
+      },
+      {
+        "id": 29,
+        "productId": 11,
+        "fieldId": 5,
+        "value": "1UZ",
+        "createdAt": "2026-04-01T02:43:58.384Z",
+        "updatedAt": "2026-04-01T02:43:58.384Z"
+      },
+      {
+        "id": 30,
+        "productId": 14,
+        "fieldId": 7,
+        "value": "Охлаждение",
+        "createdAt": "2026-04-01T02:52:39.435Z",
+        "updatedAt": "2026-04-01T02:52:39.435Z"
+      },
+      {
+        "id": 31,
+        "productId": 15,
+        "fieldId": 5,
+        "value": "63mm",
+        "createdAt": "2026-03-31T11:06:21.717Z",
+        "updatedAt": "2026-03-31T11:06:21.717Z"
+      },
+      {
+        "id": 32,
+        "productId": 16,
+        "fieldId": 5,
+        "value": "VQ F",
+        "createdAt": "2026-03-31T08:17:59.770Z",
+        "updatedAt": "2026-03-31T08:17:59.770Z"
+      },
+      {
+        "id": 33,
+        "productId": 17,
+        "fieldId": 5,
+        "value": "VQ E",
+        "createdAt": "2026-03-31T08:18:07.939Z",
+        "updatedAt": "2026-03-31T08:18:07.939Z"
+      },
+      {
+        "id": 34,
+        "productId": 18,
+        "fieldId": 5,
+        "value": "57mm",
+        "createdAt": "2026-03-31T11:06:13.742Z",
+        "updatedAt": "2026-03-31T11:06:13.742Z"
+      },
+      {
+        "id": 35,
+        "productId": 19,
+        "fieldId": 6,
+        "value": "Внешние крепления доп элементов",
+        "createdAt": "2026-03-31T08:35:39.117Z",
+        "updatedAt": "2026-03-31T08:35:39.117Z"
+      },
+      {
+        "id": 36,
+        "productId": 20,
+        "fieldId": 7,
+        "value": "Охлаждение",
+        "createdAt": "2026-03-31T08:28:36.477Z",
+        "updatedAt": "2026-03-31T08:28:36.477Z"
+      },
+      {
+        "id": 37,
+        "productId": 22,
+        "fieldId": 7,
+        "value": "Дополнительные крепления",
+        "createdAt": "2026-03-31T08:34:27.133Z",
+        "updatedAt": "2026-03-31T08:34:27.133Z"
+      },
+      {
+        "id": 38,
+        "productId": 23,
+        "fieldId": 7,
+        "value": "Крепления двс и акп",
+        "createdAt": "2026-03-31T08:34:43.181Z",
+        "updatedAt": "2026-03-31T08:34:43.181Z"
+      },
+      {
+        "id": 39,
+        "productId": 24,
+        "fieldId": 6,
+        "value": "Внешние крепления доп элементов",
+        "createdAt": "2026-03-31T08:36:36.148Z",
+        "updatedAt": "2026-03-31T08:36:36.148Z"
+      },
+      {
+        "id": 40,
+        "productId": 27,
+        "fieldId": 6,
+        "value": "Внешние крепления доп элементов",
+        "createdAt": "2026-03-31T08:42:54.229Z",
+        "updatedAt": "2026-03-31T08:42:54.229Z"
+      },
+      {
+        "id": 41,
+        "productId": 29,
+        "fieldId": 6,
+        "value": "Внешние крепления доп элементов",
+        "createdAt": "2026-03-31T08:52:27.359Z",
+        "updatedAt": "2026-03-31T08:52:27.359Z"
+      },
+      {
+        "id": 42,
+        "productId": 30,
+        "fieldId": 6,
+        "value": "Внешние крепления доп элементов",
+        "createdAt": "2026-03-31T08:52:32.732Z",
+        "updatedAt": "2026-03-31T08:52:32.732Z"
+      },
+      {
+        "id": 43,
+        "productId": 31,
+        "fieldId": 7,
+        "value": "Крепления двс и акп",
+        "createdAt": "2026-03-31T10:11:38.464Z",
+        "updatedAt": "2026-03-31T10:11:38.464Z"
+      },
+      {
+        "id": 44,
+        "productId": 42,
+        "fieldId": 5,
+        "value": "3UZ",
+        "createdAt": "2026-03-31T11:04:19.331Z",
+        "updatedAt": "2026-03-31T11:04:19.331Z"
+      },
+      {
+        "id": 45,
+        "productId": 46,
+        "fieldId": 5,
+        "value": "5VZ",
+        "createdAt": "2026-04-01T03:51:20.429Z",
+        "updatedAt": "2026-04-01T03:51:20.429Z"
+      },
+      {
+        "id": 46,
+        "productId": 45,
+        "fieldId": 7,
+        "value": "Дополнительные крепления",
+        "createdAt": "2026-04-01T04:44:39.337Z",
+        "updatedAt": "2026-04-01T04:44:39.337Z"
+      }
+    ],
+    "sales": [
+      {
+        "id": 10,
+        "productId": 48,
+        "quantity": 1,
+        "selling_price": 3000,
+        "total_cost": 1000,
+        "total_revenue": 3000,
+        "profit": 2000,
+        "customer_name": "Пилипенко Александр Владимирович",
+        "customer_phone": "+7 (929) 208-96-69",
+        "sale_date": "2026-04-06T06:49:13.067Z",
+        "createdAt": "2026-04-06T06:49:13.067Z",
+        "documentId": 8
+      },
+      {
+        "id": 11,
+        "productId": 49,
+        "quantity": 1,
+        "selling_price": 4000,
+        "total_cost": 1300,
+        "total_revenue": 4000,
+        "profit": 2700,
+        "customer_name": "Батвенко Николай Сергеевич",
+        "customer_phone": "+7 (924) 533-08-80",
+        "sale_date": "2026-04-06T10:42:20.912Z",
+        "createdAt": "2026-04-06T10:42:20.912Z",
+        "documentId": 9
+      },
+      {
+        "id": 5,
+        "productId": 46,
+        "quantity": 1,
+        "selling_price": 2000,
+        "total_cost": 500,
+        "total_revenue": 2000,
+        "profit": 1500,
+        "customer_name": "Чепуштанов Евгений",
+        "customer_phone": "+7 (902) 999-17-04",
+        "sale_date": "2026-04-01T03:53:17.022Z",
+        "createdAt": "2026-04-01T03:53:17.022Z",
+        "documentId": 4
+      },
+      {
+        "id": 6,
+        "productId": 42,
+        "quantity": 2,
+        "selling_price": 1300,
+        "total_cost": 1200,
+        "total_revenue": 2600,
+        "profit": 1400,
+        "customer_name": "Чепуштанов Евгений",
+        "customer_phone": "+7 (902) 999-17-04",
+        "sale_date": "2026-04-01T03:53:17.027Z",
+        "createdAt": "2026-04-01T03:53:17.027Z",
+        "documentId": 4
+      },
+      {
+        "id": 7,
+        "productId": 47,
+        "quantity": 1,
+        "selling_price": 10000,
+        "total_cost": 2700,
+        "total_revenue": 10000,
+        "profit": 7300,
+        "customer_name": "Батвенко Николай Сергеевич",
+        "customer_phone": "+7 (924) 533-08-80",
+        "sale_date": "2026-04-06T03:20:59.475Z",
+        "createdAt": "2026-04-06T03:20:59.475Z",
+        "documentId": 5
+      },
+      {
+        "id": 8,
+        "productId": 37,
+        "quantity": 1,
+        "selling_price": 6000,
+        "total_cost": 1800,
+        "total_revenue": 6000,
+        "profit": 4200,
+        "customer_name": "Батвенко Николай Сергеевич",
+        "customer_phone": "+7 (924) 533-08-80",
+        "sale_date": "2026-04-06T03:21:44.780Z",
+        "createdAt": "2026-04-06T03:21:44.780Z",
+        "documentId": null
+      },
+      {
+        "id": 9,
+        "productId": 47,
+        "quantity": 1,
+        "selling_price": 10000,
+        "total_cost": 2700,
+        "total_revenue": 10000,
+        "profit": 7300,
+        "customer_name": "Сапелкин Михаил Владимирович",
+        "customer_phone": "+7 (926) 622-47-57",
+        "sale_date": "2026-04-06T03:23:50.876Z",
+        "createdAt": "2026-04-06T03:23:50.876Z",
+        "documentId": 7
+      },
+      {
+        "id": 12,
+        "productId": 39,
+        "quantity": 1,
+        "selling_price": 6000,
+        "total_cost": 2600,
+        "total_revenue": 6000,
+        "profit": 3400,
+        "customer_name": "Батвенко Николай Сергеевич",
+        "customer_phone": "+7 (924) 533-08-80",
+        "sale_date": "2026-04-07T04:01:26.358Z",
+        "createdAt": "2026-04-07T04:01:26.358Z",
+        "documentId": null
+      }
+    ],
+    "saleDocuments": [
+      {
+        "id": 8,
+        "documentNumber": "ЗАКАЗ-20260406-904",
+        "documentType": "receipt",
+        "clientId": 6,
+        "clientName": null,
+        "clientPhone": null,
+        "customerName": "Пилипенко Александр Владимирович",
+        "customerPhone": "+7 (929) 208-96-69",
+        "customerEmail": null,
+        "customerAddress": null,
+        "description": null,
+        "subtotal": 3000,
+        "discount": 0,
+        "total": 3000,
+        "paymentMethod": "cash",
+        "paymentStatus": "paid",
+        "saleDate": "2026-04-06T06:49:13.063Z",
+        "createdAt": "2026-04-06T06:49:13.064Z",
+        "updatedAt": "2026-04-06T06:49:26.392Z",
+        "createdBy": null
+      },
+      {
+        "id": 9,
+        "documentNumber": "ЗАКАЗ-20260406-285",
+        "documentType": "receipt",
+        "clientId": 4,
+        "clientName": null,
+        "clientPhone": null,
+        "customerName": "Батвенко Николай Сергеевич",
+        "customerPhone": "+7 (924) 533-08-80",
+        "customerEmail": null,
+        "customerAddress": null,
+        "description": null,
+        "subtotal": 4000,
+        "discount": 0,
+        "total": 4000,
+        "paymentMethod": "cash",
+        "paymentStatus": "paid",
+        "saleDate": "2026-04-06T10:42:20.905Z",
+        "createdAt": "2026-04-06T10:42:20.906Z",
+        "updatedAt": "2026-04-06T10:42:22.625Z",
+        "createdBy": null
+      },
+      {
+        "id": 4,
+        "documentNumber": "ЗАКАЗ-20260401-060",
+        "documentType": "receipt",
+        "clientId": 3,
+        "clientName": null,
+        "clientPhone": null,
+        "customerName": "Евгений Чепуштанов",
+        "customerPhone": "+7 (902) 999-17-04",
+        "customerEmail": null,
+        "customerAddress": null,
+        "description": null,
+        "subtotal": 4600,
+        "discount": 460,
+        "total": 4140,
+        "paymentMethod": "cash",
+        "paymentStatus": "paid",
+        "saleDate": "2026-04-01T03:53:17.016Z",
+        "createdAt": "2026-04-01T03:53:17.017Z",
+        "updatedAt": "2026-04-02T08:20:29.019Z",
+        "createdBy": null
+      },
+      {
+        "id": 5,
+        "documentNumber": "ЗАКАЗ-20260406-600",
+        "documentType": "receipt",
+        "clientId": 4,
+        "clientName": null,
+        "clientPhone": null,
+        "customerName": "Батвенко Николай Сергеевич",
+        "customerPhone": "+7 (924) 533-08-80",
+        "customerEmail": null,
+        "customerAddress": null,
+        "description": null,
+        "subtotal": 10000,
+        "discount": 0,
+        "total": 10000,
+        "paymentMethod": "cash",
+        "paymentStatus": "paid",
+        "saleDate": "2026-04-06T03:20:59.463Z",
+        "createdAt": "2026-04-06T03:20:59.464Z",
+        "updatedAt": "2026-04-06T03:21:03.451Z",
+        "createdBy": null
+      },
+      {
+        "id": 7,
+        "documentNumber": "ЗАКАЗ-20260406-666",
+        "documentType": "receipt",
+        "clientId": 5,
+        "clientName": null,
+        "clientPhone": null,
+        "customerName": "Сапелкин Михаил Владимирович",
+        "customerPhone": "+7 (926) 622-47-57",
+        "customerEmail": null,
+        "customerAddress": null,
+        "description": null,
+        "subtotal": 10000,
+        "discount": 0,
+        "total": 10000,
+        "paymentMethod": "cash",
+        "paymentStatus": "paid",
+        "saleDate": "2026-04-06T03:23:50.870Z",
+        "createdAt": "2026-04-06T03:23:50.870Z",
+        "updatedAt": "2026-04-06T03:23:53.185Z",
+        "createdBy": null
+      }
+    ],
+    "saleDocumentItems": [
+      {
+        "id": 10,
+        "documentId": 8,
+        "productId": 48,
+        "productName": "Панель для переключателя блокировки Y61",
+        "productArticle": "NPY61-06-001",
+        "quantity": 1,
+        "price": 3000,
+        "cost_price": 1000,
+        "total": 3000,
+        "createdAt": "2026-04-06T06:49:13.066Z"
+      },
+      {
+        "id": 11,
+        "documentId": 9,
+        "productId": 49,
+        "productName": "Рамка \"Слайдер\"",
+        "productArticle": "06-001",
+        "quantity": 1,
+        "price": 4000,
+        "cost_price": 1300,
+        "total": 4000,
+        "createdAt": "2026-04-06T10:42:20.910Z"
+      },
+      {
+        "id": 5,
+        "documentId": 4,
+        "productId": 46,
+        "productName": "5VZ Комплект фланцев",
+        "productArticle": "FL-5VZ",
+        "quantity": 1,
+        "price": 2000,
+        "cost_price": 500,
+        "total": 2000,
+        "createdAt": "2026-04-01T03:53:17.021Z"
+      },
+      {
+        "id": 6,
+        "documentId": 4,
+        "productId": 42,
+        "productName": "Фланец 3 UZ",
+        "productArticle": "FL-3UZ ",
+        "quantity": 2,
+        "price": 1300,
+        "cost_price": 600,
+        "total": 2600,
+        "createdAt": "2026-04-01T03:53:17.026Z"
+      },
+      {
+        "id": 7,
+        "documentId": 5,
+        "productId": 47,
+        "productName": "Усиление передней части кузова Y61",
+        "productArticle": "NPY61-02-001 ",
+        "quantity": 1,
+        "price": 10000,
+        "cost_price": 2700,
+        "total": 10000,
+        "createdAt": "2026-04-06T03:20:59.471Z"
+      },
+      {
+        "id": 9,
+        "documentId": 7,
+        "productId": 47,
+        "productName": "Усиление передней части кузова Y61",
+        "productArticle": "NPY61-02-001 ",
+        "quantity": 1,
+        "price": 10000,
+        "cost_price": 2700,
+        "total": 10000,
+        "createdAt": "2026-04-06T03:23:50.874Z"
+      }
+    ],
+    "expenses": [],
+    "clients": [
+      {
+        "id": 5,
+        "firstName": "Михаил",
+        "lastName": "Сапелкин",
+        "middleName": "Владимирович",
+        "phone": "+7 (926) 622-47-57",
+        "email": null,
+        "birthDate": null,
+        "address": null,
+        "city": "Лобня",
+        "passport": null,
+        "driverLicense": null,
+        "carModel": null,
+        "carYear": null,
+        "carVin": null,
+        "carNumber": null,
+        "notes": null,
+        "totalOrders": 1,
+        "totalSpent": 10000,
+        "discountPercent": 0,
+        "discountUpdatedAt": null,
+        "discountUpdatedBy": null,
+        "createdAt": "2026-04-06T03:23:50.759Z",
+        "updatedAt": "2026-04-06T03:23:50.878Z"
+      },
+      {
+        "id": 4,
+        "firstName": "Николай",
+        "lastName": "Батвенко",
+        "middleName": "Сергеевич",
+        "phone": "+7 (924) 533-08-80",
+        "email": null,
+        "birthDate": null,
+        "address": null,
+        "city": "Иркутск",
+        "passport": null,
+        "driverLicense": null,
+        "carModel": null,
+        "carYear": null,
+        "carVin": null,
+        "carNumber": null,
+        "notes": null,
+        "totalOrders": 2,
+        "totalSpent": 14000,
+        "discountPercent": 0,
+        "discountUpdatedAt": null,
+        "discountUpdatedBy": null,
+        "createdAt": "2026-04-06T03:20:59.325Z",
+        "updatedAt": "2026-04-07T04:01:39.836Z"
+      },
+      {
+        "id": 6,
+        "firstName": "Александр",
+        "lastName": "Пилипенко",
+        "middleName": "Владимирович",
+        "phone": "79292089669",
+        "email": "",
+        "birthDate": null,
+        "address": null,
+        "city": "Салехард",
+        "passport": null,
+        "driverLicense": null,
+        "carModel": "",
+        "carYear": null,
+        "carVin": null,
+        "carNumber": "",
+        "notes": "",
+        "totalOrders": 1,
+        "totalSpent": 3000,
+        "discountPercent": 0,
+        "discountUpdatedAt": "2026-04-07T04:45:18.612Z",
+        "discountUpdatedBy": 2,
+        "createdAt": "2026-04-06T06:49:12.946Z",
+        "updatedAt": "2026-04-07T04:45:18.614Z"
+      },
+      {
+        "id": 3,
+        "firstName": "Евгений",
+        "lastName": "Чепуштанов",
+        "middleName": "",
+        "phone": "79029991704",
+        "email": "",
+        "birthDate": null,
+        "address": null,
+        "city": "Новокузнецк",
+        "passport": null,
+        "driverLicense": null,
+        "carModel": "",
+        "carYear": null,
+        "carVin": null,
+        "carNumber": "",
+        "notes": "",
+        "totalOrders": 1,
+        "totalSpent": 4140,
+        "discountPercent": 10,
+        "discountUpdatedAt": "2026-04-07T04:45:27.257Z",
+        "discountUpdatedBy": 2,
+        "createdAt": "2026-04-01T03:53:16.906Z",
+        "updatedAt": "2026-04-07T04:45:27.258Z"
+      }
+    ],
+    "productCategories": [
+      {
+        "productId": 33,
+        "categoryId": 19
+      },
+      {
+        "productId": 34,
+        "categoryId": 17
+      },
+      {
+        "productId": 11,
+        "categoryId": 13
+      },
+      {
+        "productId": 12,
+        "categoryId": 21
+      },
+      {
+        "productId": 13,
+        "categoryId": 21
+      },
+      {
+        "productId": 14,
+        "categoryId": 19
+      },
+      {
+        "productId": 15,
+        "categoryId": 13
+      },
+      {
+        "productId": 16,
+        "categoryId": 13
+      },
+      {
+        "productId": 17,
+        "categoryId": 13
+      },
+      {
+        "productId": 18,
+        "categoryId": 13
+      },
+      {
+        "productId": 19,
+        "categoryId": 18
+      },
+      {
+        "productId": 20,
+        "categoryId": 19
+      },
+      {
+        "productId": 21,
+        "categoryId": 16
+      },
+      {
+        "productId": 22,
+        "categoryId": 19
+      },
+      {
+        "productId": 23,
+        "categoryId": 19
+      },
+      {
+        "productId": 24,
+        "categoryId": 18
+      },
+      {
+        "productId": 25,
+        "categoryId": 15
+      },
+      {
+        "productId": 26,
+        "categoryId": 14
+      },
+      {
+        "productId": 27,
+        "categoryId": 18
+      },
+      {
+        "productId": 28,
+        "categoryId": 14
+      },
+      {
+        "productId": 29,
+        "categoryId": 18
+      },
+      {
+        "productId": 30,
+        "categoryId": 18
+      },
+      {
+        "productId": 31,
+        "categoryId": 19
+      },
+      {
+        "productId": 32,
+        "categoryId": 14
+      },
+      {
+        "productId": 35,
+        "categoryId": 16
+      },
+      {
+        "productId": 36,
+        "categoryId": 17
+      },
+      {
+        "productId": 38,
+        "categoryId": 17
+      },
+      {
+        "productId": 39,
+        "categoryId": 17
+      },
+      {
+        "productId": 40,
+        "categoryId": 21
+      },
+      {
+        "productId": 41,
+        "categoryId": 20
+      },
+      {
+        "productId": 42,
+        "categoryId": 13
+      },
+      {
+        "productId": 43,
+        "categoryId": 14
+      },
+      {
+        "productId": 46,
+        "categoryId": 13
+      },
+      {
+        "productId": 45,
+        "categoryId": 19
+      },
+      {
+        "productId": 45,
+        "categoryId": 20
+      },
+      {
+        "productId": 45,
+        "categoryId": 21
+      },
+      {
+        "productId": 47,
+        "categoryId": 16
+      },
+      {
+        "productId": 37,
+        "categoryId": 17
+      },
+      {
+        "productId": 48,
+        "categoryId": 15
+      },
+      {
+        "productId": 44,
+        "categoryId": 21
+      },
+      {
+        "productId": 49,
+        "categoryId": 15
+      }
+    ]
+  }
+}

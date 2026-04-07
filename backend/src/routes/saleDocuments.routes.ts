@@ -6,6 +6,7 @@ import {
   createSaleDocument,
   updateSaleDocument,
   updatePaymentStatus,
+  updateOrderStatus,  // 🆕 добавить импорт
   deleteSaleDocument,
   getDocumentsByClient,
   getClientStatistics
@@ -25,6 +26,7 @@ router.post('/', managerAccess, createSaleDocument);
 router.put('/:id', managerAccess, updateSaleDocument);
 router.patch('/:id/payment-status', managerAccess, updatePaymentStatus);  // PATCH метод
 router.put('/:id/payment', managerAccess, updatePaymentStatus);  // Добавляем PUT для совместимости
+router.patch('/:id/status', updateOrderStatus);
 router.delete('/:id', managerAccess, deleteSaleDocument);
 
 export default router;

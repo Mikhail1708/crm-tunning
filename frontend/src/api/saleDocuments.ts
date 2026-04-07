@@ -14,8 +14,12 @@ export interface SaleDocument {
   total: number;
   paymentMethod?: string;
   paymentStatus: string;
+  orderStatus?: 'ordered' | 'assembling' | 'shipped';  // 🆕 добавить поле
   saleDate: string;
   items: SaleDocumentItem[];
+  clientName?: string;
+  clientPhone?: string;
+  sellerName?: string;
 }
 
 export interface SaleDocumentItem {
@@ -50,6 +54,10 @@ export const saleDocumentsApi = {
   // Отметить как оплаченный (обновить статус оплаты)
   updatePaymentStatus: (id: number, status: 'paid' | 'unpaid') => 
     api.put(`/sale-documents/${id}/payment`, { paymentStatus: status }),
+  
+  // 🆕 Обновить статус заказа
+  updateOrderStatus: (id: number, orderStatus: 'ordered' | 'assembling' | 'shipped') => 
+    api.patch(`/sale-documents/${id}/status`, { orderStatus }),
   
   // Отметить как оплаченный (алиас)
   markAsPaid: (id: number) => api.put(`/sale-documents/${id}/payment`, { paymentStatus: 'paid' }),

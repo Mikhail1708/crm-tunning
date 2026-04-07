@@ -1,57 +1,42 @@
 // frontend/src/components/ui/OrderStatusBadge.tsx
 import React from 'react';
-import { OrderStatus } from '../../types';
-import { Package, Settings, Truck, Clock } from 'lucide-react';
+
+export type OrderStatus = 'ordered' | 'assembling' | 'shipped';
 
 interface OrderStatusBadgeProps {
   status: OrderStatus;
   size?: 'sm' | 'md' | 'lg';
   showIcon?: boolean;
-  className?: string;
 }
 
-const statusConfig: Record<OrderStatus, { label: string; color: string; icon: React.ElementType }> = {
-  ordered: {
-    label: 'Оформлен',
-    color: 'bg-blue-100 text-blue-700 border-blue-200',
-    icon: Clock
-  },
-  assembling: {
-    label: 'Собирается',
-    color: 'bg-yellow-100 text-yellow-700 border-yellow-200',
-    icon: Settings
-  },
-  shipped: {
-    label: 'Отправлен',
-    color: 'bg-green-100 text-green-700 border-green-200',
-    icon: Truck
-  }
+const statusConfig: Record<OrderStatus, { label: string; icon: string; color: string }> = {
+  ordered: { label: 'Оформлен', icon: '📋', color: 'blue' },
+  assembling: { label: 'Собирается', icon: '🔧', color: 'yellow' },
+  shipped: { label: 'Отправлен', icon: '🚚', color: 'green' }
 };
 
 export const OrderStatusBadge: React.FC<OrderStatusBadgeProps> = ({ 
   status, 
   size = 'md',
-  showIcon = true,
-  className = ''
+  showIcon = true 
 }) => {
   const config = statusConfig[status];
-  const Icon = config.icon;
   
   const sizeClasses = {
-    sm: 'px-2 py-0.5 text-xs gap-1',
-    md: 'px-2.5 py-1 text-sm gap-1.5',
-    lg: 'px-3 py-1.5 text-base gap-2'
+    sm: 'text-xs px-2 py-0.5',
+    md: 'text-sm px-2.5 py-1',
+    lg: 'text-base px-3 py-1.5'
   };
   
-  const iconSizes = {
-    sm: 12,
-    md: 14,
-    lg: 18
+  const colorClasses = {
+    blue: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400',
+    yellow: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400',
+    green: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
   };
   
   return (
-    <span className={`inline-flex items-center rounded-full border font-medium ${sizeClasses[size]} ${config.color} ${className}`}>
-      {showIcon && <Icon size={iconSizes[size]} />}
+    <span className={`inline-flex items-center gap-1 rounded-full font-medium ${sizeClasses[size]} ${colorClasses[config.color]}`}>
+      {showIcon && <span>{config.icon}</span>}
       {config.label}
     </span>
   );

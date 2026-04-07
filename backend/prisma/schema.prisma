@@ -145,6 +145,7 @@ model Client {
   orders      SaleDocument[]
 }
 
+// backend/prisma/schema.prisma
 model SaleDocument {
   id             Int                @id @default(autoincrement())
   documentNumber String             @unique
@@ -163,6 +164,7 @@ model SaleDocument {
   total          Float
   paymentMethod  String?
   paymentStatus  String             @default("unpaid")
+  orderStatus    String             @default("ordered")  // 🆕 ordered, assembling, shipped
   saleDate       DateTime           @default(now())
   createdAt      DateTime           @default(now())
   updatedAt      DateTime           @updatedAt
