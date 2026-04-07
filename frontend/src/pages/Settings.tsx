@@ -31,82 +31,101 @@ export const Settings: React.FC = () => {
   const isAdmin = user?.role === 'admin';
 
   // Экспорт дампа базы данных
-  const exportDatabaseDump = async (): Promise<void> => {
-    if (!isAdmin) {
-      toast.error('Доступ запрещен. Требуются права администратора');
-      return;
+  // frontend/src/pages/Settings.tsx (фрагмент - обновите функции экспорта/импорта)
+
+// Экспорт дампа базы данных
+const exportDatabaseDump = async (): Promise<void> => {
+  if (!isAdmin) {
+    toast.error('Доступ запрещен. Требуются права администратора');
+    return;
+  }
+
+  setLoadingDump(true);
+  try {
+    const dump = await reportsApi.getDatabaseDump();
+    
+    // Создаем файл для скачивания
+    const dataStr = JSON.stringify(dump, null, 2);
+    const blob = new Blob([dataStr], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `database_dump_${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    
+    toast.success('Дамп базы данных успешно экспортирован');
+  } catch (error) {
+    console.error('Error exporting database dump:', error);
+    toast.error('Ошибка экспорта дампа');
+  } finally {
+    setLoadingDump(false);
+  }
+};
+
+// Импорт дампа базы данных (восстановление)
+const importDatabaseDump = async (event: React.ChangeEvent<HTMLInputElement>): Promise<void> => {
+  if (!isAdmin) {
+    toast.error('Доступ запрещен. Требуются права администратора');
+    return;
+  }
+
+  const file = event.target.files?.[0];
+  if (!file) return;
+
+  if (!file.name.endsWith('.json')) {
+    toast.error('Пожалуйста, выберите JSON файл дампа');
+    return;
+  }
+
+  setLoadingRestore(true);
+  try {
+    const text = await file.text();
+    const dumpData = JSON.parse(text);
+    
+    // Проверяем структуру дампа
+    if (!dumpData.exportedAt || !dumpData.data) {
+      throw new Error('Неверный формат файла дампа');
     }
-
-    setLoadingDump(true);
-    try {
-      const response = await reportsApi.getDatabaseDump();
-      const dump = response.data;
-      
-      // Создаем файл для скачивания
-      const dataStr = JSON.stringify(dump, null, 2);
-      const blob = new Blob([dataStr], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `database_dump_${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.json`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-      
-      toast.success('Дамп базы данных успешно экспортирован');
-    } catch (error) {
-      console.error('Error exporting database dump:', error);
-      toast.error((error as { response?: { data?: { message?: string } } }).response?.data?.message || 'Ошибка экспорта дампа');
-    } finally {
-      setLoadingDump(false);
-    }
-  };
-
-  // Импорт дампа базы данных (восстановление)
-  const importDatabaseDump = async (event: React.ChangeEvent<HTMLInputElement>): Promise<void> => {
-    if (!isAdmin) {
-      toast.error('Доступ запрещен. Требуются права администратора');
-      return;
-    }
-
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    if (!file.name.endsWith('.json')) {
-      toast.error('Пожалуйста, выберите JSON файл дампа');
-      return;
-    }
-
-    setLoadingRestore(true);
-    try {
-      const text = await file.text();
-      const dumpData = JSON.parse(text) as DatabaseDump;
-      
-      // Проверяем структуру дампа
-      if (!dumpData.exportedAt || !dumpData.data) {
-        throw new Error('Неверный формат файла дампа');
+    
+    // Проверяем версию дампа
+    if (dumpData.version !== '3.0') {
+      const confirmRestore = confirm(
+        `ВНИМАНИЕ! Файл дампа версии ${dumpData.version || 'неизвестна'}, а система ожидает версию 3.0.\n\n` +
+        `Восстановление из старой версии может работать некорректно.\n\n` +
+        `Рекомендуется создать новый дамп текущей базы данных.\n\n` +
+        `Продолжить восстановление?`
+      );
+      if (!confirmRestore) {
+        setLoadingRestore(false);
+        if (fileInputRef.current) {
+          fileInputRef.current.value = '';
+        }
+        return;
       }
-      
-      // Подтверждение восстановления
-      if (confirm(`Восстановить базу данных из дампа от ${new Date(dumpData.exportedAt).toLocaleString()}?\n\nВНИМАНИЕ! Текущие данные будут полностью заменены. Это действие нельзя отменить.`)) {
-        await reportsApi.restoreDatabase(dumpData);
-        toast.success('База данных успешно восстановлена');
-        // Перезагружаем страницу через 2 секунды
-        setTimeout(() => {
-          window.location.reload();
-        }, 2000);
-      }
-    } catch (error) {
-      console.error('Error restoring database:', error);
-      toast.error((error as Error).message || 'Ошибка восстановления базы данных');
-    } finally {
-      setLoadingRestore(false);
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
     }
-  };
+    
+    // Подтверждение восстановления
+    if (confirm(`Восстановить базу данных из дампа от ${new Date(dumpData.exportedAt).toLocaleString()}?\n\nВНИМАНИЕ! Текущие данные будут полностью заменены. Это действие нельзя отменить.`)) {
+      const result = await reportsApi.restoreDatabase(dumpData);
+      toast.success(result.message || 'База данных успешно восстановлена');
+      // Перезагружаем страницу через 2 секунды
+      setTimeout(() => {
+        window.location.reload();
+      }, 2000);
+    }
+  } catch (error) {
+    console.error('Error restoring database:', error);
+    toast.error('Ошибка восстановления базы данных');
+  } finally {
+    setLoadingRestore(false);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  }
+};
 
   // Очистка всей базы данных
   const clearDatabase = async (): Promise<void> => {

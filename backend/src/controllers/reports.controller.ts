@@ -7,9 +7,265 @@ import path from 'path';
 
 const prisma = new PrismaClient();
 
+// Интерфейс для старого формата дампа
+interface OldDump {
+  exportedAt?: string;
+  version?: string;
+  data: {
+    users?: any[];
+    products?: any[];
+    categories?: any[];
+    categoryFields?: any[];
+    productCharacteristics?: any[];
+    sales?: any[];
+    saleDocuments?: any[];
+    saleDocumentItems?: any[];
+    expenses?: any[];
+    clients?: any[];
+  };
+}
+
+// Интерфейс для нового формата дампа
+interface NewDump {
+  exportedAt: string;
+  version: string;
+  data: {
+    users: any[];
+    products: any[];
+    categories: any[];
+    categoryFields: any[];
+    productCharacteristics: any[];
+    sales: any[];
+    saleDocuments: any[];
+    saleDocumentItems: any[];
+    expenses: any[];
+    clients: any[];
+    productCategories: Array<{ productId: number; categoryId: number }>;
+  };
+}
+
+/**
+ * Конвертирует старый формат дампа (1.0) в новый (3.0)
+ */
+const convertDumpToV3 = (oldDump: OldDump): NewDump => {
+  console.log('🔄 Конвертация дампа из версии 1.0 в 3.0...');
+  
+  const newDump: NewDump = {
+    exportedAt: oldDump.exportedAt || new Date().toISOString(),
+    version: '3.0',
+    data: {
+      users: [],
+      products: [],
+      categories: [],
+      categoryFields: [],
+      productCharacteristics: [],
+      sales: [],
+      saleDocuments: [],
+      saleDocumentItems: [],
+      expenses: [],
+      clients: [],
+      productCategories: []
+    }
+  };
+
+  // Конвертируем пользователей
+  if (oldDump.data?.users && oldDump.data.users.length > 0) {
+    newDump.data.users = oldDump.data.users.map((user: any, index: number) => ({
+      id: index + 1,
+      email: user.email,
+      password: user.password,
+      name: user.name,
+      role: user.role,
+      createdAt: user.createdAt || new Date().toISOString(),
+      updatedAt: user.updatedAt || new Date().toISOString()
+    }));
+  }
+
+  // Конвертируем категории
+  if (oldDump.data?.categories && oldDump.data.categories.length > 0) {
+    newDump.data.categories = oldDump.data.categories.map((cat: any, index: number) => ({
+      id: index + 1,
+      name: cat.name,
+      description: cat.description || '',
+      createdAt: cat.createdAt || new Date().toISOString(),
+      updatedAt: cat.updatedAt || new Date().toISOString()
+    }));
+  }
+
+  // Конвертируем поля категорий
+  if (oldDump.data?.categoryFields && oldDump.data.categoryFields.length > 0) {
+    newDump.data.categoryFields = oldDump.data.categoryFields.map((field: any, index: number) => {
+      const category = newDump.data.categories.find((c: any) => c.name === field.categoryName);
+      return {
+        id: index + 1,
+        categoryId: category ? category.id : 1,
+        name: field.name,
+        fieldType: field.fieldType,
+        isRequired: field.isRequired,
+        options: field.options,
+        createdAt: field.createdAt || new Date().toISOString(),
+        updatedAt: field.updatedAt || new Date().toISOString()
+      };
+    });
+  }
+
+  // Конвертируем товары
+  if (oldDump.data?.products && oldDump.data.products.length > 0) {
+    newDump.data.products = oldDump.data.products.map((product: any, index: number) => ({
+      id: index + 1,
+      name: product.name,
+      article: product.article || '',
+      cost_price: product.cost_price || 0,
+      retail_price: product.retail_price || 0,
+      description: product.description || '',
+      stock: product.stock || 0,
+      min_stock: product.min_stock || 1,
+      costBreakdown: product.costBreakdown || [],
+      createdAt: product.createdAt || new Date().toISOString(),
+      updatedAt: product.updatedAt || new Date().toISOString()
+    }));
+
+    // Создаем связи ProductCategory
+    oldDump.data.products.forEach((product: any, index: number) => {
+      if (product.categories && product.categories.length > 0) {
+        const productId = index + 1;
+        const category = newDump.data.categories.find((c: any) => c.name === product.categories[0]?.category?.name);
+        if (category) {
+          newDump.data.productCategories.push({
+            productId: productId,
+            categoryId: category.id
+          });
+        }
+      }
+    });
+  }
+
+  // Конвертируем характеристики
+  if (oldDump.data?.productCharacteristics && oldDump.data.productCharacteristics.length > 0) {
+    newDump.data.productCharacteristics = oldDump.data.productCharacteristics.map((char: any, index: number) => {
+      const product = newDump.data.products.find((p: any) => p.name === char.productName);
+      const field = newDump.data.categoryFields.find((f: any) => f.name === char.fieldName);
+      
+      return {
+        id: index + 1,
+        productId: product ? product.id : 1,
+        fieldId: field ? field.id : 1,
+        value: char.value,
+        createdAt: char.createdAt || new Date().toISOString(),
+        updatedAt: char.updatedAt || new Date().toISOString()
+      };
+    });
+  }
+
+  // Конвертируем клиентов
+  if (oldDump.data?.clients && oldDump.data.clients.length > 0) {
+    newDump.data.clients = oldDump.data.clients.map((client: any, index: number) => ({
+      id: index + 1,
+      firstName: client.firstName || '',
+      lastName: client.lastName || '',
+      middleName: client.middleName || '',
+      phone: client.phone || '',
+      email: client.email || null,
+      city: client.city || null,
+      carModel: client.carModel || null,
+      carNumber: client.carNumber || null,
+      carYear: client.carYear || null,
+      createdAt: client.createdAt || new Date().toISOString(),
+      updatedAt: client.updatedAt || new Date().toISOString()
+    }));
+  }
+
+  // Конвертируем документы продаж
+  if (oldDump.data?.saleDocuments && oldDump.data.saleDocuments.length > 0) {
+    newDump.data.saleDocuments = oldDump.data.saleDocuments.map((doc: any, index: number) => {
+      const client = newDump.data.clients.find((c: any) => 
+        c.lastName === doc.clientName?.split(' ')[0]
+      );
+      
+      return {
+        id: index + 1,
+        documentNumber: doc.documentNumber,
+        documentType: doc.documentType,
+        customerName: doc.customerName,
+        customerPhone: doc.customerPhone,
+        customerEmail: doc.customerEmail || null,
+        customerAddress: doc.customerAddress || null,
+        subtotal: doc.subtotal || 0,
+        discount: doc.discount || 0,
+        total: doc.total || 0,
+        paymentMethod: doc.paymentMethod || 'cash',
+        paymentStatus: doc.paymentStatus || 'unpaid',
+        saleDate: doc.saleDate || new Date().toISOString(),
+        clientId: client ? client.id : null,
+        createdBy: null,
+        createdAt: doc.createdAt || new Date().toISOString(),
+        updatedAt: doc.updatedAt || new Date().toISOString()
+      };
+    });
+  }
+
+  // Конвертируем элементы документов
+  if (oldDump.data?.saleDocumentItems && oldDump.data.saleDocumentItems.length > 0) {
+    newDump.data.saleDocumentItems = oldDump.data.saleDocumentItems.map((item: any, index: number) => {
+      const document = newDump.data.saleDocuments.find((d: any) => d.documentNumber === item.documentNumber);
+      const product = newDump.data.products.find((p: any) => p.name === item.productName);
+      
+      return {
+        id: index + 1,
+        documentId: document ? document.id : 1,
+        productId: product ? product.id : 1,
+        productName: item.productName,
+        productArticle: item.productArticle || '',
+        quantity: item.quantity || 1,
+        price: item.price || 0,
+        total: item.total || 0,
+        cost_price: item.cost_price || 0,
+        createdAt: item.createdAt || new Date().toISOString()
+      };
+    });
+  }
+
+  // Конвертируем продажи
+  if (oldDump.data?.sales && oldDump.data.sales.length > 0) {
+    newDump.data.sales = oldDump.data.sales.map((sale: any, index: number) => {
+      const document = newDump.data.saleDocuments.find((d: any) => d.documentNumber === sale.documentNumber);
+      
+      return {
+        id: index + 1,
+        productId: sale.productId || 1,
+        quantity: sale.quantity || 1,
+        selling_price: sale.selling_price || 0,
+        total_cost: sale.total_cost || 0,
+        total_revenue: sale.total_revenue || 0,
+        profit: sale.profit || 0,
+        customer_name: sale.customer_name,
+        customer_phone: sale.customer_phone,
+        sale_date: sale.sale_date || new Date().toISOString(),
+        documentId: document ? document.id : null,
+        createdAt: sale.createdAt || new Date().toISOString()
+      };
+    });
+  }
+
+  // Конвертируем расходы
+  if (oldDump.data?.expenses && oldDump.data.expenses.length > 0) {
+    newDump.data.expenses = oldDump.data.expenses.map((exp: any, index: number) => ({
+      id: index + 1,
+      name: exp.name,
+      amount: exp.amount,
+      category: exp.category,
+      description: exp.description,
+      expense_date: exp.expense_date || new Date().toISOString(),
+      createdAt: exp.createdAt || new Date().toISOString()
+    }));
+  }
+
+  console.log('✅ Конвертация завершена');
+  return newDump;
+};
+
 export const getSummary = async (req: RequestWithUser, res: Response): Promise<void> => {
   try {
-    // Получаем только оплаченные заказы
     const paidOrders = await prisma.saleDocument.findMany({
       where: {
         paymentStatus: 'paid',
@@ -35,7 +291,6 @@ export const getSummary = async (req: RequestWithUser, res: Response): Promise<v
     
     const clientsCount = await prisma.client.count();
     
-    // Топ товаров по продажам (только из оплаченных заказов)
     const paidOrderIds = paidOrders.map(o => o.id);
     
     let topProducts: any[] = [];
@@ -98,10 +353,6 @@ export const getSummary = async (req: RequestWithUser, res: Response): Promise<v
   }
 };
 
-/**
- * GET /api/reports/profit-chart
- * Получить данные для графика (только оплаченные заказы)
- */
 export const getProfitChart = async (req: RequestWithUser, res: Response): Promise<void> => {
   try {
     const { period = 'month', limit = '12' } = req.query;
@@ -128,13 +379,8 @@ export const getProfitChart = async (req: RequestWithUser, res: Response): Promi
   }
 };
 
-/**
- * GET /api/reports/profit-by-product
- * Получить прибыль по товарам (только оплаченные заказы)
- */
 export const getProfitByProduct = async (req: RequestWithUser, res: Response): Promise<void> => {
   try {
-    // Получаем оплаченные заказы
     const paidOrders = await prisma.saleDocument.findMany({
       where: {
         paymentStatus: 'paid',
@@ -145,7 +391,6 @@ export const getProfitByProduct = async (req: RequestWithUser, res: Response): P
     
     const paidOrderIds = paidOrders.map(o => o.id);
     
-    // Получаем все товары
     const products = await prisma.product.findMany({
       select: {
         id: true,
@@ -183,7 +428,6 @@ export const getProfitByProduct = async (req: RequestWithUser, res: Response): P
       return;
     }
     
-    // Получаем данные по товарам из оплаченных заказов
     const items = await prisma.saleDocumentItem.groupBy({
       by: ['productId'],
       where: {
@@ -220,9 +464,7 @@ export const getProfitByProduct = async (req: RequestWithUser, res: Response): P
       };
     });
     
-    // Сортируем по прибыли
     report.sort((a, b) => b.total_profit - a.total_profit);
-    
     res.json(report);
   } catch (error) {
     console.error('Get profit by product error:', error);
@@ -230,10 +472,6 @@ export const getProfitByProduct = async (req: RequestWithUser, res: Response): P
   }
 };
 
-/**
- * GET /api/reports/expenses
- * Получить расходы
- */
 export const getExpenses = async (req: RequestWithUser, res: Response): Promise<void> => {
   try {
     const { startDate, endDate } = req.query;
@@ -270,10 +508,6 @@ export const getExpenses = async (req: RequestWithUser, res: Response): Promise<
   }
 };
 
-/**
- * POST /api/reports/expenses
- * Добавить расход
- */
 export const createExpense = async (req: RequestWithUser, res: Response): Promise<void> => {
   try {
     const data: CreateExpenseDTO = req.body;
@@ -296,10 +530,6 @@ export const createExpense = async (req: RequestWithUser, res: Response): Promis
   }
 };
 
-/**
- * GET /api/reports/orders
- * Получить заказы за период (только оплаченные)
- */
 export const getOrdersByPeriod = async (req: RequestWithUser, res: Response): Promise<void> => {
   try {
     const { startDate, endDate } = req.query;
@@ -325,7 +555,6 @@ export const getOrdersByPeriod = async (req: RequestWithUser, res: Response): Pr
       orderBy: { saleDate: 'desc' }
     });
     
-    // Форматируем данные для отчета
     const formattedOrders = orders.map(order => ({
       id: order.id,
       documentNumber: order.documentNumber,
@@ -350,7 +579,6 @@ export const getOrdersByPeriod = async (req: RequestWithUser, res: Response): Pr
       )
     }));
     
-    // Общая статистика
     const stats: SalesStats = {
       totalOrders: orders.length,
       totalRevenue: orders.reduce((sum, o) => sum + o.total, 0),
@@ -373,10 +601,6 @@ export const getOrdersByPeriod = async (req: RequestWithUser, res: Response): Pr
   }
 };
 
-/**
- * DELETE /api/reports/sales/all
- * Удалить все продажи (только админ)
- */
 export const deleteAllSales = async (req: RequestWithUser, res: Response): Promise<void> => {
   try {
     if (req.user?.role !== 'admin') {
@@ -385,10 +609,8 @@ export const deleteAllSales = async (req: RequestWithUser, res: Response): Promi
     }
     
     await prisma.$transaction(async (tx) => {
-      // Получаем все продажи
       const sales = await tx.sale.findMany();
       
-      // Возвращаем товары на склад
       for (const sale of sales) {
         await tx.product.update({
           where: { id: sale.productId },
@@ -396,7 +618,6 @@ export const deleteAllSales = async (req: RequestWithUser, res: Response): Promi
         });
       }
       
-      // Удаляем все документы (каскадно удалятся items и sales)
       await tx.saleDocument.deleteMany();
     });
     
@@ -407,10 +628,6 @@ export const deleteAllSales = async (req: RequestWithUser, res: Response): Promi
   }
 };
 
-/**
- * GET /api/reports/stats/:period
- * Получить статистику за период (день, неделя, месяц) - только оплаченные
- */
 export const getSalesStats = async (req: RequestWithUser, res: Response): Promise<void> => {
   try {
     const { period } = req.params;
@@ -473,10 +690,6 @@ export const getSalesStats = async (req: RequestWithUser, res: Response): Promis
   }
 };
 
-/**
- * GET /api/reports/dump
- * Получить дамп всей базы данных (БЕЗ ID)
- */
 export const getDatabaseDump = async (req: RequestWithUser, res: Response): Promise<void> => {
   try {
     if (req.user?.role !== 'admin') {
@@ -488,54 +701,39 @@ export const getDatabaseDump = async (req: RequestWithUser, res: Response): Prom
     
     const [users, products, categories, categoryFields, productCharacteristics, sales, saleDocuments, saleDocumentItems, expenses, clients] = await Promise.all([
       prisma.user.findMany(),
-      prisma.product.findMany({
-        include: {
-          categories: {
-            include: {
-              category: true
-            }
-          },
-          characteristics: {
-            include: { field: true }
-          }
-        }
-      }),
-      prisma.category.findMany({
-        include: { fields: true }
-      }),
+      prisma.product.findMany(),
+      prisma.category.findMany(),
       prisma.categoryField.findMany(),
       prisma.productCharacteristic.findMany(),
-      prisma.sale.findMany({
-        include: { product: true, document: true }
-      }),
-      prisma.saleDocument.findMany({
-        include: { items: true, sales: true, client: true }
-      }),
+      prisma.sale.findMany(),
+      prisma.saleDocument.findMany(),
       prisma.saleDocumentItem.findMany(),
       prisma.expense.findMany(),
-      prisma.client.findMany({
-        include: { orders: true }
-      })
+      prisma.client.findMany()
     ]);
+    
+    const productCategories = await prisma.$queryRaw<any[]>`
+      SELECT "productId", "categoryId" FROM "ProductCategory"
+    `;
     
     const dump = {
       exportedAt: new Date().toISOString(),
-      version: '2.0',
+      version: '3.0',
       data: {
-        users: users.map(({ id, ...rest }) => rest),
-        products: products.map(({ id, ...rest }) => rest),
-        categories: categories.map(({ id, ...rest }) => rest),
-        categoryFields: categoryFields.map(({ id, ...rest }) => rest),
-        productCharacteristics: productCharacteristics.map(({ id, ...rest }) => rest),
-        sales: sales.map(({ id, ...rest }) => rest),
-        saleDocuments: saleDocuments.map(({ id, ...rest }) => rest),
-        saleDocumentItems: saleDocumentItems.map(({ id, ...rest }) => rest),
-        expenses: expenses.map(({ id, ...rest }) => rest),
-        clients: clients.map(({ id, ...rest }) => rest)
+        users,
+        products,
+        categories,
+        categoryFields,
+        productCharacteristics,
+        sales,
+        saleDocuments,
+        saleDocumentItems,
+        expenses,
+        clients,
+        productCategories
       }
     };
     
-    // Сохраняем в файл
     const backupDir = path.join(process.cwd(), 'backups');
     if (!fs.existsSync(backupDir)) {
       fs.mkdirSync(backupDir, { recursive: true });
@@ -546,7 +744,6 @@ export const getDatabaseDump = async (req: RequestWithUser, res: Response): Prom
     fs.writeFileSync(filepath, JSON.stringify(dump, null, 2), 'utf-8');
     
     console.log(`✅ Дамп сохранен: ${filepath}`);
-    console.log(`✅ Экспорт базы данных завершен`);
     res.json(dump);
   } catch (error) {
     console.error('Error creating database dump:', error);
@@ -554,10 +751,9 @@ export const getDatabaseDump = async (req: RequestWithUser, res: Response): Prom
   }
 };
 
-/**
- * POST /api/reports/restore
- * Восстановление базы данных из дампа (ПОЛНОСТЬЮ ПЕРЕРАБОТАНО)
- */
+// backend/src/controllers/reports.controller.ts
+// (первые функции getSummary, getProfitChart и т.д. остаются без изменений)
+
 export const restoreDatabase = async (req: RequestWithUser, res: Response): Promise<void> => {
   try {
     if (req.user?.role !== 'admin') {
@@ -565,334 +761,184 @@ export const restoreDatabase = async (req: RequestWithUser, res: Response): Prom
       return;
     }
     
-    const dump = req.body;
+    let dump = req.body;
+    
+    console.log('📥 Получен запрос на восстановление');
+    console.log('  - Версия дампа:', dump?.version);
+    
+    if (!dump.version || dump.version === '1.0') {
+      console.log('⚠️ Обнаружена старая версия дампа, конвертируем...');
+      dump = convertDumpToV3(dump);
+    }
     
     if (!dump || !dump.data) {
       res.status(400).json({ message: 'Неверный формат дампа' });
       return;
     }
     
-    console.log('🔄 Начинаем восстановление базы данных...');
-    
-    // Выполняем восстановление в транзакции
-    await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-      // ==================== ШАГ 1: ОЧИСТКА БД ====================
-      console.log('🗑️ Очистка базы данных...');
-      
-      // Удаляем элементы документов
-      await tx.saleDocumentItem.deleteMany();
-      console.log('  - saleDocumentItems удалены');
-      
-      // Удаляем продажи
-      await tx.sale.deleteMany();
-      console.log('  - sales удалены');
-      
-      // Удаляем документы продаж
-      await tx.saleDocument.deleteMany();
-      console.log('  - saleDocuments удалены');
-      
-      // Удаляем характеристики товаров
-      await tx.productCharacteristic.deleteMany();
-      console.log('  - productCharacteristics удалены');
-      
-      // Удаляем расходы
-      await tx.expense.deleteMany();
-      console.log('  - expenses удалены');
-      
-      // Удаляем клиентов
-      await tx.client.deleteMany();
-      console.log('  - clients удалены');
-      
-      // Удаляем связи товаров с категориями
-      try {
-        await tx.$executeRaw`TRUNCATE TABLE "ProductCategory" RESTART IDENTITY CASCADE;`;
-      } catch (error) {
-        console.log('  - ProductCategory удалены (или таблица не существует)');
-      }
-      
-      // Удаляем товары
-      await tx.product.deleteMany();
-      console.log('  - products удалены');
-      
-      // Удаляем поля категорий
-      await tx.categoryField.deleteMany();
-      console.log('  - categoryFields удалены');
-      
-      // Удаляем категории
-      await tx.category.deleteMany();
-      console.log('  - categories удалены');
-      
-      // Удаляем не-админ пользователей
-      await tx.user.deleteMany({
-        where: {
-          role: { not: 'admin' }
-        }
+    if (dump.version !== '3.0') {
+      res.status(400).json({ 
+        message: `Неподдерживаемая версия дампа (${dump.version}). Ожидается версия 3.0.` 
       });
-      console.log('  - non-admin users удалены');
-      
-      console.log('✅ Очистка завершена');
-      
-      // ==================== ШАГ 2: ВОССТАНОВЛЕНИЕ ====================
-      console.log('📥 Восстановление данных...');
-      
-      // Маппы для соответствия старых ID новым
-      const categoryIdMap = new Map<number, number>();
-      const fieldIdMap = new Map<number, number>();
-      const productIdMap = new Map<number, number>();
-      const clientIdMap = new Map<number, number>();
-      const documentIdMap = new Map<number, number>();
-      
-      // 2.1 Восстанавливаем категории
-      if (dump.data.categories && dump.data.categories.length > 0) {
-        for (const category of dump.data.categories) {
-          const oldId = category.id;
-          const { id, products, fields, ...categoryData } = category;
-          const newCategory = await tx.category.create({
-            data: categoryData
-          });
-          categoryIdMap.set(oldId, newCategory.id);
+      return;
+    }
+    
+    console.log('🔄 Начинаем восстановление БД...');
+    
+    try {
+      await prisma.$transaction(async (tx) => {
+        console.log('🗑️ Очистка базы данных...');
+        
+        // Очищаем в правильном порядке
+        await tx.saleDocumentItem.deleteMany();
+        await tx.sale.deleteMany();
+        await tx.productCharacteristic.deleteMany();
+        await tx.$executeRaw`DELETE FROM "ProductCategory"`;
+        await tx.saleDocument.deleteMany();
+        await tx.expense.deleteMany();
+        await tx.client.deleteMany();
+        await tx.product.deleteMany();
+        await tx.categoryField.deleteMany();
+        await tx.category.deleteMany();
+        await tx.user.deleteMany({
+          where: { role: { not: 'admin' } }
+        });
+        
+        console.log('✅ Очистка завершена');
+        console.log('📥 Восстановление данных...');
+        
+        // Восстанавливаем пользователей
+        for (const user of dump.data.users) {
+          if (user.role === 'admin') {
+            const existingAdmin = await tx.user.findFirst({ where: { role: 'admin' } });
+            if (existingAdmin) continue;
+          }
+          await tx.user.create({ data: user });
+        }
+        console.log(`  ✅ Восстановлено ${dump.data.users.length} пользователей`);
+        
+        // Восстанавливаем категории
+        for (const cat of dump.data.categories) {
+          await tx.category.create({ data: cat });
         }
         console.log(`  ✅ Восстановлено ${dump.data.categories.length} категорий`);
-      }
-      
-      // 2.2 Восстанавливаем поля категорий
-      if (dump.data.categoryFields && dump.data.categoryFields.length > 0) {
+        
+        // Восстанавливаем поля категорий
         for (const field of dump.data.categoryFields) {
-          const oldId = field.id;
-          const { id, values, categoryId, ...fieldData } = field;
-          const newCategoryId = categoryIdMap.get(categoryId);
-          if (newCategoryId) {
-            const newField = await tx.categoryField.create({
-              data: {
-                ...fieldData,
-                categoryId: newCategoryId
-              }
-            });
-            fieldIdMap.set(oldId, newField.id);
-          }
+          await tx.categoryField.create({ data: field });
         }
         console.log(`  ✅ Восстановлено ${dump.data.categoryFields.length} полей категорий`);
-      }
-      
-      // 2.3 Восстанавливаем товары
-      if (dump.data.products && dump.data.products.length > 0) {
-        for (const product of dump.data.products) {
-          const oldId = product.id;
-          const { id, categories, characteristics, sales, saleDocumentItems, productCategory, category, categoryId, ...productData } = product;
-          
-          if (!productData.costBreakdown) {
-            productData.costBreakdown = [];
-          }
-          
-          const newProduct = await tx.product.create({
-            data: productData
-          });
-          productIdMap.set(oldId, newProduct.id);
+        
+        // Восстанавливаем товары
+        for (const prod of dump.data.products) {
+          await tx.product.create({ data: prod });
         }
         console.log(`  ✅ Восстановлено ${dump.data.products.length} товаров`);
         
         // Восстанавливаем связи товаров с категориями
-        for (const product of dump.data.products) {
-          const newProductId = productIdMap.get(product.id);
-          if (!newProductId) continue;
-          
-          // Связи из product.categories
-          if (product.categories && Array.isArray(product.categories)) {
-            for (const pc of product.categories) {
-              const catId = pc.categoryId || pc.category?.id;
-              if (catId && categoryIdMap.has(catId)) {
-                try {
-                  await tx.$executeRaw`
-                    INSERT INTO "ProductCategory" ("productId", "categoryId")
-                    VALUES (${newProductId}, ${categoryIdMap.get(catId)})
-                    ON CONFLICT DO NOTHING
-                  `;
-                } catch (error) {
-                  console.log(`    ⚠️ Не удалось добавить связь товара ${newProductId} с категорией ${catId}`);
-                }
-              }
-            }
-          }
-          
-          // Связи из categoryId (старая структура)
-          if (product.categoryId && categoryIdMap.has(product.categoryId)) {
-            try {
-              await tx.$executeRaw`
-                INSERT INTO "ProductCategory" ("productId", "categoryId")
-                VALUES (${newProductId}, ${categoryIdMap.get(product.categoryId)})
-                ON CONFLICT DO NOTHING
-              `;
-            } catch (error) {
-              console.log(`    ⚠️ Не удалось добавить связь товара ${newProductId} с категорией ${product.categoryId}`);
-            }
+        for (const pc of dump.data.productCategories) {
+          try {
+            await tx.$executeRaw`
+              INSERT INTO "ProductCategory" ("productId", "categoryId")
+              VALUES (${pc.productId}, ${pc.categoryId})
+              ON CONFLICT ("productId", "categoryId") DO NOTHING
+            `;
+          } catch (err) {
+            // Игнорируем ошибки дублирования
           }
         }
-        console.log(`  ✅ Восстановлены связи товаров с категориями`);
-      }
-      
-      // 2.4 Восстанавливаем характеристики товаров
-      if (dump.data.productCharacteristics && dump.data.productCharacteristics.length > 0) {
-        let restored = 0;
+        console.log(`  ✅ Восстановлено ${dump.data.productCategories.length} связей`);
+        
+        // Восстанавливаем характеристики (с проверкой дубликатов)
+        let characteristicsRestored = 0;
         for (const char of dump.data.productCharacteristics) {
-          const { id, productId, fieldId, ...charData } = char;
-          const newProductId = productIdMap.get(productId);
-          const newFieldId = fieldIdMap.get(fieldId);
-          
-          if (newProductId && newFieldId) {
-            await tx.productCharacteristic.create({
-              data: {
-                ...charData,
-                productId: newProductId,
-                fieldId: newFieldId
+          try {
+            // Проверяем, существует ли уже такая комбинация
+            const existing = await tx.productCharacteristic.findFirst({
+              where: {
+                productId: char.productId,
+                fieldId: char.fieldId
               }
             });
-            restored++;
+            
+            if (!existing) {
+              await tx.productCharacteristic.create({ 
+                data: {
+                  productId: char.productId,
+                  fieldId: char.fieldId,
+                  value: char.value,
+                  createdAt: char.createdAt || new Date().toISOString(),
+                  updatedAt: char.updatedAt || new Date().toISOString()
+                }
+              });
+              characteristicsRestored++;
+            }
+          } catch (err) {
+            // Пропускаем проблемные записи
+            console.log(`    ⚠️ Пропущена характеристика: продукт ${char.productId}, поле ${char.fieldId}`);
           }
         }
-        console.log(`  ✅ Восстановлено ${restored} характеристик`);
-      }
-      
-      // 2.5 Восстанавливаем клиентов
-      if (dump.data.clients && dump.data.clients.length > 0) {
+        console.log(`  ✅ Восстановлено ${characteristicsRestored} из ${dump.data.productCharacteristics.length} характеристик`);
+        
+        // Восстанавливаем клиентов
         for (const client of dump.data.clients) {
-          const oldId = client.id;
-          const { id, orders, ...clientData } = client;
-          const newClient = await tx.client.create({
-            data: clientData
-          });
-          clientIdMap.set(oldId, newClient.id);
+          await tx.client.create({ data: client });
         }
         console.log(`  ✅ Восстановлено ${dump.data.clients.length} клиентов`);
-      }
-      
-      // 2.6 Восстанавливаем документы продаж
-      if (dump.data.saleDocuments && dump.data.saleDocuments.length > 0) {
+        
+        // Восстанавливаем документы
         for (const doc of dump.data.saleDocuments) {
-          const oldId = doc.id;
-          const { id, items, sales, client, ...docData } = doc;
-          
-          const cleanDocData: any = { ...docData };
-          
-          // Устанавливаем clientId если есть
-          if (doc.clientId && clientIdMap.has(doc.clientId)) {
-            cleanDocData.clientId = clientIdMap.get(doc.clientId);
-          } else if (doc.client?.id && clientIdMap.has(doc.client.id)) {
-            cleanDocData.clientId = clientIdMap.get(doc.client.id);
-          }
-          
-          const newDoc = await tx.saleDocument.create({
-            data: cleanDocData
-          });
-          documentIdMap.set(oldId, newDoc.id);
+          await tx.saleDocument.create({ data: doc });
         }
         console.log(`  ✅ Восстановлено ${dump.data.saleDocuments.length} документов`);
-      }
-      
-      // 2.7 Восстанавливаем элементы документов
-      if (dump.data.saleDocumentItems && dump.data.saleDocumentItems.length > 0) {
-        let restored = 0;
+        
+        // Восстанавливаем элементы документов
         for (const item of dump.data.saleDocumentItems) {
-          const { id, documentId, productId, ...itemData } = item;
-          const newDocumentId = documentIdMap.get(documentId);
-          const newProductId = productIdMap.get(productId);
-          
-          if (newDocumentId && newProductId) {
-            await tx.saleDocumentItem.create({
-              data: {
-                ...itemData,
-                documentId: newDocumentId,
-                productId: newProductId
-              }
-            });
-            restored++;
-          }
+          await tx.saleDocumentItem.create({ data: item });
         }
-        console.log(`  ✅ Восстановлено ${restored} элементов документов`);
-      }
-      
-      // 2.8 Восстанавливаем продажи
-      if (dump.data.sales && dump.data.sales.length > 0) {
-        let restored = 0;
+        console.log(`  ✅ Восстановлено ${dump.data.saleDocumentItems.length} элементов`);
+        
+        // Восстанавливаем продажи
         for (const sale of dump.data.sales) {
-          const { id, product, document, ...saleData } = sale;
-          const newProductId = productIdMap.get(sale.productId);
-          
-          if (!newProductId) {
-            continue;
-          }
-          
-          const dataToCreate: any = { ...saleData };
-          dataToCreate.productId = newProductId;
-          
-          if (sale.documentId && documentIdMap.has(sale.documentId)) {
-            dataToCreate.documentId = documentIdMap.get(sale.documentId);
-          }
-          
-          delete dataToCreate.id;
-          
-          try {
-            await tx.sale.create({ data: dataToCreate });
-            restored++;
-          } catch (err) {
-            console.log(`    ⚠️ Ошибка при создании продажи:`, err);
-          }
+          await tx.sale.create({ data: sale });
         }
-        console.log(`  ✅ Восстановлено ${restored} продаж`);
-      }
-      
-      // 2.9 Восстанавливаем расходы
-      if (dump.data.expenses && dump.data.expenses.length > 0) {
-        for (const expense of dump.data.expenses) {
-          const { id, ...expenseData } = expense;
-          await tx.expense.create({ data: expenseData });
+        console.log(`  ✅ Восстановлено ${dump.data.sales.length} продаж`);
+        
+        // Восстанавливаем расходы
+        for (const exp of dump.data.expenses) {
+          await tx.expense.create({ data: exp });
         }
         console.log(`  ✅ Восстановлено ${dump.data.expenses.length} расходов`);
-      }
+      });
       
-      // 2.10 Восстанавливаем пользователей (не админов)
-      if (dump.data.users && dump.data.users.length > 0) {
-        let restored = 0;
-        for (const user of dump.data.users) {
-          if (user.role !== 'admin') {
-            const { id, ...userData } = user;
-            const existingUser = await tx.user.findUnique({
-              where: { email: userData.email }
-            });
-            if (!existingUser) {
-              await tx.user.create({ data: userData });
-              restored++;
-            }
-          }
-        }
-        console.log(`  ✅ Восстановлено ${restored} пользователей`);
-      }
-    });
-    
-    console.log('✅ Восстановление базы данных завершено успешно!');
-    res.json({ 
-      success: true,
-      message: 'База данных успешно восстановлена из дампа',
-      timestamp: new Date().toISOString()
-    });
+      console.log('✅ Восстановление базы данных успешно завершено!');
+      res.json({ 
+        success: true, 
+        message: 'База данных успешно восстановлена из дампа',
+        timestamp: new Date().toISOString()
+      });
+      
+    } catch (error) {
+      console.error('❌ Ошибка при восстановлении:', error);
+      throw error;
+    }
     
   } catch (error) {
-    console.error('❌ Error restoring database:', error);
+    console.error('❌ Ошибка восстановления базы данных:', error);
     res.status(500).json({ 
       message: `Ошибка восстановления базы данных: ${error instanceof Error ? error.message : 'Unknown error'}` 
     });
   }
 };
 
-/**
- * DELETE /api/reports/database/clear
- * Полная очистка базы данных (только админ)
- */
 export const clearDatabase = async (req: RequestWithUser, res: Response): Promise<void> => {
   try {
     if (req.user?.role !== 'admin') {
       res.status(403).json({ message: 'Доступ запрещен. Требуются права администратора' });
       return;
     }
+    
+    console.log('🗑️ Полная очистка базы данных...');
     
     await prisma.$transaction(async (tx) => {
       await tx.saleDocumentItem.deleteMany();
@@ -919,6 +965,7 @@ export const clearDatabase = async (req: RequestWithUser, res: Response): Promis
       });
     });
     
+    console.log('✅ База данных полностью очищена');
     res.json({ message: 'База данных полностью очищена' });
   } catch (error) {
     console.error('Error clearing database:', error);
