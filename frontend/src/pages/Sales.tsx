@@ -6,8 +6,8 @@ import { Button } from '../components/ui/Button';
 import { Card, CardBody } from '../components/ui/Card';
 import { Input } from '../components/ui/Input';
 import { Table, Thead, Tbody, Tr, Th, Td } from '../components/ui/Table';
-import { formatPrice, formatDate } from '../utils/formatters';
 import { OrderStatusSelect } from '../components/ui/OrderStatusSelect';
+import { formatPrice, formatDate } from '../utils/formatters';
 import { 
   ShoppingCart, 
   TrendingUp, 
@@ -57,7 +57,7 @@ export const Sales: React.FC = () => {
   };
 
   const handleDelete = async (id: number, e: React.MouseEvent): Promise<void> => {
-    e.stopPropagation(); // Останавливаем всплытие
+    e.stopPropagation();
     if (confirm('Удалить заказ? Все товары вернутся на склад')) {
       try {
         await saleDocumentsApi.delete(id);
@@ -74,9 +74,7 @@ export const Sales: React.FC = () => {
   };
 
   // Функция изменения статуса с сохранением в БД
-  const handleStatusChange = async (orderId: number, newStatus: OrderStatus, e: React.MouseEvent): Promise<void> => {
-    e.stopPropagation(); // 🆕 Останавливаем всплытие - это ключевое исправление!
-    
+  const handleStatusChange = async (orderId: number, newStatus: OrderStatus): Promise<void> => {
     setUpdatingStatusId(orderId);
     try {
       await saleDocumentsApi.updateOrderStatus(orderId, newStatus);
@@ -95,6 +93,8 @@ export const Sales: React.FC = () => {
     } catch (error) {
       console.error('Error updating status:', error);
       toast.error('Ошибка изменения статуса');
+      // Откатываем изменения - перезагружаем список
+      await loadDocuments();
     } finally {
       setUpdatingStatusId(null);
     }
@@ -346,7 +346,7 @@ export const Sales: React.FC = () => {
                         {doc.paymentStatus === 'paid' ? 'Оплачен' : 'Не оплачен'}
                       </span>
                     </Td>
-                    {/* 🆕 Ключевое исправление - обернули в div с остановкой всплытия */}
+                    {/* Статус заказа с возможностью изменения */}
                     <Td onClick={(e) => e.stopPropagation()}>
                       <div onClick={(e) => e.stopPropagation()}>
                         <OrderStatusSelect

@@ -88,11 +88,11 @@ export const login = async (req: RequestWithUser, res: Response): Promise<void> 
     // Устанавливаем cookie с правильными настройками
     res.cookie('token', token, {
       httpOnly: true,
-      secure: false, // Для разработки - false
+      secure: true, // Для разработки - false
       sameSite: 'lax',
       maxAge: 24 * 60 * 60 * 1000, // 24 часа
       path: '/',
-      domain: 'localhost' // Явно указываем домен
+     // domain: 'localhost' // Явно указываем домен
     });
     
     console.log('Cookie set, sending response');

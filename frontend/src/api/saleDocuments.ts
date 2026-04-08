@@ -59,6 +59,9 @@ export const saleDocumentsApi = {
   updateOrderStatus: (id: number, orderStatus: 'ordered' | 'assembling' | 'shipped') => 
     api.patch(`/sale-documents/${id}/status`, { orderStatus }),
   
+  getOrderStatus: (id: number) => 
+    api.get(`/sale-documents/${id}/status`),
+
   // Отметить как оплаченный (алиас)
   markAsPaid: (id: number) => api.put(`/sale-documents/${id}/payment`, { paymentStatus: 'paid' }),
   

@@ -1,49 +1,76 @@
 // frontend/src/components/ui/OrderStatusSelect.tsx
 import React from 'react';
-
-export type OrderStatus = 'ordered' | 'assembling' | 'shipped';
+import { OrderStatus } from '../../types';
+import { Package, Settings, Truck, Loader } from 'lucide-react';
 
 interface OrderStatusSelectProps {
   orderId: number;
   currentStatus: OrderStatus;
-  onStatusChange: (orderId: number, newStatus: OrderStatus, e: React.MouseEvent) => void;  // 🆕 добавили e
-  size?: 'sm' | 'md';
-  isLoading?: boolean;
+  onStatusChange: (orderId: number, status: OrderStatus) => void;
+  size?: 'sm' | 'md' | 'lg';
+  disabled?: boolean;
 }
+
+const statusConfig: Record<OrderStatus, { label: string; icon: React.ReactNode; color: string }> = {
+  ordered: {
+    label: 'Оформлен',
+    icon: <Package size={16} />,
+    color: 'blue'
+  },
+  assembling: {
+    label: 'Собирается',
+    icon: <Settings size={16} />,
+    color: 'yellow'
+  },
+  shipped: {
+    label: 'Отправлен',
+    icon: <Truck size={16} />,
+    color: 'green'
+  }
+};
 
 export const OrderStatusSelect: React.FC<OrderStatusSelectProps> = ({ 
   orderId, 
   currentStatus, 
-  onStatusChange, 
+  onStatusChange,
   size = 'md',
-  isLoading = false
+  disabled = false
 }) => {
   const handleChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    // Создаем синтетическое событие мыши для остановки всплытия
-    const mouseEvent = new MouseEvent('click', { bubbles: true });
-    mouseEvent.stopPropagation();
-    onStatusChange(orderId, e.target.value as OrderStatus, e as any);
+    onStatusChange(orderId, e.target.value as OrderStatus);
+  };
+
+  const sizeClasses = {
+    sm: 'px-2 py-1 text-xs',
+    md: 'px-3 py-1.5 text-sm',
+    lg: 'px-4 py-2 text-base'
   };
 
   return (
-    <select
-      value={currentStatus}
-      onChange={handleChange}
-      disabled={isLoading}
-      onClick={(e) => e.stopPropagation()}  // 🆕 останавливаем всплытие
-      className={`
-        ${size === 'sm' ? 'text-xs px-2 py-1' : 'text-sm px-3 py-1.5'}
-        rounded-lg border border-gray-300 dark:border-gray-600
-        bg-white dark:bg-gray-700
-        text-gray-700 dark:text-gray-200
-        focus:ring-2 focus:ring-primary-500 focus:border-transparent
-        transition-colors cursor-pointer
-        ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}
-      `}
-    >
-      <option value="ordered">Оформлен</option>
-      <option value="assembling">Собирается</option>
-      <option value="shipped">Отправлен</option>
-    </select>
+    <div className="relative">
+      <select
+        value={currentStatus}
+        onChange={handleChange}
+        disabled={disabled}
+        className={`
+          ${sizeClasses[size]}
+          rounded-lg border-2 font-medium cursor-pointer
+          transition-all duration-200 appearance-none pr-8
+          ${disabled ? 'opacity-50 cursor-not-allowed' : 'hover:shadow-md'}
+          ${currentStatus === 'ordered' && 'border-blue-300 bg-blue-50 text-blue-700'}
+          ${currentStatus === 'assembling' && 'border-yellow-300 bg-yellow-50 text-yellow-700'}
+          ${currentStatus === 'shipped' && 'border-green-300 bg-green-50 text-green-700'}
+        `}
+      >
+        <option value="ordered">Оформлен</option>
+        <option value="assembling">Собирается</option>
+        <option value="shipped">Отправлен</option>
+      </select>
+      {disabled && (
+        <div className="absolute right-2 top-1/2 -translate-y-1/2">
+          <Loader size={14} className="animate-spin text-gray-400" />
+        </div>
+      )}
+    </div>
   );
 };

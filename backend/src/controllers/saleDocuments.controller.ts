@@ -465,6 +465,35 @@ export const updateOrderStatus = async (req: RequestWithUser, res: Response): Pr
     res.status(500).json({ message: 'Error updating status' });
   }
 };
+
+/**
+ * GET /api/sale-documents/:id/status
+ * Получить статус заказа
+ */
+export const getOrderStatus = async (req: RequestWithUser, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+    
+    const document = await prisma.saleDocument.findUnique({
+      where: { id: parseInt(id) },
+      select: { 
+        id: true, 
+        orderStatus: true,
+        documentNumber: true
+      }
+    });
+    
+    if (!document) {
+      res.status(404).json({ message: 'Документ не найден' });
+      return;
+    }
+    
+    res.json(document);
+  } catch (error) {
+    console.error('Error getting order status:', error);
+    res.status(500).json({ message: 'Ошибка получения статуса заказа' });
+  }
+};
 /**
  * GET /api/sale-documents/stats/clients
  * Статистика по клиентам

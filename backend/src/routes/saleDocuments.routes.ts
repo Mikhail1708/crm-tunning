@@ -6,7 +6,8 @@ import {
   createSaleDocument,
   updateSaleDocument,
   updatePaymentStatus,
-  updateOrderStatus,  // 🆕 добавить импорт
+  updateOrderStatus,
+  getOrderStatus,  // 🆕 добавить импорт
   deleteSaleDocument,
   getDocumentsByClient,
   getClientStatistics
@@ -22,10 +23,11 @@ router.get('/', getSaleDocuments);
 router.get('/stats/clients', getClientStatistics);
 router.get('/client/:clientId', getDocumentsByClient);
 router.get('/:id', getSaleDocumentById);
+router.get('/:id/status', getOrderStatus);  // 🆕 добавить маршрут
 router.post('/', managerAccess, createSaleDocument);
 router.put('/:id', managerAccess, updateSaleDocument);
-router.patch('/:id/payment-status', managerAccess, updatePaymentStatus);  // PATCH метод
-router.put('/:id/payment', managerAccess, updatePaymentStatus);  // Добавляем PUT для совместимости
+router.patch('/:id/payment-status', managerAccess, updatePaymentStatus);
+router.put('/:id/payment', managerAccess, updatePaymentStatus);
 router.patch('/:id/status', updateOrderStatus);
 router.delete('/:id', managerAccess, deleteSaleDocument);
 
