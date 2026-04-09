@@ -6,7 +6,7 @@ import { saleDocumentsApi } from '../api/saleDocuments';
 import { Button } from '../components/ui/Button';
 import { Card, CardBody, CardHeader } from '../components/ui/Card';
 import { formatPrice, formatDate } from '../utils/formatters';
-import { ArrowLeft, Phone, Mail, MapPin, Car, ShoppingBag, Calendar, CreditCard, Plus, Percent, Edit2 } from 'lucide-react';
+import { ArrowLeft, Phone, Mail, MapPin, Car, ShoppingBag, Calendar, CreditCard, Plus, Percent, Edit2, Save, X } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { Modal } from '../components/ui/Modal';
 import { Input } from '../components/ui/Input';
@@ -23,7 +23,8 @@ interface Client {
   carYear?: number;
   carNumber?: string;
   createdAt: string;
-  discountPercent?: number;  // 🆕
+  discountPercent?: number;
+  notes?: string;
 }
 
 interface Order {
@@ -49,6 +50,11 @@ export const ClientDetails: React.FC = () => {
   const [showDiscountModal, setShowDiscountModal] = useState<boolean>(false);
   const [discountPercent, setDiscountPercent] = useState<number>(0);
   const [updatingDiscount, setUpdatingDiscount] = useState<boolean>(false);
+  
+  // 🆕 Состояния для редактирования примечаний
+  const [isEditingNotes, setIsEditingNotes] = useState<boolean>(false);
+  const [editingNotes, setEditingNotes] = useState<string>('');
+  const [updatingNotes, setUpdatingNotes] = useState<boolean>(false);
 
   useEffect(() => {
     if (id) {
@@ -65,6 +71,7 @@ export const ClientDetails: React.FC = () => {
       ]);
       setClient(clientRes.data);
       setDiscountPercent(clientRes.data.discountPercent || 0);
+      setEditingNotes(clientRes.data.notes || '');
       setOrders(ordersRes.data || []);
     } catch (error) {
       console.error('Error loading client data:', error);
@@ -89,6 +96,26 @@ export const ClientDetails: React.FC = () => {
       toast.error('Ошибка обновления скидки');
     } finally {
       setUpdatingDiscount(false);
+    }
+  };
+
+  // 🆕 Функция обновления примечаний
+  const handleUpdateNotes = async () => {
+    if (!client) return;
+    
+    setUpdatingNotes(true);
+    try {
+      // Обновляем только поле notes
+      const updateData = { notes: editingNotes };
+      await clientsApi.update(client.id, updateData);
+      setClient({ ...client, notes: editingNotes });
+      toast.success('Примечания обновлены');
+      setIsEditingNotes(false);
+    } catch (error) {
+      console.error('Error updating notes:', error);
+      toast.error('Ошибка обновления примечаний');
+    } finally {
+      setUpdatingNotes(false);
     }
   };
 
@@ -145,7 +172,6 @@ export const ClientDetails: React.FC = () => {
                 <h2 className="text-xl font-semibold text-gray-900">{getFullName()}</h2>
                 <p className="text-sm text-gray-500">Клиент с {formatDate(client.createdAt)}</p>
               </div>
-              {/* 🆕 Бейдж со скидкой и кнопка редактирования */}
               <div className="flex items-center gap-2">
                 {client.discountPercent && client.discountPercent > 0 ? (
                   <span className="inline-flex items-center gap-1 px-3 py-1.5 bg-green-100 text-green-700 rounded-full text-sm font-medium">
@@ -208,6 +234,76 @@ export const ClientDetails: React.FC = () => {
                   </div>
                 </div>
               )}
+            </div>
+
+            {/* 🆕 Блок с примечаниями с возможностью редактирования */}
+            <div className="mt-4 pt-4 border-t border-gray-100">
+              <div className="flex items-start gap-3">
+                <div className="text-gray-400 mt-0.5">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                    <polyline points="14 2 14 8 20 8"/>
+                    <line x1="16" y1="13" x2="8" y2="13"/>
+                    <line x1="16" y1="17" x2="8" y2="17"/>
+                    <polyline points="10 9 9 9 8 9"/>
+                  </svg>
+                </div>
+                <div className="flex-1">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-sm text-gray-500">Примечания</p>
+                    {!isEditingNotes && (
+                      <button
+                        onClick={() => {
+                          setEditingNotes(client.notes || '');
+                          setIsEditingNotes(true);
+                        }}
+                        className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                        title="Редактировать примечания"
+                      >
+                        <Edit2 size={14} />
+                      </button>
+                    )}
+                  </div>
+                  
+                  {isEditingNotes ? (
+                    <div className="space-y-3">
+                      <textarea
+                        value={editingNotes}
+                        onChange={(e) => setEditingNotes(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                        rows={4}
+                        placeholder="Дополнительная информация о клиенте..."
+                        autoFocus
+                      />
+                      <div className="flex gap-2">
+                        <Button
+                          size="sm"
+                          onClick={handleUpdateNotes}
+                          loading={updatingNotes}
+                          icon={Save}
+                        >
+                          Сохранить
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          onClick={() => {
+                            setIsEditingNotes(false);
+                            setEditingNotes(client.notes || '');
+                          }}
+                          icon={X}
+                        >
+                          Отмена
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-gray-700 whitespace-pre-wrap">
+                      {client.notes || <span className="text-gray-400 italic">Нет примечаний</span>}
+                    </p>
+                  )}
+                </div>
+              </div>
             </div>
           </CardBody>
         </Card>
@@ -307,7 +403,7 @@ export const ClientDetails: React.FC = () => {
         </CardBody>
       </Card>
 
-      {/* 🆕 Модалка изменения скидки */}
+      {/* Модалка изменения скидки */}
       <Modal
         isOpen={showDiscountModal}
         onClose={() => setShowDiscountModal(false)}

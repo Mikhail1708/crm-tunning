@@ -27,7 +27,11 @@ import {
   XCircle,
   Truck,
   MessageSquare,
-  Percent
+  Percent,
+  Edit2,
+  Save,
+  X,
+  Hash
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -38,6 +42,11 @@ export const OrderDetails: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(true);
   const [generating, setGenerating] = useState<boolean>(false);
   const [updatingStatus, setUpdatingStatus] = useState<boolean>(false);
+  
+  // Состояния для редактирования комментария
+  const [isEditingComment, setIsEditingComment] = useState<boolean>(false);
+  const [editingComment, setEditingComment] = useState<string>('');
+  const [updatingComment, setUpdatingComment] = useState<boolean>(false);
   
   // Состояния для модальных окон чека
   const [showReceiptTypeModal, setShowReceiptTypeModal] = useState<boolean>(false);
@@ -56,7 +65,7 @@ export const OrderDetails: React.FC = () => {
       setLoading(true);
       const response = await saleDocumentsApi.getById(Number(id));
       setOrder(response.data);
-      // Устанавливаем статус из данных с сервера
+      setEditingComment(response.data.description || '');
       setOrderStatus(response.data.orderStatus || 'ordered');
     } catch (error) {
       console.error('Error loading order:', error);
@@ -67,7 +76,24 @@ export const OrderDetails: React.FC = () => {
     }
   };
 
-  // Функция изменения статуса - синхронизация с сервером
+  // Функция обновления комментария
+  const handleUpdateComment = async () => {
+    if (!order) return;
+    
+    setUpdatingComment(true);
+    try {
+      await saleDocumentsApi.update(order.id, { description: editingComment });
+      setOrder({ ...order, description: editingComment });
+      toast.success('Комментарий обновлён');
+      setIsEditingComment(false);
+    } catch (error) {
+      console.error('Error updating comment:', error);
+      toast.error('Ошибка обновления комментария');
+    } finally {
+      setUpdatingComment(false);
+    }
+  };
+
   const handleStatusChange = async (orderId: number, newStatus: OrderStatus): Promise<void> => {
     if (updatingStatus) return;
     
@@ -78,15 +104,12 @@ export const OrderDetails: React.FC = () => {
       shipped: 'Отправлен'
     };
     
-    // Оптимистичное обновление UI
     setOrderStatus(newStatus);
     toast.loading(`Обновление статуса...`, { id: 'status-update' });
     
     try {
-      // Отправляем запрос на сервер
       await saleDocumentsApi.updateOrderStatus(orderId, newStatus);
       
-      // Обновляем статус в локальном объекте заказа
       if (order) {
         setOrder({ ...order, orderStatus: newStatus });
       }
@@ -95,7 +118,6 @@ export const OrderDetails: React.FC = () => {
     } catch (error) {
       console.error('Error updating order status:', error);
       toast.error('Ошибка обновления статуса', { id: 'status-update' });
-      // Откатываем статус при ошибке
       if (order) {
         setOrderStatus(order.orderStatus || 'ordered');
       }
@@ -104,7 +126,6 @@ export const OrderDetails: React.FC = () => {
     }
   };
 
-  // Остальные функции (handleMarkAsPaid, handleOpenReceiptModal, etc.) остаются без изменений
   const handleMarkAsPaid = async (): Promise<void> => {
     if (!order) return;
     
@@ -351,7 +372,6 @@ export const OrderDetails: React.FC = () => {
         </div>
       </div>
 
-      {/* Остальная часть страницы без изменений */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Информация о покупателе */}
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
@@ -385,15 +405,65 @@ export const OrderDetails: React.FC = () => {
               </div>
             )}
 
-            {order.description && (
-              <div className="flex items-start gap-2 text-gray-600 dark:text-gray-400 mt-2 pt-2 border-t border-gray-100 dark:border-gray-700">
-                <MessageSquare size={16} className="flex-shrink-0 mt-0.5" />
-                <div className="flex-1">
-                  <span className="text-xs text-gray-400 block mb-0.5">Комментарий к заказу:</span>
-                  <span className="text-sm">{order.description}</span>
+            {/* Комментарий к заказу с возможностью редактирования */}
+            <div className="mt-2 pt-2 border-t border-gray-100 dark:border-gray-700">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <MessageSquare size={16} className="text-gray-400" />
+                  <span className="text-sm text-gray-500">Комментарий к заказу</span>
                 </div>
+                {!isEditingComment && (
+                  <button
+                    onClick={() => {
+                      setEditingComment(order.description || '');
+                      setIsEditingComment(true);
+                    }}
+                    className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                    title="Редактировать комментарий"
+                  >
+                    <Edit2 size={14} />
+                  </button>
+                )}
               </div>
-            )}
+              
+              {isEditingComment ? (
+                <div className="space-y-3">
+                  <textarea
+                    value={editingComment}
+                    onChange={(e) => setEditingComment(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                    rows={3}
+                    placeholder="Комментарий к заказу..."
+                    autoFocus
+                  />
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      onClick={handleUpdateComment}
+                      loading={updatingComment}
+                      icon={Save}
+                    >
+                      Сохранить
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => {
+                        setIsEditingComment(false);
+                        setEditingComment(order.description || '');
+                      }}
+                      icon={X}
+                    >
+                      Отмена
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-gray-700 dark:text-gray-300 whitespace-pre-wrap">
+                  {order.description || <span className="text-gray-400 italic">Нет комментария</span>}
+                </p>
+              )}
+            </div>
 
             {!order.customerName && !order.clientName && !order.customerPhone && (
               <p className="text-gray-500 text-sm">Данные не указаны</p>
@@ -451,7 +521,7 @@ export const OrderDetails: React.FC = () => {
         </div>
       </div>
 
-      {/* Список товаров */}
+      {/* Список товаров с артикулами */}
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
         <div className="p-6 border-b border-gray-200 dark:border-gray-700">
           <h2 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
@@ -464,6 +534,7 @@ export const OrderDetails: React.FC = () => {
             <Thead>
               <Tr>
                 <Th>№</Th>
+                <Th>Артикул</Th>
                 <Th>Наименование</Th>
                 <Th>Кол-во</Th>
                 <Th>Цена</Th>
@@ -475,6 +546,13 @@ export const OrderDetails: React.FC = () => {
                 order.items.map((item, idx) => (
                   <Tr key={idx}>
                     <Td className="dark:text-gray-300">{idx + 1}</Td>
+                    <Td className="dark:text-gray-400 text-sm">
+                      {(item as any).productArticle ? (
+                        <span className="font-mono">{(item as any).productArticle}</span>
+                      ) : (
+                        <span className="text-gray-300 dark:text-gray-600">—</span>
+                      )}
+                    </Td>
                     <Td className="font-medium dark:text-white">{item.productName}</Td>
                     <Td className="dark:text-gray-300">{item.quantity} {(item as any).isWork ? 'н/ч' : 'шт'}</Td>
                     <Td className="dark:text-gray-300">{formatPrice(item.price)}</Td>
@@ -483,7 +561,7 @@ export const OrderDetails: React.FC = () => {
                 ))
               ) : (
                 <Tr>
-                  <Td colSpan={5} className="text-center text-gray-500 dark:text-gray-400 py-8">
+                  <Td colSpan={6} className="text-center text-gray-500 dark:text-gray-400 py-8">
                     Нет товаров в заказе
                   </Td>
                 </Tr>

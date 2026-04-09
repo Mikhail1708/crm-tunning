@@ -18,7 +18,7 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           source: ".,!node_modules,!**/node_modules,!dist,!build"
-          target: "/opt/crm-swap38"
+          target: "/var/www/crm-tunning"  
 
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.0.3

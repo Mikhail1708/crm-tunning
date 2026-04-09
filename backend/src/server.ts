@@ -1,14 +1,16 @@
-// backend/src/server.ts
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 import dotenv from 'dotenv';
 import os from 'os';
+import { PrismaClient } from '@prisma/client';
+import { fixSequences } from './utils/fixSequences';
 
 dotenv.config();
 
 const app = express();
+const prisma = new PrismaClient();
 
 // Helmet для безопасных заголовков
 app.use(helmet({
@@ -18,7 +20,7 @@ app.use(helmet({
 
 // Настройка CORS для работы с cookie
 app.use(cors({
-  origin: ['http://localhost:5173', 'http://127.0.0.1:5173'],
+  origin: ['http://localhost:5173', 'http://127.0.0.1:5173', 'https://swapcrm38.ru'],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Cookie', 'Authorization', 'X-CSRF-Token', 'XSRF-Token'],
@@ -41,18 +43,15 @@ import { auditLog } from './middleware/audit.middleware';
 import { authMiddleware } from './middleware/auth.middleware';
 
 // ============ ПУБЛИЧНЫЕ МАРШРУТЫ (без authMiddleware) ============
-// Все маршруты авторизации должны быть ДО authMiddleware
 app.use('/api/auth', authRoutes);
 app.get('/api/health', (req: Request, res: Response) => {
   res.json({ status: 'OK', timestamp: new Date().toISOString() });
 });
 
-// ============ ЗАЩИЩЕННЫЕ МАРШРУТЫ (с authMiddleware) ============
-// authMiddleware применяется ТОЛЬКО к маршрутам ниже
+// ============ ЗАЩИЩЕННЫЕ МАРШРУТЫ ============
 app.use(authMiddleware);
 app.use(auditLog);
 
-// API маршруты
 app.use('/api/products', productRoutes);
 app.use('/api/categories', categoryRoutes);
 app.use('/api/sales', saleRoutes);
@@ -91,22 +90,36 @@ const getLocalIPs = () => {
   return interfaces;
 };
 
-app.listen(PORT, HOST, () => {
-  console.log('\n🚀 CRM Backend Server Started\n');
-  console.log('📍 Доступные адреса:');
-  console.log(`   📱 Локальный:    http://localhost:${PORT}`);
+// ============================================
+// ЗАПУСК СЕРВЕРА С АВТО-ФИКСОМ ПОСЛЕДОВАТЕЛЬНОСТЕЙ
+// ============================================
+async function startServer() {
+  // 🔧 КЛЮЧЕВОЕ: синхронизируем последовательности ПЕРЕД запуском
+  await fixSequences();
   
-  console.log('\n🔍 Все сетевые интерфейсы:');
-  const ips = getLocalIPs();
-  for (const [name, addresses] of Object.entries(ips)) {
-    for (const address of addresses) {
-      console.log(`   ${name}: ${address}`);
-      console.log(`   🌐 http://${address}:${PORT}`);
+  app.listen(PORT, HOST, () => {
+    console.log('\n🚀 CRM Backend Server Started\n');
+    console.log('📍 Доступные адреса:');
+    console.log(`   📱 Локальный:    http://localhost:${PORT}`);
+    
+    console.log('\n🔍 Все сетевые интерфейсы:');
+    const ips = getLocalIPs();
+    for (const [name, addresses] of Object.entries(ips)) {
+      for (const address of addresses) {
+        console.log(`   ${name}: ${address}`);
+        console.log(`   🌐 http://${address}:${PORT}`);
+      }
     }
-  }
-  console.log('\n✅ Сервер готов к работе!\n');
-  console.log('🔒 Безопасность включена:');
-  console.log('   - HttpOnly Cookies');
-  console.log('   - Helmet.js');
-  console.log('   - CORS ограничен');
+    console.log('\n✅ Сервер готов к работе!\n');
+    console.log('🔒 Безопасность включена:');
+    console.log('   - HttpOnly Cookies');
+    console.log('   - Helmet.js');
+    console.log('   - CORS ограничен');
+    console.log('🔧 Auto-fix последовательностей: ВКЛЮЧЕН\n');
+  });
+}
+
+startServer().catch((error) => {
+  console.error('❌ Ошибка при запуске сервера:', error);
+  process.exit(1);
 });
