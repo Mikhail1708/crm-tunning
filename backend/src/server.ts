@@ -2,35 +2,96 @@ import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
+import compression from 'compression';
 import dotenv from 'dotenv';
 import os from 'os';
 import { PrismaClient } from '@prisma/client';
 import { fixSequences } from './utils/fixSequences';
+
+// Импорт middleware безопасности
+import { globalLimiter, authLimiter, apiLimiter } from './middleware/rateLimit.middleware';
+import { csrfProtection } from './middleware/csrf.middleware';
 
 dotenv.config();
 
 const app = express();
 const prisma = new PrismaClient();
 
-// Helmet для безопасных заголовков
+// ============ 1. НАСТРОЙКА TRUST PROXY ============
+app.set('trust proxy', 1);
+
+// ============ 2. HELMET ============
 app.use(helmet({
   crossOriginResourcePolicy: { policy: "cross-origin" },
   contentSecurityPolicy: false,
+  hsts: {
+    maxAge: 31536000,
+    includeSubDomains: true,
+    preload: true
+  }
 }));
 
-// Настройка CORS для работы с cookie
+// ============ 3. CORS ============
+const allowedOrigins = [
+  'http://localhost:5173',
+  'http://127.0.0.1:5173',
+  'https://swapcrm38.ru',
+  'https://www.swapcrm38.ru'
+];
+
 app.use(cors({
-  origin: ['http://localhost:5173', 'http://127.0.0.1:5173', 'https://swapcrm38.ru'],
+  origin: (origin, callback) => {
+    if (!origin && process.env.NODE_ENV !== 'production') {
+      callback(null, true);
+      return;
+    }
+    if (allowedOrigins.includes(origin as string)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Cookie', 'Authorization', 'X-CSRF-Token', 'XSRF-Token'],
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD'],
+  allowedHeaders: ['Content-Type', 'Cookie', 'Authorization', 'X-CSRF-Token', 'XSRF-Token', 'X-Requested-With'],
+  exposedHeaders: ['X-Total-Count', 'X-RateLimit-Limit', 'X-RateLimit-Remaining'],
+  maxAge: 86400,
 }));
 
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+// ============ 4. СЖАТИЕ ============
+app.use(compression({
+  level: 6,
+  threshold: 1024,
+}));
+
+// ============ 5. ПАРСИНГ ТЕЛА ============
+app.use(express.json({ limit: '5mb' }));
+app.use(express.urlencoded({ extended: true, limit: '5mb' }));
 app.use(cookieParser());
 
-// Подключаем маршруты
+// ============ 6. ГЛОБАЛЬНЫЙ RATE LIMITING ============
+app.use(globalLimiter);
+
+// ============ 7. ТАЙМАУТЫ ============
+app.use((req, res, next) => {
+  req.setTimeout(30000, () => {
+    res.status(504).json({ error: 'Request timeout' });
+  });
+  res.setTimeout(30000, () => {
+    res.status(504).json({ error: 'Response timeout' });
+  });
+  next();
+});
+
+// ============ 8. ЛОГИРОВАНИЕ ============
+if (process.env.NODE_ENV !== 'production') {
+  app.use((req, res, next) => {
+    console.log(`📝 ${req.method} ${req.url}`);
+    next();
+  });
+}
+
+// ============ ПОДКЛЮЧАЕМ МАРШРУТЫ ============
 import authRoutes from './routes/auth.routes';
 import productRoutes from './routes/products.routes';
 import categoryRoutes from './routes/categories.routes';
@@ -42,15 +103,17 @@ import auditRoutes from './routes/audit.routes';
 import { auditLog } from './middleware/audit.middleware';
 import { authMiddleware } from './middleware/auth.middleware';
 
-// ============ ПУБЛИЧНЫЕ МАРШРУТЫ (без authMiddleware) ============
-app.use('/api/auth', authRoutes);
+// ============ ПУБЛИЧНЫЕ МАРШРУТЫ ============
+app.use('/api/auth', authLimiter, authRoutes);
 app.get('/api/health', (req: Request, res: Response) => {
-  res.json({ status: 'OK', timestamp: new Date().toISOString() });
+  res.json({ status: 'OK', timestamp: new Date().toISOString(), uptime: process.uptime() });
 });
 
 // ============ ЗАЩИЩЕННЫЕ МАРШРУТЫ ============
 app.use(authMiddleware);
+app.use(csrfProtection);
 app.use(auditLog);
+app.use(apiLimiter);
 
 app.use('/api/products', productRoutes);
 app.use('/api/categories', categoryRoutes);
@@ -60,17 +123,27 @@ app.use('/api/sale-documents', saleDocumentRoutes);
 app.use('/api/clients', clientRoutes);
 app.use('/api/audit', auditRoutes);
 
-// Обработка 404
+// ============ ОБРАБОТКА 404 ============
 app.use((req: Request, res: Response) => {
-  res.status(404).json({ error: 'Route not found' });
+  res.status(404).json({ error: 'Route not found', path: req.path });
 });
 
-// Обработка ошибок
+// ============ ГЛОБАЛЬНАЯ ОБРАБОТКА ОШИБОК ============
 app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
-  console.error('Server error:', err);
-  res.status(500).json({ error: 'Internal server error' });
+  console.error('❌ Server error:', err.message);
+  
+  if (err.message === 'Not allowed by CORS') {
+    res.status(403).json({ error: 'CORS not allowed' });
+    return;
+  }
+  
+  res.status(500).json({ 
+    error: 'Internal server error',
+    message: process.env.NODE_ENV !== 'production' ? err.message : undefined
+  });
 });
 
+// ============ ЗАПУСК СЕРВЕРА ============
 const PORT: number = parseInt(process.env.PORT || '5000', 10);
 const HOST: string = '0.0.0.0';
 
@@ -90,36 +163,53 @@ const getLocalIPs = () => {
   return interfaces;
 };
 
-// ============================================
-// ЗАПУСК СЕРВЕРА С АВТО-ФИКСОМ ПОСЛЕДОВАТЕЛЬНОСТЕЙ
-// ============================================
 async function startServer() {
-  // 🔧 КЛЮЧЕВОЕ: синхронизируем последовательности ПЕРЕД запуском
   await fixSequences();
   
   app.listen(PORT, HOST, () => {
-    console.log('\n🚀 CRM Backend Server Started\n');
-    console.log('📍 Доступные адреса:');
-    console.log(`   📱 Локальный:    http://localhost:${PORT}`);
+    console.log('\\n🚀 CRM Backend Server Started\\n');
+    console.log(`📍 Режим: ${process.env.NODE_ENV || 'development'}`);
+    console.log(`📍 Порт: ${PORT}`);
     
-    console.log('\n🔍 Все сетевые интерфейсы:');
-    const ips = getLocalIPs();
-    for (const [name, addresses] of Object.entries(ips)) {
-      for (const address of addresses) {
-        console.log(`   ${name}: ${address}`);
-        console.log(`   🌐 http://${address}:${PORT}`);
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('\\n📍 Доступные адреса:');
+      console.log(`   📱 Локальный:    http://localhost:${PORT}`);
+      
+      const ips = getLocalIPs();
+      for (const [name, addresses] of Object.entries(ips)) {
+        for (const address of addresses) {
+          console.log(`   ${name}: http://${address}:${PORT}`);
+        }
       }
     }
-    console.log('\n✅ Сервер готов к работе!\n');
+    
+    console.log('\\n✅ Сервер готов к работе!\\n');
     console.log('🔒 Безопасность включена:');
     console.log('   - HttpOnly Cookies');
     console.log('   - Helmet.js');
     console.log('   - CORS ограничен');
-    console.log('🔧 Auto-fix последовательностей: ВКЛЮЧЕН\n');
+    console.log('   - Rate limiting');
+    console.log('   - CSRF защита');
+    console.log('   - Compression');
+    console.log('   - Timeouts\\n');
   });
 }
+
+process.on('SIGTERM', async () => {
+  console.log('🛑 SIGTERM received, closing server...');
+  await prisma.$disconnect();
+  process.exit(0);
+});
+
+process.on('SIGINT', async () => {
+  console.log('🛑 SIGINT received, closing server...');
+  await prisma.$disconnect();
+  process.exit(0);
+});
 
 startServer().catch((error) => {
   console.error('❌ Ошибка при запуске сервера:', error);
   process.exit(1);
 });
+
+export { app };

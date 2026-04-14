@@ -1,75 +1,75 @@
 // backend/src/middleware/csrf.middleware.ts
 import { Request, Response, NextFunction } from 'express';
-import csrf from 'csurf';
+import { RequestWithUser } from '../types';
 
-// Настройка CSRF защиты
-export const csrfProtection = csrf({
-  cookie: {
+const crypto = require('crypto');
+
+// Хранилище токенов (в production используйте Redis)
+const tokenStore = new Map<string, { token: string; expires: number }>();
+
+export const generateCsrfToken = (): string => {
+  return crypto.randomBytes(32).toString('hex');
+};
+
+// Получить CSRF токен (для отправки на фронтенд)
+export const getCsrfToken = (req: Request, res: Response) => {
+  const token = generateCsrfToken();
+  const expires = Date.now() + 24 * 60 * 60 * 1000; // 24 часа
+  
+  // Сохраняем токен для сессии
+  const sessionId = req.cookies?.['session-id'] || crypto.randomBytes(16).toString('hex');
+  tokenStore.set(sessionId, { token, expires });
+  
+  // Устанавливаем cookie
+  res.cookie('csrf-token', token, {
+    httpOnly: false, // Должен быть доступен из JS
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    maxAge: 24 * 60 * 60 * 1000
+  });
+  
+  res.cookie('session-id', sessionId, {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'lax',
-    key: '_csrf'
-  }
-});
-
-// Middleware для генерации и отправки CSRF токена на фронтенд
-export const csrfTokenHandler = (req: Request, res: Response, next: NextFunction) => {
-  // Генерируем токен
-  const token = (req as any).csrfToken ? (req as any).csrfToken() : null;
+    maxAge: 24 * 60 * 60 * 1000
+  });
   
-  if (token) {
-    // Отправляем токен в cookie (доступен для JS)
-    res.cookie('XSRF-TOKEN', token, {
-      httpOnly: false,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      maxAge: 24 * 60 * 60 * 1000 // 24 часа
-    });
-  }
-  next();
+  return token;
 };
 
-// Middleware для проверки CSRF токена (только для не-GET запросов)
-export const csrfValidate = (req: Request, res: Response, next: NextFunction) => {
+// Middleware для проверки CSRF токена
+export const csrfProtection = async (
+  req: RequestWithUser,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
   // Пропускаем GET, HEAD, OPTIONS запросы
   if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
     return next();
   }
   
-  // Пропускаем auth маршруты (логин, регистрация)
-  if (req.path.includes('/auth/login') || req.path.includes('/auth/register')) {
+  // Пропускаем в разработке (опционально)
+  if (process.env.NODE_ENV !== 'production') {
+    console.log('⚠️ CSRF protection disabled in development');
     return next();
   }
   
-  // Пропускаем маршрут получения CSRF токена
-  if (req.path === '/csrf-token') {
-    return next();
-  }
+  // Получаем токен из заголовка
+  const csrfToken = req.headers['x-csrf-token'] || req.headers['xsrf-token'];
+  const cookieToken = req.cookies?.['csrf-token'];
   
-  // Проверяем CSRF токен в заголовке
-  const token = req.headers['x-csrf-token'] || req.headers['xsrf-token'];
-  
-  if (!token) {
-    console.warn('CSRF token missing in request headers');
-    res.status(403).json({ error: 'CSRF токен отсутствует' });
+  if (!csrfToken || !cookieToken || csrfToken !== cookieToken) {
+    console.error('CSRF validation failed:', { csrfToken: !!csrfToken, cookieToken: !!cookieToken });
+    res.status(403).json({ error: 'CSRF token validation failed' });
     return;
   }
   
-  // Получаем токен из cookie
-  const cookieToken = req.cookies['XSRF-TOKEN'];
-  
-  if (!cookieToken) {
-    console.warn('CSRF cookie missing');
-    res.status(403).json({ error: 'CSRF cookie отсутствует' });
-    return;
-  }
-  
-  // Сравниваем токены
-  if (token !== cookieToken) {
-    console.warn('CSRF token mismatch');
-    res.status(403).json({ error: 'Неверный CSRF токен' });
-    return;
-  }
-  
+  next();
+};
+
+// Middleware для установки CSRF токена
+export const setCsrfToken = (req: Request, res: Response, next: NextFunction) => {
+  getCsrfToken(req, res);
   next();
 };

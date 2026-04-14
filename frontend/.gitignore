@@ -9,10 +9,11 @@ dist/
 build/
 *.tsbuildinfo
 
-# Environment variables
+# Environment variables (локальные)
 .env
 .env.local
 .env.production
+.env.*.local
 
 # Docker
 *.pid
@@ -35,3 +36,12 @@ Thumbs.db
 backups/
 *.sql
 *.tar.gz
+*.sql.gz
+
+# Local database
+*.db
+*.sqlite
+postgres-data/
+
+# Prisma
+*.prisma
