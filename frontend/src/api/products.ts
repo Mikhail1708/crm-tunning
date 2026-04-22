@@ -1,6 +1,5 @@
-// frontend/src/api/products.ts
 import { api } from './client';
-import { Product, ApiResponse, PaginatedResponse } from '../types';
+import { Product, ApiResponse, ProductImage, PriceHistoryEntry } from '../types';
 
 export interface CreateProductData {
   name: string;
@@ -44,4 +43,28 @@ export const productsApi = {
   
   getLowStock: (): Promise<ApiResponse<Product[]>> =>
     api.get('/products/low-stock'),
+  
+  getPriceHistory: (id: number): Promise<ApiResponse<PriceHistoryEntry[]>> =>
+    api.get(`/products/${id}/price-history`),
+  
+  // frontend/src/api/products.ts
+  updatePrice: (id: number, newPrice: number, reason?: string): Promise<ApiResponse<Product>> =>
+    api.put(`/products/${id}/price`, { newPrice, reason }), // точно newPrice, не retail_price
+  
+  getImages: (id: number): Promise<ApiResponse<ProductImage[]>> =>
+    api.get(`/products/${id}/images`),
+  
+  uploadImage: (id: number, file: File): Promise<ApiResponse<ProductImage>> => {
+    const formData = new FormData();
+    formData.append('image', file);
+    return api.post(`/products/${id}/images`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    });
+  },
+  
+  deleteImage: (productId: number, imageId: number): Promise<ApiResponse<{ message: string }>> =>
+    api.delete(`/products/${productId}/images/${imageId}`),
+  
+  setMainImage: (productId: number, imageId: number): Promise<ApiResponse<ProductImage>> =>
+    api.put(`/products/${productId}/images/${imageId}/main`)
 };

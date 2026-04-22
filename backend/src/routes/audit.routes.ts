@@ -12,14 +12,13 @@ import { authMiddleware, adminMiddleware } from '../middleware/auth.middleware';
 
 const router = Router();
 
-// Временно отключаем для теста
- router.use(authMiddleware);  
+router.use(authMiddleware as any);
 
-router.get('/', getLogs);
-router.get('/stats', getLogsStats);
-router.get('/export', exportLogs);
-router.get('/recent', getRecentLogs);
-router.post('/manual', addManualLog);
-router.delete('/clean', adminMiddleware, cleanLogs);
+router.get('/', getLogs as any);
+router.get('/stats', getLogsStats as any);
+router.get('/export', exportLogs as any);
+router.get('/recent', getRecentLogs as any);
+router.post('/manual', addManualLog as any);
+router.delete('/clean', adminMiddleware as any, cleanLogs as any);
 
 export default router;

@@ -283,3 +283,48 @@ export interface TableProps {
   children: React.ReactNode;
   className?: string;
 }
+// ДОБАВИТЬ В КОНЕЦ ФАЙЛА frontend/src/types/index.ts
+
+export interface ProductImage {
+  id: number;
+  productId: number;
+  url: string;
+  filename: string;
+  size: number;
+  isMain: boolean;
+  sortOrder: number;
+  createdAt: string;
+}
+
+export interface PriceHistoryEntry {
+  id: number;
+  oldPrice: number;
+  newPrice: number;
+  changeType: 'increase' | 'decrease';
+  reason: string | null;
+  changedAt: string;
+  changedBy: {
+    id: number;
+    name: string;
+  };
+}
+
+// Обновленный интерфейс Product (заменить существующий)
+export interface Product {
+  id: number;
+  name: string;
+  article: string;
+  cost_price: number;
+  retail_price: number;
+  stock: number;
+  min_stock: number;
+  description?: string;
+  categoryIds: number[];
+  categories?: Category[];
+  characteristics?: ProductCharacteristic;
+  costBreakdown?: CostBreakdownItem[];
+  createdAt: string;
+  updatedAt: string;
+  images?: ProductImage[];
+  priceHistory?: PriceHistoryEntry[];
+}

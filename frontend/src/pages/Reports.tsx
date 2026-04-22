@@ -118,9 +118,9 @@ const ProductCostModal: React.FC<{
               <Calculator size={16} className="text-primary-600" />
               Структура себестоимости
             </h4>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <ResponsiveContainer width="100%" height={250}>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <div className="h-80">
+                <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie
                       data={pieData}
@@ -128,8 +128,9 @@ const ProductCostModal: React.FC<{
                       nameKey="name"
                       cx="50%"
                       cy="50%"
-                      outerRadius={80}
+                      outerRadius={90}
                       label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                      labelLine={true}
                     >
                       {pieData.map((entry, index) => (
                         <Cell key={`cell-${index}`} fill={entry.color} />
@@ -139,7 +140,7 @@ const ProductCostModal: React.FC<{
                   </PieChart>
                 </ResponsiveContainer>
               </div>
-              <div className="space-y-2">
+              <div className="space-y-2 overflow-y-auto max-h-80">
                 {product.breakdown.map((item, idx) => (
                   <div key={idx} className="flex justify-between items-center p-2 bg-gray-50 dark:bg-dark-800 rounded-lg">
                     <div className="flex items-center gap-2">
@@ -184,7 +185,7 @@ const CostChart: React.FC<{ productsCostData: ProductCostData[] }> = ({ products
   const pieData = productsCostData
     .filter(p => p.totalCost > 0)
     .map((p, idx) => ({
-      name: p.productName.length > 20 ? p.productName.slice(0, 20) + '...' : p.productName,
+      name: p.productName.length > 25 ? p.productName.slice(0, 22) + '...' : p.productName,
       value: p.totalCost,
       color: COLORS[idx % COLORS.length]
     }));
@@ -220,20 +221,26 @@ const CostChart: React.FC<{ productsCostData: ProductCostData[] }> = ({ products
         </div>
       </div>
 
-      <div className="h-80">
+      <div className="h-96">
         {chartType === 'bar' ? (
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={topByCost} layout="vertical" margin={{ left: 100 }}>
+            <BarChart data={topByCost} layout="vertical" margin={{ left: 140, right: 20, top: 20, bottom: 20 }}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis type="number" tickFormatter={(value) => formatPrice(value)} />
-              <YAxis type="category" dataKey="productName" width={120} />
+              <YAxis 
+                type="category" 
+                dataKey="productName" 
+                width={140}
+                tick={{ fontSize: 11 }}
+                interval={0}
+              />
               <Tooltip formatter={(value) => formatPrice(value as number)} />
               <Bar dataKey="totalCost" fill="#f59e0b" name="Себестоимость" />
             </BarChart>
           </ResponsiveContainer>
         ) : (
           <ResponsiveContainer width="100%" height="100%">
-            <PieChart>
+            <PieChart margin={{ top: 20, bottom: 20, left: 20, right: 20 }}>
               <Pie
                 data={pieData.slice(0, 10)}
                 dataKey="value"
@@ -242,13 +249,14 @@ const CostChart: React.FC<{ productsCostData: ProductCostData[] }> = ({ products
                 cy="50%"
                 outerRadius={100}
                 label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                labelLine={true}
               >
                 {pieData.slice(0, 10).map((entry, index) => (
                   <Cell key={`cell-${index}`} fill={entry.color} />
                 ))}
               </Pie>
               <Tooltip formatter={(value) => formatPrice(value as number)} />
-              <Legend />
+              <Legend layout="vertical" align="right" verticalAlign="middle" wrapperStyle={{ fontSize: '12px' }} />
             </PieChart>
           </ResponsiveContainer>
         )}
@@ -269,33 +277,42 @@ const WorkTypeCostChart: React.FC<{ workTypeData: CostBreakdownItem[] }> = ({ wo
     );
   }
 
+  // Обрезаем длинные названия
+  const shortNamesData = workTypeData.map(item => ({
+    ...item,
+    name: item.name.length > 20 ? item.name.slice(0, 17) + '...' : item.name
+  }));
+
   return (
     <div className="space-y-4">
       <h3 className="font-medium text-gray-900 dark:text-white flex items-center gap-2">
         <Wrench size={16} className="text-primary-600" />
         Затраты по видам работ (все товары)
       </h3>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <ResponsiveContainer width="100%" height={300}>
-          <PieChart>
-            <Pie
-              data={workTypeData}
-              dataKey="amount"
-              nameKey="name"
-              cx="50%"
-              cy="50%"
-              outerRadius={100}
-              label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
-            >
-              {workTypeData.map((_, index) => (
-                <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-              ))}
-            </Pie>
-            <Tooltip formatter={(value) => formatPrice(value as number)} />
-            <Legend />
-          </PieChart>
-        </ResponsiveContainer>
-        <div className="space-y-2 overflow-y-auto max-h-80">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="h-96">
+          <ResponsiveContainer width="100%" height="100%">
+            <PieChart>
+              <Pie
+                data={shortNamesData}
+                dataKey="amount"
+                nameKey="name"
+                cx="50%"
+                cy="50%"
+                outerRadius={110}
+                label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                labelLine={true}
+              >
+                {shortNamesData.map((_, index) => (
+                  <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                ))}
+              </Pie>
+              <Tooltip formatter={(value) => formatPrice(value as number)} />
+              <Legend layout="vertical" align="right" verticalAlign="middle" wrapperStyle={{ fontSize: '11px' }} />
+            </PieChart>
+          </ResponsiveContainer>
+        </div>
+        <div className="space-y-2 overflow-y-auto max-h-96">
           {workTypeData.map((item, idx) => (
             <div key={idx} className="flex justify-between items-center p-2 bg-gray-50 dark:bg-dark-800 rounded-lg">
               <div className="flex items-center gap-2">
@@ -1172,9 +1189,16 @@ export const Reports: React.FC = () => {
             </div>
             <ResponsiveContainer width="100%" height={400}>
               {chartType === 'line' ? (
-                <LineChart data={chartData}>
+                <LineChart data={chartData} margin={{ bottom: 20, left: 20, right: 20 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                  <XAxis dataKey="date" stroke="#9ca3af" />
+                  <XAxis 
+                    dataKey="date" 
+                    stroke="#9ca3af"
+                    angle={-45}
+                    textAnchor="end"
+                    height={60}
+                    interval={Math.floor(chartData.length / 10)}
+                  />
                   <YAxis yAxisId="left" stroke="#9ca3af" />
                   <YAxis yAxisId="right" orientation="right" stroke="#9ca3af" />
                   <Tooltip formatter={(value) => formatPrice(value as number)} contentStyle={{ backgroundColor: '#1f2937', border: 'none', borderRadius: '8px' }} />
@@ -1184,9 +1208,16 @@ export const Reports: React.FC = () => {
                   <Line yAxisId="right" type="monotone" dataKey="cost" stroke="#f59e0b" name="Себестоимость" strokeWidth={2} />
                 </LineChart>
               ) : (
-                <BarChart data={chartData}>
+                <BarChart data={chartData} margin={{ bottom: 20, left: 20, right: 20 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                  <XAxis dataKey="date" stroke="#9ca3af" />
+                  <XAxis 
+                    dataKey="date" 
+                    stroke="#9ca3af"
+                    angle={-45}
+                    textAnchor="end"
+                    height={60}
+                    interval={Math.floor(chartData.length / 10)}
+                  />
                   <YAxis stroke="#9ca3af" />
                   <Tooltip formatter={(value) => formatPrice(value as number)} contentStyle={{ backgroundColor: '#1f2937', border: 'none', borderRadius: '8px' }} />
                   <Legend />
@@ -1371,32 +1402,41 @@ export const Reports: React.FC = () => {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 p-6 border-b border-gray-200 dark:border-dark-700">
               <div>
                 <h3 className="font-medium text-gray-900 dark:text-white mb-4">Выручка по городам</h3>
-                <ResponsiveContainer width="100%" height={300}>
-                  <PieChart>
+                <ResponsiveContainer width="100%" height={400}>
+                  <PieChart margin={{ top: 20, bottom: 20, left: 20, right: 20 }}>
                     <Pie
                       data={cityStats.slice(0, 8)}
                       dataKey="revenue"
                       nameKey="name"
                       cx="50%"
                       cy="50%"
-                      outerRadius={100}
+                      outerRadius={120}
                       label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                      labelLine={true}
                     >
                       {cityStats.slice(0, 8).map((_, index) => (
                         <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                       ))}
                     </Pie>
                     <Tooltip formatter={(value) => formatPrice(value as number)} contentStyle={{ backgroundColor: '#1f2937', border: 'none', borderRadius: '8px' }} />
-                    <Legend />
+                    <Legend layout="vertical" align="right" verticalAlign="middle" wrapperStyle={{ fontSize: '12px' }} />
                   </PieChart>
                 </ResponsiveContainer>
               </div>
               <div>
                 <h3 className="font-medium text-gray-900 dark:text-white mb-4">Количество заказов по городам</h3>
-                <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={cityStats.slice(0, 10)}>
+                <ResponsiveContainer width="100%" height={400}>
+                  <BarChart data={cityStats.slice(0, 10)} margin={{ bottom: 60 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                    <XAxis dataKey="name" angle={-45} textAnchor="end" height={80} stroke="#9ca3af" />
+                    <XAxis 
+                      dataKey="name" 
+                      angle={-45} 
+                      textAnchor="end" 
+                      height={80} 
+                      stroke="#9ca3af"
+                      interval={0}
+                      tick={{ fontSize: 11 }}
+                    />
                     <YAxis stroke="#9ca3af" />
                     <Tooltip contentStyle={{ backgroundColor: '#1f2937', border: 'none', borderRadius: '8px' }} />
                     <Bar dataKey="orders" fill="#10b981" name="Заказов" />

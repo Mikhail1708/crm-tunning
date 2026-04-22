@@ -5,6 +5,7 @@ import helmet from 'helmet';
 import compression from 'compression';
 import dotenv from 'dotenv';
 import os from 'os';
+import path from 'path';
 import { PrismaClient } from '@prisma/client';
 import { fixSequences } from './utils/fixSequences';
 
@@ -73,7 +74,7 @@ app.use(cookieParser());
 app.use(globalLimiter);
 
 // ============ 7. ТАЙМАУТЫ ============
-app.use((req, res, next) => {
+app.use((req: Request, res: Response, next: NextFunction) => {
   req.setTimeout(30000, () => {
     res.status(504).json({ error: 'Request timeout' });
   });
@@ -85,7 +86,7 @@ app.use((req, res, next) => {
 
 // ============ 8. ЛОГИРОВАНИЕ ============
 if (process.env.NODE_ENV !== 'production') {
-  app.use((req, res, next) => {
+  app.use((req: Request, res: Response, next: NextFunction) => {
     console.log(`📝 ${req.method} ${req.url}`);
     next();
   });
@@ -109,19 +110,18 @@ app.get('/api/health', (req: Request, res: Response) => {
   res.json({ status: 'OK', timestamp: new Date().toISOString(), uptime: process.uptime() });
 });
 
-// ============ ЗАЩИЩЕННЫЕ МАРШРУТЫ ============
-app.use(authMiddleware);
-app.use(csrfProtection);
-app.use(auditLog);
-app.use(apiLimiter);
+// ============ РАЗДАЧА СТАТИЧЕСКИХ ФАЙЛОВ (ФОТО) ============
+app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
-app.use('/api/products', productRoutes);
-app.use('/api/categories', categoryRoutes);
-app.use('/api/sales', saleRoutes);
-app.use('/api/reports', reportRoutes);
-app.use('/api/sale-documents', saleDocumentRoutes);
-app.use('/api/clients', clientRoutes);
-app.use('/api/audit', auditRoutes);
+// ============ ЗАЩИЩЕННЫЕ МАРШРУТЫ (с аутентификацией) ============
+// Приводим middleware к нужному типу с помощью 'as any' для обхода конфликта типов
+app.use('/api/products', authMiddleware as any, csrfProtection as any, auditLog as any, apiLimiter, productRoutes);
+app.use('/api/categories', authMiddleware as any, csrfProtection as any, auditLog as any, apiLimiter, categoryRoutes);
+app.use('/api/sales', authMiddleware as any, csrfProtection as any, auditLog as any, apiLimiter, saleRoutes);
+app.use('/api/reports', authMiddleware as any, csrfProtection as any, auditLog as any, apiLimiter, reportRoutes);
+app.use('/api/sale-documents', authMiddleware as any, csrfProtection as any, auditLog as any, apiLimiter, saleDocumentRoutes);
+app.use('/api/clients', authMiddleware as any, csrfProtection as any, auditLog as any, apiLimiter, clientRoutes);
+app.use('/api/audit', authMiddleware as any, csrfProtection as any, auditLog as any, apiLimiter, auditRoutes);
 
 // ============ ОБРАБОТКА 404 ============
 app.use((req: Request, res: Response) => {
@@ -167,12 +167,12 @@ async function startServer() {
   await fixSequences();
   
   app.listen(PORT, HOST, () => {
-    console.log('\\n🚀 CRM Backend Server Started\\n');
+    console.log('\n🚀 CRM Backend Server Started\n');
     console.log(`📍 Режим: ${process.env.NODE_ENV || 'development'}`);
     console.log(`📍 Порт: ${PORT}`);
     
     if (process.env.NODE_ENV !== 'production') {
-      console.log('\\n📍 Доступные адреса:');
+      console.log('\n📍 Доступные адреса:');
       console.log(`   📱 Локальный:    http://localhost:${PORT}`);
       
       const ips = getLocalIPs();
@@ -183,7 +183,7 @@ async function startServer() {
       }
     }
     
-    console.log('\\n✅ Сервер готов к работе!\\n');
+    console.log('\n✅ Сервер готов к работе!\n');
     console.log('🔒 Безопасность включена:');
     console.log('   - HttpOnly Cookies');
     console.log('   - Helmet.js');
@@ -191,7 +191,7 @@ async function startServer() {
     console.log('   - Rate limiting');
     console.log('   - CSRF защита');
     console.log('   - Compression');
-    console.log('   - Timeouts\\n');
+    console.log('   - Timeouts\n');
   });
 }
 

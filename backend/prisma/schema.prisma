@@ -42,10 +42,12 @@ model Product {
   updatedAt    DateTime  @updatedAt
   
   // Связи
-  categories     ProductCategory[]     // Many-to-many с категориями
+  categories     ProductCategory[]
   sales          Sale[]
   characteristics ProductCharacteristic[]
   saleDocumentItems SaleDocumentItem[]
+  images         ProductImage[]      // 👈 ДОБАВИТЬ эту строку
+  priceHistory   PriceHistory[]      // 👈 ДОБАВИТЬ эту строку
 }
 
 model Category {
@@ -59,7 +61,7 @@ model Category {
   updatedAt   DateTime  @updatedAt
   
   // Связи
-  products    ProductCategory[]    // Many-to-many с товарами
+  products    ProductCategory[]
   fields      CategoryField[]
 }
 
@@ -136,20 +138,19 @@ model Client {
   notes       String?   @db.Text
   totalOrders Int       @default(0)
   totalSpent  Float     @default(0)
-  discountPercent Int   @default(0)           // 🆕 Скидка клиента в %
-  discountUpdatedAt DateTime?                 // 🆕 Когда изменена скидка
-  discountUpdatedBy Int?                      // 🆕 Кто изменил скидку (userId)
+  discountPercent Int   @default(0)
+  discountUpdatedAt DateTime?
+  discountUpdatedBy Int?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
   
   orders      SaleDocument[]
 }
 
-// backend/prisma/schema.prisma
 model SaleDocument {
   id             Int                @id @default(autoincrement())
   documentNumber String             @unique
-  documentType   String             // order, receipt, invoice
+  documentType   String
   clientId       Int?
   client         Client?            @relation(fields: [clientId], references: [id])
   clientName     String?
@@ -158,13 +159,13 @@ model SaleDocument {
   customerPhone  String?
   customerEmail  String?
   customerAddress String?
-  description    String?            // комментарий к заказу
+  description    String?
   subtotal       Float
   discount       Float              @default(0)
   total          Float
   paymentMethod  String?
   paymentStatus  String             @default("unpaid")
-  orderStatus    String             @default("ordered")  // 🆕 ordered, assembling, shipped
+  orderStatus    String             @default("ordered")
   saleDate       DateTime           @default(now())
   createdAt      DateTime           @default(now())
   updatedAt      DateTime           @updatedAt
@@ -187,4 +188,35 @@ model SaleDocumentItem {
   cost_price     Float        @default(0)
   total          Float
   createdAt      DateTime     @default(now())
+}
+
+// ========== НОВЫЕ МОДЕЛИ ==========
+
+model ProductImage {
+  id         Int      @id @default(autoincrement())
+  productId  Int
+  product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  url        String
+  filename   String
+  size       Int
+  isMain     Boolean  @default(false)
+  sortOrder  Int      @default(0)
+  createdAt  DateTime @default(now())
+  
+  @@index([productId])
+}
+
+model PriceHistory {
+  id         Int      @id @default(autoincrement())
+  productId  Int
+  product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  oldPrice   Float
+  newPrice   Float
+  changeType String
+  reason     String?
+  changedBy  Int
+  changedAt  DateTime @default(now())
+  
+  @@index([productId])
+  @@index([changedAt])
 }

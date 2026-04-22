@@ -648,6 +648,7 @@ const renderIndividualReceiptHTML = (
             <div class="party-label">Продавец:</div>
             <div class="party-text">
               ${sellerName}<br>
+              Тел. +7(983) 446-08-88<br>
             </div>
           </div>
           <div class="party-block">

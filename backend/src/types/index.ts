@@ -1,5 +1,6 @@
 // backend/src/types/index.ts
 import { Request } from 'express';
+import { Multer } from 'multer';
 
 // Тип для пользователя в запросе
 export interface RequestWithUser extends Request {
@@ -9,6 +10,8 @@ export interface RequestWithUser extends Request {
     name: string;
     role: string;
   };
+  file?: Multer.File;  // 👈 ДОБАВИТЬ для загрузки файлов
+  files?: Multer.File[]; // 👈 ДОБАВИТЬ для множественных файлов
 }
 
 // DTO для товаров
@@ -26,7 +29,20 @@ export interface CreateProductDTO {
   costBreakdown?: any;
 }
 
-export interface UpdateProductDTO extends Partial<CreateProductDTO> {}
+export interface UpdateProductDTO {
+  name?: string;
+  article?: string;
+  cost_price?: number;
+  retail_price?: number;
+  stock?: number;
+  min_stock?: number;
+  description?: string;
+  image_url?: string;
+  categoryIds?: number[];
+  characteristics?: Record<string, string | number | string[]>;
+  costBreakdown?: any;
+  priceChangeReason?: string; // ДОБАВЬТЕ ЭТУ СТРОКУ
+}
 
 // DTO для категорий
 export interface CreateCategoryDTO {
@@ -61,7 +77,7 @@ export interface CreateClientDTO {
   carVin?: string;
   carNumber?: string;
   notes?: string;
-  discountPercent?: number;  // 🆕 Скидка клиента
+  discountPercent?: number;
 }
 
 export interface UpdateClientDTO extends Partial<CreateClientDTO> {}

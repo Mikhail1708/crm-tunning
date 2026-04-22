@@ -5,9 +5,9 @@ import { authMiddleware } from '../middleware/auth.middleware';
 
 const router = Router();
 
-router.post('/register', register);
-router.post('/login', login);
-router.post('/logout', logout);  // ← Добавить этот маршрут
-router.get('/me', getMe);
+router.post('/register', register as any);
+router.post('/login', login as any);
+router.post('/logout', logout as any);
+router.get('/me', authMiddleware as any, getMe as any);
 
 export default router;

@@ -18,6 +18,7 @@ import { OrderDetails } from './pages/OrderDetails';
 import { Reports } from './pages/Reports';
 import { Settings } from './pages/Settings';
 import { AuditLogs } from './pages/AuditLogs';
+import { ProductDetails } from './pages/ProductDetails';
 
 function App() {
   return (
@@ -43,6 +44,7 @@ function App() {
                 <Route path="reports" element={<Reports />} />
                 <Route path="settings" element={<Settings />} />
                 <Route path="audit" element={<AuditLogs />} />
+                <Route path="/products/:id" element={<ProductDetails />} />
               </Route>
             </Route>
             

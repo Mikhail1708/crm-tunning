@@ -1,6 +1,6 @@
 // frontend/src/pages/Products.tsx
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import { productsApi } from '../api/products';
 import { categoriesApi } from '../api/categories';
 import { Button } from '../components/ui/Button';
@@ -230,19 +230,21 @@ const CategoryMultiSelect: React.FC<CategoryMultiSelectProps> = ({ categories, s
   );
 };
 
-// Мемоизированный компонент строки товара
+// Мемоизированный компонент строки товара с двойным кликом
 const ProductRow = React.memo(({ 
   product, 
   isExpanded, 
   onToggleExpand, 
   onEdit, 
-  onDelete 
+  onDelete,
+  onDoubleClick 
 }: { 
   product: Product; 
   isExpanded: boolean; 
   onToggleExpand: (id: number) => void;
   onEdit: (product: Product) => void;
   onDelete: (id: number, name: string) => void;
+  onDoubleClick: (id: number) => void;
 }) => {
   const margin = product.cost_price > 0 
     ? ((product.retail_price - product.cost_price) / product.cost_price) * 100 
@@ -315,11 +317,17 @@ const ProductRow = React.memo(({
 
   return (
     <React.Fragment>
-      <Tr className="hover:bg-gray-50">
+      <Tr 
+        className="hover:bg-gray-50 cursor-pointer transition-colors"
+        onDoubleClick={() => onDoubleClick(product.id)}
+      >
         <Td className="w-8">
           {hasCharacteristics && (
             <button
-              onClick={() => onToggleExpand(product.id)}
+              onClick={(e) => {
+                e.stopPropagation();
+                onToggleExpand(product.id);
+              }}
               className="p-1 hover:bg-gray-200 rounded transition-colors"
             >
               {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
@@ -342,7 +350,7 @@ const ProductRow = React.memo(({
           </span>
         </Td>
         <Td>{renderCharacteristicsCell()}</Td>
-        <Td>
+        <Td onClick={(e) => e.stopPropagation()}>
           <div className="flex gap-2">
             <button
               onClick={() => onEdit(product)}
@@ -427,6 +435,7 @@ const StatsCards = React.memo(({ stats }: { stats: ProductsStats }) => (
 StatsCards.displayName = 'StatsCards';
 
 export const Products: React.FC = () => {
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -528,7 +537,6 @@ export const Products: React.FC = () => {
   const filteredProducts = useMemo(() => {
     let filtered = [...products];
     
-    // Поиск по тексту
     if (debouncedSearch) {
       const searchLower = debouncedSearch.toLowerCase();
       filtered = filtered.filter(product => {
@@ -545,7 +553,6 @@ export const Products: React.FC = () => {
       });
     }
     
-    // Фильтр по категориям (если выбраны)
     if (filters.categoryIds.length > 0) {
       filtered = filtered.filter(product => {
         const productCategoryIds = product.categories?.map(c => c.id) || product.categoryIds || [];
@@ -553,7 +560,6 @@ export const Products: React.FC = () => {
       });
     }
     
-    // Фильтр по цене
     if (filters.priceMin !== '') {
       filtered = filtered.filter(product => product.retail_price >= filters.priceMin);
     }
@@ -561,7 +567,6 @@ export const Products: React.FC = () => {
       filtered = filtered.filter(product => product.retail_price <= filters.priceMax);
     }
     
-    // Фильтр по остатку
     if (filters.stockStatus !== 'all') {
       filtered = filtered.filter(product => {
         if (filters.stockStatus === 'low') return product.stock <= (product.min_stock || 5);
@@ -571,7 +576,6 @@ export const Products: React.FC = () => {
       });
     }
     
-    // Фильтр по характеристикам
     if (Object.keys(filters.characteristics).length > 0) {
       filtered = filtered.filter(product => {
         const productChars = product.characteristics || {};
@@ -784,6 +788,11 @@ export const Products: React.FC = () => {
     setExpandedRows(prev => ({ ...prev, [productId]: !prev[productId] }));
   }, []);
 
+  // Обработчик двойного клика для перехода на страницу товара
+  const handleRowDoubleClick = useCallback((productId: number) => {
+    navigate(`/products/${productId}`);
+  }, [navigate]);
+
   const hasActiveFilters = filters.search || filters.categoryIds.length > 0 || filters.priceMin !== '' || filters.priceMax !== '' || filters.stockStatus !== 'all' || Object.keys(filters.characteristics).length > 0;
 
   if (loading) {
@@ -820,7 +829,6 @@ export const Products: React.FC = () => {
       <Card>
         <CardBody className="p-4">
           <div className="space-y-3">
-            {/* Поисковая строка */}
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
               <Input
@@ -832,7 +840,6 @@ export const Products: React.FC = () => {
               />
             </div>
             
-            {/* Кнопка показа/скрытия фильтров и сброс */}
             <div className="flex items-center justify-between gap-2 flex-wrap">
               <button
                 onClick={() => setShowFilters(!showFilters)}
@@ -856,10 +863,8 @@ export const Products: React.FC = () => {
               )}
             </div>
             
-            {/* Расширенные фильтры */}
             {showFilters && (
               <div className="pt-3 border-t border-gray-100 space-y-4">
-                {/* Категории */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
                     <Tag size={14} />
@@ -872,7 +877,6 @@ export const Products: React.FC = () => {
                   />
                 </div>
                 
-                {/* Цена */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
                     <DollarSign size={14} />
@@ -896,7 +900,6 @@ export const Products: React.FC = () => {
                   </div>
                 </div>
                 
-                {/* Статус остатка */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
                     <Boxes size={14} />
@@ -924,7 +927,6 @@ export const Products: React.FC = () => {
                   </div>
                 </div>
                 
-                {/* Характеристики (динамические из выбранных категорий) */}
                 {availableCharacteristicFields.length > 0 && (
                   <CharacteristicFilter
                     fields={availableCharacteristicFields}
@@ -934,7 +936,6 @@ export const Products: React.FC = () => {
                   />
                 )}
                 
-                {/* Индикатор активных фильтров */}
                 {hasActiveFilters && (
                   <div className="pt-2 flex flex-wrap gap-2">
                     {filters.categoryIds.map(id => {
@@ -1021,6 +1022,7 @@ export const Products: React.FC = () => {
                     onToggleExpand={toggleRowExpand}
                     onEdit={handleOpenModal}
                     onDelete={handleDelete}
+                    onDoubleClick={handleRowDoubleClick}
                   />
                 ))}
               </Tbody>
