@@ -1,14 +1,18 @@
 version: '3.8'
 
 services:
-  postgres:
+  db:
     image: postgres:15
     container_name: crm-db
     restart: always
-    env_file:
-      - .env
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: crm_db
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
     networks:
       - crm-network
     healthcheck:
@@ -21,13 +25,19 @@ services:
     build: ./backend
     container_name: crm-backend
     restart: always
-    depends_on:
-      postgres:
-        condition: service_healthy
-    env_file:
-      - .env
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/crm_db
+      JWT_SECRET: ${JWT_SECRET}
+      PORT: 5000
+      BASE_URL: https://swapcrm38.ru
     ports:
       - "5000:5000"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - backend_uploads:/app/uploads
     networks:
       - crm-network
 
@@ -36,26 +46,9 @@ services:
     container_name: crm-frontend
     restart: always
     ports:
-      - "8080:80"
+      - "80:80"
     depends_on:
       - backend
-    networks:
-      - crm-network
-
-  node-exporter:
-    image: prom/node-exporter:latest
-    container_name: node-exporter
-    restart: always
-    volumes:
-      - /proc:/host/proc:ro
-      - /sys:/host/sys:ro
-      - /:/rootfs:ro
-    command:
-      - '--path.procfs=/host/proc'
-      - '--path.sysfs=/host/sys'
-      - '--path.rootfs=/rootfs'
-    ports:
-      - "9100:9100"
     networks:
       - crm-network
 
@@ -70,16 +63,13 @@ services:
       - "9090:9090"
     networks:
       - crm-network
-    command:
-      - '--config.file=/etc/prometheus/prometheus.yml'
-      - '--storage.tsdb.path=/prometheus'
 
   grafana:
     image: grafana/grafana:latest
     container_name: grafana
     restart: always
     environment:
-      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-swapcrm38_admin}
+      GF_SECURITY_ADMIN_PASSWORD: swapcrm38_admin
     volumes:
       - grafana_data:/var/lib/grafana
     ports:
@@ -87,11 +77,21 @@ services:
     networks:
       - crm-network
 
-networks:
-  crm-network:
-    driver: bridge
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: node-exporter
+    restart: always
+    ports:
+      - "9100:9100"
+    networks:
+      - crm-network
 
 volumes:
   postgres_data:
+  backend_uploads:
   prometheus_data:
   grafana_data:
+
+networks:
+  crm-network:
+    driver: bridge

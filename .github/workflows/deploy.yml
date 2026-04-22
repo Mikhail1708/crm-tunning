@@ -1,34 +1,67 @@
-name: Deploy to VPS
+name: Deploy CRM
 
 on:
   push:
-    branches: [main, master]
+    branches: [main]
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Copy files to server
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.SERVER_IP }}
-          username: ${{ secrets.SERVER_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          source: ".,!node_modules,!**/node_modules,!dist,!build"
-          target: "/var/www/crm-tunning"  
-
-      - name: Deploy via SSH
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.SERVER_IP }}
-          username: ${{ secrets.SERVER_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          script: |
-            cd /var/www/crm-tunning
-            docker-compose down
-            docker-compose build --no-cache
-            docker-compose up -d
-            docker system prune -af
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Create .env file
+      run: |
+        echo "JWT_SECRET=${{ secrets.JWT_SECRET }}" > backend/.env
+        echo "DATABASE_URL=postgresql://postgres:postgres@db:5432/crm_db" >> backend/.env
+        echo "PORT=5000" >> backend/.env
+        echo "NODE_ENV=production" >> backend/.env
+        echo "BASE_URL=https://swapcrm38.ru" >> backend/.env
+    
+    - name: Copy files to server
+      uses: appleboy/scp-action@v0.1.7
+      with:
+        host: ${{ secrets.SERVER_HOST }}
+        username: ${{ secrets.SERVER_USER }}
+        key: ${{ secrets.SSH_PRIVATE_KEY }}
+        port: ${{ secrets.SSH_PORT }}
+        source: ".,!node_modules,!**/node_modules"
+        target: "/var/www/crm-tunning"
+        strip_components: 0
+        overwrite: true
+    
+    - name: Execute deployment commands
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.SERVER_HOST }}
+        username: ${{ secrets.SERVER_USER }}
+        key: ${{ secrets.SSH_PRIVATE_KEY }}
+        port: ${{ secrets.SSH_PORT }}
+        script: |
+          cd /var/www/crm-tunning
+          
+          # Логин в Docker Hub (опционально, для увеличения лимита)
+          # echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
+          
+          # Останавливаем контейнеры
+          docker-compose down
+          
+          # Удаляем старые образы
+          docker system prune -af
+          
+          # Пересобираем с --no-cache для чистого билда
+          docker-compose build --no-cache --parallel
+          
+          # Запускаем контейнеры
+          docker-compose up -d
+          
+          # Очищаем неиспользуемые образы
+          docker image prune -af
+          
+          # Проверяем статус
+          docker-compose ps
+          
+          # Логи для отладки
+          docker-compose logs --tail=50 backend
