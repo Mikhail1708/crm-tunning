@@ -23,10 +23,10 @@ jobs:
     - name: Copy files to server
       uses: appleboy/scp-action@v0.1.7
       with:
-        host: ${{ secrets.SERVER_HOST }}
+        host: ${{ secrets.SERVER_IP }}
         username: ${{ secrets.SERVER_USER }}
         key: ${{ secrets.SSH_PRIVATE_KEY }}
-        port: ${{ secrets.SSH_PORT }}
+        port: 22
         source: ".,!node_modules,!**/node_modules"
         target: "/var/www/crm-tunning"
         strip_components: 0
@@ -35,33 +35,34 @@ jobs:
     - name: Execute deployment commands
       uses: appleboy/ssh-action@v1.0.3
       with:
-        host: ${{ secrets.SERVER_HOST }}
+        host: ${{ secrets.SERVER_IP }}
         username: ${{ secrets.SERVER_USER }}
         key: ${{ secrets.SSH_PRIVATE_KEY }}
-        port: ${{ secrets.SSH_PORT }}
+        port: 22
         script: |
           cd /var/www/crm-tunning
           
-          # Логин в Docker Hub (опционально, для увеличения лимита)
-          # echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
+          # Проверяем наличие docker-compose
+          if ! command -v docker-compose &> /dev/null; then
+            echo "docker-compose not found, installing..."
+            apt-get update && apt-get install -y docker-compose
+          fi
           
           # Останавливаем контейнеры
-          docker-compose down
+          docker-compose down || true
           
-          # Удаляем старые образы
-          docker system prune -af
+          # Очищаем старые образы
+          docker system prune -af || true
           
-          # Пересобираем с --no-cache для чистого билда
-          docker-compose build --no-cache --parallel
-          
-          # Запускаем контейнеры
+          # Собираем и запускаем
+          docker-compose build --no-cache
           docker-compose up -d
-          
-          # Очищаем неиспользуемые образы
-          docker image prune -af
           
           # Проверяем статус
           docker-compose ps
           
-          # Логи для отладки
-          docker-compose logs --tail=50 backend
+          # Ждем запуска backend
+          sleep 10
+          
+          # Проверяем логи
+          docker-compose logs --tail=30 backend
