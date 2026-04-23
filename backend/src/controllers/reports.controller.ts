@@ -296,6 +296,7 @@ export const getSummary = async (req: RequestWithUser, res: Response): Promise<v
     let topProducts: any[] = [];
     
     if (paidOrderIds.length > 0) {
+      // ✅ ИСПРАВЛЕНО: добавлен cost_price в groupBy
       const itemsGrouped = await prisma.saleDocumentItem.groupBy({
         by: ['productId'],
         where: {
@@ -303,7 +304,8 @@ export const getSummary = async (req: RequestWithUser, res: Response): Promise<v
         },
         _sum: {
           quantity: true,
-          total: true
+          total: true,
+          cost_price: true
         },
         orderBy: {
           _sum: {
@@ -319,7 +321,8 @@ export const getSummary = async (req: RequestWithUser, res: Response): Promise<v
             where: { id: item.productId },
             select: { id: true, name: true, article: true, retail_price: true, cost_price: true }
           });
-          const totalCost = (product?.cost_price || 0) * (item._sum.quantity || 0);
+          // ✅ ИСПРАВЛЕНО: используем cost_price из groupBy, если есть
+          const totalCost = item._sum.cost_price || (product?.cost_price || 0) * (item._sum.quantity || 0);
           return {
             ...product,
             total_sold: item._sum.quantity || 0,
@@ -428,6 +431,7 @@ export const getProfitByProduct = async (req: RequestWithUser, res: Response): P
       return;
     }
     
+    // ✅ ИСПРАВЛЕНО: добавлен cost_price в groupBy
     const items = await prisma.saleDocumentItem.groupBy({
       by: ['productId'],
       where: {
@@ -435,7 +439,8 @@ export const getProfitByProduct = async (req: RequestWithUser, res: Response): P
       },
       _sum: {
         quantity: true,
-        total: true
+        total: true,
+        cost_price: true
       }
     });
     
@@ -443,9 +448,10 @@ export const getProfitByProduct = async (req: RequestWithUser, res: Response): P
       const item = items.find(i => i.productId === product.id);
       const total_sold = item?._sum.quantity || 0;
       const total_revenue = item?._sum.total || 0;
-      const total_cost = product.cost_price * total_sold;
+      // ✅ ИСПРАВЛЕНО: используем cost_price из groupBy, если есть
+      const total_cost = item?._sum.cost_price || (product.cost_price * total_sold);
       const total_profit = total_revenue - total_cost;
-      const margin_percent = total_cost > 0 ? (total_profit / total_cost) * 100 : 0;
+      const margin_percent = total_revenue > 0 ? (total_profit / total_revenue) * 100 : 0;
       
       return {
         id: product.id,
@@ -750,9 +756,6 @@ export const getDatabaseDump = async (req: RequestWithUser, res: Response): Prom
     res.status(500).json({ message: 'Ошибка создания дампа базы данных' });
   }
 };
-
-// backend/src/controllers/reports.controller.ts
-// (первые функции getSummary, getProfitChart и т.д. остаются без изменений)
 
 export const restoreDatabase = async (req: RequestWithUser, res: Response): Promise<void> => {
   try {

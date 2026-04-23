@@ -23,11 +23,13 @@ interface Order {
   items?: OrderItem[];
   subtotal?: number;
   discount?: number;
+  discountPercent?: number;  // Добавляем процент скидки
   total?: number;
   paymentStatus?: 'paid' | 'unpaid';
   paymentMethod?: string;
   saleDate?: string | Date;
   sellerName?: string;
+  sellerId?: number;
 }
 
 export type ReceiptType = 'individual' | 'legal';
@@ -49,7 +51,7 @@ interface PrintDocumentProps {
   legalData?: LegalEntityData | null;
 }
 
-// Реквизиты продавца (ИП Батвенко) - точь-в-точь как в референсе
+// Реквизиты продавца (ИП Батвенко)
 const SELLER_DATA = {
   name: 'ИП БАТВЕНКО НИКОЛАЙ СЕРГЕЕВИЧ',
   shortName: 'ИП Батвенко Н.С.',
@@ -146,319 +148,15 @@ const escapeHtml = (str: string): string => {
     .replace(/'/g, '&#39;');
 };
 
-// Генерация Счета на оплату (точная копия референса)
-const renderInvoiceHTML = (
-  order: Order | null,
-  documentNumber: string,
-  formattedDate: string,
-  items: OrderItem[],
-  subtotal: number,
-  discount: number,
-  total: number,
-  customerName: string,
-  customerPhone: string,
-  customerAddress: string,
-  sellerName: string,
-  paymentStatus: 'paid' | 'unpaid' | undefined
-): string => {
-  return `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <meta charset="UTF-8">
-      <title>Счет на оплату №${documentNumber}</title>
-      <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body {
-          font-family: 'Times New Roman', 'Arial', sans-serif;
-          background: #e5e7eb;
-          padding: 40px;
-          font-size: 12px;
-        }
-        .document {
-          max-width: 800px;
-          margin: 0 auto;
-          background: white;
-          padding: 25px 30px;
-          box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-        }
-        
-        /* Банковские реквизиты как в референсе */
-        .bank-details {
-          font-size: 9pt;
-          margin-bottom: 20px;
-          border-bottom: 1px solid #000;
-          padding-bottom: 10px;
-        }
-        .bank-row {
-          display: flex;
-          justify-content: space-between;
-          margin-bottom: 4px;
-        }
-        .bank-row-header {
-          font-weight: bold;
-          margin-bottom: 5px;
-        }
-        
-        /* Header с логотипом */
-        .header {
-          display: flex;
-          justify-content: space-between;
-          align-items: flex-start;
-          margin: 20px 0 25px;
-        }
-        .logo-section {
-          display: flex;
-          align-items: center;
-          gap: 12px;
-        }
-        .logo {
-          width: 65px;
-          height: 65px;
-          object-fit: contain;
-        }
-        .company-title {
-          font-size: 18px;
-          font-weight: bold;
-        }
-        .company-subtitle {
-          font-size: 10px;
-          color: #666;
-        }
-        .doc-info {
-          text-align: right;
-        }
-        .doc-title {
-          font-size: 20px;
-          font-weight: bold;
-        }
-        .doc-number {
-          font-size: 11px;
-          color: #666;
-          margin-top: 5px;
-        }
-        
-        /* Стороны */
-        .parties {
-          display: flex;
-          justify-content: space-between;
-          gap: 20px;
-          margin: 20px 0;
-          font-size: 10pt;
-        }
-        .party-block {
-          flex: 1;
-        }
-        .party-label {
-          font-weight: bold;
-          margin-bottom: 5px;
-        }
-        .party-text {
-          line-height: 1.4;
-        }
-        
-        /* Таблица */
-        .items-table {
-          width: 100%;
-          border-collapse: collapse;
-          margin: 20px 0;
-        }
-        .items-table th,
-        .items-table td {
-          border: 1px solid #000;
-          padding: 8px;
-        }
-        .items-table th {
-          background: #f8f9fa;
-          text-align: center;
-          font-weight: bold;
-        }
-        .text-center { text-align: center; }
-        .text-right { text-align: right; }
-        .text-left { text-align: left; }
-        
-        /* Итоги */
-        .totals {
-          margin: 15px 0;
-          text-align: right;
-        }
-        .total-final {
-          font-size: 13pt;
-          font-weight: bold;
-          margin-top: 10px;
-          padding-top: 5px;
-          border-top: 1px solid #000;
-        }
-        
-        /* Пропись */
-        .amount-words {
-          margin: 15px 0;
-          padding: 10px;
-          background: #f8f9fa;
-        }
-        
-        /* Подписи */
-        .signatures {
-          display: flex;
-          justify-content: space-between;
-          margin: 30px 0 20px;
-        }
-        .signature-line {
-          width: 200px;
-          border-top: 1px solid #000;
-          margin-top: 30px;
-        }
-        .signature-label {
-          font-size: 9pt;
-          margin-top: 5px;
-          text-align: center;
-        }
-        
-        .footer {
-          margin-top: 20px;
-          text-align: center;
-          font-size: 8pt;
-          color: #888;
-          border-top: 1px solid #ddd;
-          padding-top: 10px;
-        }
-        
-        @media print {
-          body { background: white; padding: 0; }
-          .document { box-shadow: none; padding: 20px; }
-          .items-table th { background: #000 !important; color: white !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-        }
-      </style>
-    </head>
-    <body>
-      <div class="document">
-        <!-- Банковские реквизиты как в референсе -->
-        <div class="bank-details">
-          <div class="bank-row">
-            <span>Банк получателя</span>
-            <span>БИК</span>
-            <span>Сч. №</span>
-          </div>
-          <div class="bank-row">
-            <span>${SELLER_DATA.bankName}</span>
-            <span>${SELLER_DATA.bankBic}</span>
-            <span>${SELLER_DATA.correspondentAccount}</span>
-          </div>
-          <div class="bank-row" style="margin-top: 8px;">
-            <span>Получатель</span>
-            <span></span>
-            <span>Сч. №</span>
-          </div>
-          <div class="bank-row">
-            <span>${SELLER_DATA.name}</span>
-            <span></span>
-            <span>${SELLER_DATA.accountNumber}</span>
-          </div>
-        </div>
-        
-        <!-- Header с логотипом -->
-        <div class="header">
-          <div class="logo-section">
-            <img src="${LOGO_URL}" alt="SWAP SERVICE 38" class="logo" 
-                 onerror="this.style.display='none'; this.parentElement.innerHTML = '<div style=\\'width:65px;height:65px;background:#1E3A8A;border-radius:12px;display:flex;align-items:center;justify-content:center;color:white;font-size:10px;font-weight:bold\\'>ЛОГО</div>' + this.parentElement.innerHTML">
-            <div>
-              <div class="company-title">SWAP SERVICE 38</div>
-              <div class="company-subtitle">Свап • Автосервис • Тюнинг • Запчасти</div>
-            </div>
-          </div>
-          <div class="doc-info">
-            <div class="doc-title">Счет на оплату</div>
-            <div class="doc-number">№ ${documentNumber} от ${formattedDate}</div>
-          </div>
-        </div>
-        
-        <!-- Поставщик и Покупатель -->
-        <div class="parties">
-          <div class="party-block">
-            <div class="party-label">Поставщик:</div>
-            <div class="party-text">
-              ${SELLER_DATA.name}<br>
-              ИНН ${SELLER_DATA.inn}<br>
-              ${SELLER_DATA.legalAddress}
-            </div>
-          </div>
-          <div class="party-block">
-            <div class="party-label">Покупатель:</div>
-            <div class="party-text">
-              ${escapeHtml(customerName)}<br>
-              ${customerPhone ? `Тел: ${escapeHtml(customerPhone)}` : ''}
-              ${customerAddress ? `<br>${escapeHtml(customerAddress)}` : ''}
-            </div>
-          </div>
-        </div>
-        
-        <!-- Таблица товаров -->
-        <table class="items-table">
-          <thead>
-            <tr>
-              <th width="5%">№</th>
-              <th width="50%">Товары (работы, услуги)</th>
-              <th width="8%">кол-во</th>
-              <th width="7%">Ед.</th>
-              <th width="8%">НДС</th>
-              <th width="11%">Цена</th>
-              <th width="11%">Сумма</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${items.length > 0 ? items.map((item, idx) => `
-              <tr>
-                <td class="text-center">${idx + 1}</td>
-                <td class="text-left">${escapeHtml(item.productName)}</td>
-                <td class="text-center">${item.quantity}</td>
-                <td class="text-center">${item.isWork ? 'н/ч' : 'шт'}</td>
-                <td class="text-center">Без НДС</td>
-                <td class="text-right">${item.price.toLocaleString('ru-RU')}</td>
-                <td class="text-right">${item.total.toLocaleString('ru-RU')}</td>
-              </tr>
-            `).join('') : `
-              <tr>
-                <td colspan="7" class="text-center">Нет товаров</td>
-              </tr>
-            `}
-            <tr style="background: #f8f9fa;">
-              <td colspan="6" class="text-right"><strong>Итого:</strong></td>
-              <td class="text-right"><strong>${total.toLocaleString('ru-RU')}</strong></td>
-            </tr>
-          </tbody>
-        </table>
-        
-        <div class="totals">
-          <div>Всего наименований ${items.length}, на сумму ${total.toLocaleString('ru-RU')} руб.</div>
-          <div class="total-final">Итого к оплате: ${total.toLocaleString('ru-RU')}</div>
-        </div>
-        
-        <div class="amount-words">
-          ${numberToWords(total)} руб.
-        </div>
-        
-        <div class="signatures">
-          <div>
-            <div class="signature-line"></div>
-            <div class="signature-label">Исполнитель</div>
-            <div class="signature-label">Батвенко Николай Сергеевич</div>
-          </div>
-          <div>
-            <div class="signature-line"></div>
-            <div class="signature-label">Заказчик</div>
-          </div>
-        </div>
-        
-        <div class="footer">
-          <p>SWAP SERVICE 38 • ${formattedDate}</p>
-        </div>
-      </div>
-    </body>
-    </html>
-  `;
+// Форматирование скидки
+const formatDiscountText = (discountPercent: number | undefined, discountAmount: number): string => {
+  if (discountPercent && discountPercent > 0) {
+    return `${discountPercent}% (${discountAmount.toLocaleString('ru-RU')} ₽)`;
+  }
+  return `${discountAmount.toLocaleString('ru-RU')} ₽`;
 };
 
-// Генерация Чека (Физ лицо) - такой же стиль
+// Генерация Чека (Физ лицо) - ИСПРАВЛЕНА
 const renderIndividualReceiptHTML = (
   order: Order | null,
   documentNumber: string,
@@ -466,6 +164,7 @@ const renderIndividualReceiptHTML = (
   items: OrderItem[],
   subtotal: number,
   discount: number,
+  discountPercent: number | undefined,
   total: number,
   customerName: string,
   customerPhone: string,
@@ -473,6 +172,17 @@ const renderIndividualReceiptHTML = (
   sellerName: string,
   paymentStatus: 'paid' | 'unpaid' | undefined
 ): string => {
+  // Если продавец не указан или "___________________", используем "Менеджер"
+  let displaySellerName = 'Менеджер';
+  if (sellerName && sellerName !== '___________________') {
+    displaySellerName = escapeHtml(sellerName);
+  }
+  
+  // Форматируем текст скидки для строки "Скидка:"
+  const discountDisplayText = discountPercent && discountPercent > 0 
+    ? `${discountPercent}% (${discount.toLocaleString('ru-RU')} ₽)`
+    : `${discount.toLocaleString('ru-RU')} ₽`;
+  
   return `
     <!DOCTYPE html>
     <html>
@@ -572,6 +282,11 @@ const renderIndividualReceiptHTML = (
           margin: 15px 0;
           text-align: right;
         }
+        .discount-info {
+          margin: 5px 0;
+          color: #22c55e;
+          font-size: 11pt;
+        }
         .total-final {
           font-size: 13pt;
           font-weight: bold;
@@ -631,7 +346,7 @@ const renderIndividualReceiptHTML = (
         <div class="header">
           <div class="logo-section">
             <img src="${LOGO_URL}" alt="SWAP SERVICE 38" class="logo" 
-                 onerror="this.style.display='none'; this.parentElement.innerHTML = '<div style=\\'width:65px;height:65px;background:#1E3A8A;border-radius:12px;display:flex;align-items:center;justify-content:center;color:white;font-size:10px;font-weight:bold\\'>ЛОГО</div>' + this.parentElement.innerHTML">
+                 onerror="this.style.display='none'; this.parentElement.innerHTML = '<div style=\\'width:65px;height:65px;background:#1E3A8A;border-radius:12px;display:flex;align-items:center;justify-content:center;color:white;font-size:10px;font-weight:bold\\'>SWAP38</div>' + this.parentElement.innerHTML">
             <div>
               <div class="company-title">SWAP SERVICE 38</div>
               <div class="company-subtitle">Свап • Автосервис • Тюнинг • Запчасти</div>
@@ -647,8 +362,8 @@ const renderIndividualReceiptHTML = (
           <div class="party-block">
             <div class="party-label">Продавец:</div>
             <div class="party-text">
-              ${sellerName}<br>
-              Тел. +7(983) 446-08-88<br>
+              ${displaySellerName}<br>
+              Тел. +7(983) 446-08-88
             </div>
           </div>
           <div class="party-block">
@@ -677,6 +392,16 @@ const renderIndividualReceiptHTML = (
               </tr>
             `).join('')}
             <tr style="background: #f8f9fa;">
+              <td colspan="5" class="text-right"><strong>Сумма:</strong></td>
+              <td class="text-right"><strong>${subtotal.toLocaleString('ru-RU')} ₽</strong></td>
+            </tr>
+            ${discount > 0 ? `
+            <tr style="background: #f0fdf4;">
+              <td colspan="5" class="text-right" style="color: #22c55e;"><strong>Скидка ${discountPercent && discountPercent > 0 ? `(${discountPercent}%)` : ''}:</strong></td>
+              <td class="text-right" style="color: #22c55e;"><strong>-${discount.toLocaleString('ru-RU')} ₽</strong></td>
+            </tr>
+            ` : ''}
+            <tr style="background: #e5e7eb;">
               <td colspan="5" class="text-right"><strong>ИТОГО:</strong></td>
               <td class="text-right"><strong>${total.toLocaleString('ru-RU')} ₽</strong></td>
             </tr>
@@ -684,7 +409,8 @@ const renderIndividualReceiptHTML = (
         </table>
         
         <div class="totals">
-          <div>Всего наименований ${items.length}, на сумму ${total.toLocaleString('ru-RU')} руб.</div>
+          <div>Всего наименований ${items.length}</div>
+          ${discount > 0 ? `<div class="discount-info">Скидка: ${discountDisplayText}</div>` : ''}
           <div class="total-final">Итого к оплате: ${total.toLocaleString('ru-RU')} ₽</div>
         </div>
         
@@ -700,7 +426,7 @@ const renderIndividualReceiptHTML = (
           <div>
             <div class="signature-line"></div>
             <div class="signature-label">Продавец</div>
-            <div class="signature-label">${sellerName !== '___________________' ? escapeHtml(sellerName) : 'Батвенко Н.С.'}</div>
+            <div class="signature-label">${displaySellerName}</div>
           </div>
           <div>
             <div class="signature-line"></div>
@@ -718,6 +444,315 @@ const renderIndividualReceiptHTML = (
   `;
 };
 
+// Генерация Счета на оплату
+const renderInvoiceHTML = (
+  order: Order | null,
+  documentNumber: string,
+  formattedDate: string,
+  items: OrderItem[],
+  subtotal: number,
+  discount: number,
+  discountPercent: number | undefined,
+  total: number,
+  customerName: string,
+  customerPhone: string,
+  customerAddress: string,
+  sellerName: string,
+  paymentStatus: 'paid' | 'unpaid' | undefined
+): string => {
+  let displaySellerName = 'Менеджер';
+  if (sellerName && sellerName !== '___________________') {
+    displaySellerName = escapeHtml(sellerName);
+  }
+  
+  const discountDisplayText = discountPercent && discountPercent > 0 
+    ? `${discountPercent}% (${discount.toLocaleString('ru-RU')} ₽)`
+    : `${discount.toLocaleString('ru-RU')} ₽`;
+    
+  return `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="UTF-8">
+      <title>Счет на оплату №${documentNumber}</title>
+      <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+          font-family: 'Times New Roman', 'Arial', sans-serif;
+          background: #e5e7eb;
+          padding: 40px;
+          font-size: 12px;
+        }
+        .document {
+          max-width: 800px;
+          margin: 0 auto;
+          background: white;
+          padding: 25px 30px;
+          box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+        
+        .bank-details {
+          font-size: 9pt;
+          margin-bottom: 20px;
+          border-bottom: 1px solid #000;
+          padding-bottom: 10px;
+        }
+        .bank-row {
+          display: flex;
+          justify-content: space-between;
+          margin-bottom: 4px;
+        }
+        
+        .header {
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-start;
+          margin: 20px 0 25px;
+        }
+        .logo-section {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+        }
+        .logo {
+          width: 65px;
+          height: 65px;
+          object-fit: contain;
+        }
+        .company-title {
+          font-size: 18px;
+          font-weight: bold;
+        }
+        .company-subtitle {
+          font-size: 10px;
+          color: #666;
+        }
+        .doc-info {
+          text-align: right;
+        }
+        .doc-title {
+          font-size: 20px;
+          font-weight: bold;
+        }
+        .doc-number {
+          font-size: 11px;
+          color: #666;
+          margin-top: 5px;
+        }
+        
+        .parties {
+          display: flex;
+          justify-content: space-between;
+          gap: 20px;
+          margin: 20px 0;
+          font-size: 10pt;
+        }
+        .party-block {
+          flex: 1;
+        }
+        .party-label {
+          font-weight: bold;
+          margin-bottom: 5px;
+        }
+        
+        .items-table {
+          width: 100%;
+          border-collapse: collapse;
+          margin: 20px 0;
+        }
+        .items-table th,
+        .items-table td {
+          border: 1px solid #000;
+          padding: 8px;
+        }
+        .items-table th {
+          background: #f8f9fa;
+          text-align: center;
+          font-weight: bold;
+        }
+        .text-center { text-align: center; }
+        .text-right { text-align: right; }
+        .text-left { text-align: left; }
+        
+        .totals {
+          margin: 15px 0;
+          text-align: right;
+        }
+        .total-final {
+          font-size: 13pt;
+          font-weight: bold;
+          margin-top: 10px;
+          padding-top: 5px;
+          border-top: 1px solid #000;
+        }
+        
+        .amount-words {
+          margin: 15px 0;
+          padding: 10px;
+          background: #f8f9fa;
+        }
+        
+        .signatures {
+          display: flex;
+          justify-content: space-between;
+          margin: 30px 0 20px;
+        }
+        .signature-line {
+          width: 200px;
+          border-top: 1px solid #000;
+          margin-top: 30px;
+        }
+        .signature-label {
+          font-size: 9pt;
+          margin-top: 5px;
+          text-align: center;
+        }
+        
+        .footer {
+          margin-top: 20px;
+          text-align: center;
+          font-size: 8pt;
+          color: #888;
+          border-top: 1px solid #ddd;
+          padding-top: 10px;
+        }
+        
+        @media print {
+          body { background: white; padding: 0; }
+          .document { box-shadow: none; padding: 20px; }
+        }
+      </style>
+    </head>
+    <body>
+      <div class="document">
+        <div class="bank-details">
+          <div class="bank-row">
+            <span>Банк получателя</span>
+            <span>БИК</span>
+            <span>Сч. №</span>
+          </div>
+          <div class="bank-row">
+            <span>${SELLER_DATA.bankName}</span>
+            <span>${SELLER_DATA.bankBic}</span>
+            <span>${SELLER_DATA.correspondentAccount}</span>
+          </div>
+          <div class="bank-row" style="margin-top: 8px;">
+            <span>Получатель</span>
+            <span></span>
+            <span>Сч. №</span>
+          </div>
+          <div class="bank-row">
+            <span>${SELLER_DATA.name}</span>
+            <span></span>
+            <span>${SELLER_DATA.accountNumber}</span>
+          </div>
+        </div>
+        
+        <div class="header">
+          <div class="logo-section">
+            <img src="${LOGO_URL}" alt="SWAP SERVICE 38" class="logo" 
+                 onerror="this.style.display='none'">
+            <div>
+              <div class="company-title">SWAP SERVICE 38</div>
+              <div class="company-subtitle">Свап • Автосервис • Тюнинг • Запчасти</div>
+            </div>
+          </div>
+          <div class="doc-info">
+            <div class="doc-title">Счет на оплату</div>
+            <div class="doc-number">№ ${documentNumber} от ${formattedDate}</div>
+          </div>
+        </div>
+        
+        <div class="parties">
+          <div class="party-block">
+            <div class="party-label">Поставщик:</div>
+            <div class="party-text">
+              ${SELLER_DATA.name}<br>
+              ИНН ${SELLER_DATA.inn}<br>
+              ${SELLER_DATA.legalAddress}
+            </div>
+          </div>
+          <div class="party-block">
+            <div class="party-label">Покупатель:</div>
+            <div class="party-text">
+              ${escapeHtml(customerName)}<br>
+              ${customerPhone ? `Тел: ${escapeHtml(customerPhone)}` : ''}
+              ${customerAddress ? `<br>${escapeHtml(customerAddress)}` : ''}
+            </div>
+          </div>
+        </div>
+        
+        <table class="items-table">
+          <thead>
+            <tr>
+              <th width="5%">№</th>
+              <th width="50%">Товары (работы, услуги)</th>
+              <th width="8%">кол-во</th>
+              <th width="7%">Ед.</th>
+              <th width="8%">НДС</th>
+              <th width="11%">Цена</th>
+              <th width="11%">Сумма</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${items.map((item, idx) => `
+              <tr>
+                <td class="text-center">${idx + 1}</td>
+                <td class="text-left">${escapeHtml(item.productName)}</td>
+                <td class="text-center">${item.quantity}</td>
+                <td class="text-center">${item.isWork ? 'н/ч' : 'шт'}</td>
+                <td class="text-center">Без НДС</td>
+                <td class="text-right">${item.price.toLocaleString('ru-RU')}</td>
+                <td class="text-right">${item.total.toLocaleString('ru-RU')}</td>
+              </tr>
+            `).join('')}
+            <tr style="background: #f8f9fa;">
+              <td colspan="6" class="text-right"><strong>Итого:</strong></td>
+              <td class="text-right"><strong>${subtotal.toLocaleString('ru-RU')}</strong></td>
+            </tr>
+            ${discount > 0 ? `
+            <tr style="background: #f0fdf4;">
+              <td colspan="6" class="text-right" style="color: #22c55e;"><strong>Скидка ${discountPercent && discountPercent > 0 ? `(${discountPercent}%)` : ''}:</strong></td>
+              <td class="text-right" style="color: #22c55e;"><strong>-${discount.toLocaleString('ru-RU')}</strong></td>
+            </tr>
+            ` : ''}
+            <tr style="background: #e5e7eb;">
+              <td colspan="6" class="text-right"><strong>Итого к оплате:</strong></td>
+              <td class="text-right"><strong>${total.toLocaleString('ru-RU')}</strong></td>
+            </tr>
+          </tbody>
+        </table>
+        
+        <div class="totals">
+          <div>Всего наименований ${items.length}, на сумму ${total.toLocaleString('ru-RU')} руб.</div>
+          <div class="total-final">Итого к оплате: ${total.toLocaleString('ru-RU')}</div>
+        </div>
+        
+        <div class="amount-words">
+          ${numberToWords(total)} руб.
+        </div>
+        
+        <div class="signatures">
+          <div>
+            <div class="signature-line"></div>
+            <div class="signature-label">Исполнитель</div>
+            <div class="signature-label">${displaySellerName}</div>
+          </div>
+          <div>
+            <div class="signature-line"></div>
+            <div class="signature-label">Заказчик</div>
+          </div>
+        </div>
+        
+        <div class="footer">
+          <p>SWAP SERVICE 38 • ${formattedDate}</p>
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+};
+
 // Генерация Счет-фактуры (Юр лицо)
 const renderLegalReceiptHTML = (
   order: Order | null,
@@ -726,6 +761,7 @@ const renderLegalReceiptHTML = (
   items: OrderItem[],
   subtotal: number,
   discount: number,
+  discountPercent: number | undefined,
   total: number,
   customerName: string,
   sellerName: string,
@@ -736,6 +772,15 @@ const renderLegalReceiptHTML = (
   const buyerInn = legalData?.inn ?? '';
   const buyerKpp = legalData?.kpp ?? '';
   const buyerLegalAddress = legalData?.legalAddress ?? '';
+  
+  let displaySellerName = 'Менеджер';
+  if (sellerName && sellerName !== '___________________') {
+    displaySellerName = escapeHtml(sellerName);
+  }
+  
+  const discountDisplayText = discountPercent && discountPercent > 0 
+    ? `${discountPercent}% (${discount.toLocaleString('ru-RU')} ₽)`
+    : `${discount.toLocaleString('ru-RU')} ₽`;
   
   return `
     <!DOCTYPE html>
@@ -901,7 +946,7 @@ const renderLegalReceiptHTML = (
         <div class="header">
           <div class="logo-section">
             <img src="${LOGO_URL}" alt="SWAP SERVICE 38" class="logo" 
-                 onerror="this.style.display='none'; this.parentElement.innerHTML = '<div style=\\'width:65px;height:65px;background:#1E3A8A;border-radius:12px;display:flex;align-items:center;justify-content:center;color:white;font-size:10px;font-weight:bold\\'>ЛОГО</div>' + this.parentElement.innerHTML">
+                 onerror="this.style.display='none'">
             <div>
               <div class="company-title">SWAP SERVICE 38</div>
               <div class="company-subtitle">Свап • Автосервис • Тюнинг • Запчасти</div>
@@ -949,6 +994,16 @@ const renderLegalReceiptHTML = (
               </tr>
             `).join('')}
             <tr style="background: #f8f9fa;">
+              <td colspan="5" class="text-right"><strong>Сумма:</strong></td>
+              <td class="text-right"><strong>${subtotal.toLocaleString('ru-RU')} ₽</strong></td>
+            </tr>
+            ${discount > 0 ? `
+            <tr style="background: #f0fdf4;">
+              <td colspan="5" class="text-right" style="color: #22c55e;"><strong>Скидка ${discountPercent && discountPercent > 0 ? `(${discountPercent}%)` : ''}:</strong></td>
+              <td class="text-right" style="color: #22c55e;"><strong>-${discount.toLocaleString('ru-RU')} ₽</strong></td>
+            </tr>
+            ` : ''}
+            <tr style="background: #e5e7eb;">
               <td colspan="5" class="text-right"><strong>ИТОГО:</strong></td>
               <td class="text-right"><strong>${total.toLocaleString('ru-RU')} ₽</strong></td>
             </tr>
@@ -975,7 +1030,9 @@ const renderLegalReceiptHTML = (
           <div>
             <div class="signature-line"></div>
             <div class="signature-label">Руководитель</div>
+            <div class="signature-label">${displaySellerName}</div>
           </div>
+        </div>
         
         <div class="footer">
           <p>SWAP SERVICE 38 • ${formattedDate}</p>
@@ -1007,6 +1064,7 @@ export const PrintDocument: React.FC<PrintDocumentProps> = ({
     
     const subtotal = order?.subtotal ?? 0;
     const discount = order?.discount ?? 0;
+    const discountPercent = order?.discountPercent;
     const total = order?.total ?? 0;
     const items = order?.items ?? [];
     const customerName = order?.customerName ?? order?.clientName ?? '___________________';
@@ -1014,18 +1072,18 @@ export const PrintDocument: React.FC<PrintDocumentProps> = ({
     const customerEmail = order?.customerEmail ?? '';
     const customerAddress = order?.customerAddress ?? '';
     const documentNumber = order?.documentNumber ?? Math.floor(Math.random() * 1000000000).toString();
-    const sellerName = order?.sellerName ?? '___________________';
+    const sellerName = order?.sellerName ?? '';
     const paymentStatus = order?.paymentStatus;
     
     if (isInvoice) {
-      return renderInvoiceHTML(order, documentNumber, formattedDate, items, subtotal, discount, total, customerName, customerPhone, customerAddress, sellerName, paymentStatus);
+      return renderInvoiceHTML(order, documentNumber, formattedDate, items, subtotal, discount, discountPercent, total, customerName, customerPhone, customerAddress, sellerName, paymentStatus);
     }
     
     if (isLegalReceipt) {
-      return renderLegalReceiptHTML(order, documentNumber, formattedDate, items, subtotal, discount, total, customerName, sellerName, legalData, paymentStatus);
+      return renderLegalReceiptHTML(order, documentNumber, formattedDate, items, subtotal, discount, discountPercent, total, customerName, sellerName, legalData, paymentStatus);
     }
     
-    return renderIndividualReceiptHTML(order, documentNumber, formattedDate, items, subtotal, discount, total, customerName, customerPhone, customerEmail, sellerName, paymentStatus);
+    return renderIndividualReceiptHTML(order, documentNumber, formattedDate, items, subtotal, discount, discountPercent, total, customerName, customerPhone, customerEmail, sellerName, paymentStatus);
   };
   
   const print = (): void => {

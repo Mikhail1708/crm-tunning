@@ -93,15 +93,7 @@ export const Dashboard: React.FC = () => {
         clientsApi.getAll({ limit: 1000, sortBy: 'createdAt', sortOrder: 'desc' }),
         saleDocumentsApi.getAll()
       ]);
-      
-      // 🔸 ЛОГИРУЕМ СТРУКТУРУ ДАННЫХ ДЛЯ ОТЛАДКИ
-      //console.log('📊 API Responses:', {
-       // products: productsRes.data,
-       // lowStock: lowStockRes.data,
-       // clients: clientsRes.data,
-       // sales: salesRes.data
-     // });
-      
+    
       const allProducts = productsRes.data || [];
       const allSales = salesRes.data || [];
       const lowStockData = lowStockRes.data || [];
@@ -130,8 +122,6 @@ export const Dashboard: React.FC = () => {
           totalClients = clients.length;
         }
       }
-      
-      //console.log('👥 Clients loaded:', { clients: clients.length, totalClients });
       
       // Фильтруем ТОЛЬКО ОПЛАЧЕННЫЕ заказы
       const paidSales = allSales.filter(sale => {

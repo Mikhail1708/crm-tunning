@@ -11,6 +11,7 @@ import { LegalEntityModal } from '../components/ui/LegalEntityModal';
 import { SaleDocument, OrderStatus } from '../types';
 import { OrderStatusBadge } from '../components/ui/OrderStatusBadge';
 import { OrderStatusSelect } from '../components/ui/OrderStatusSelect';
+import { useAuth } from '../contexts/AuthContext';
 import { 
   ArrowLeft, 
   Printer, 
@@ -30,14 +31,14 @@ import {
   Percent,
   Edit2,
   Save,
-  X,
-  Hash
+  X
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 export const OrderDetails: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { user } = useAuth(); // Получаем текущего пользователя
   const [order, setOrder] = useState<SaleDocument | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [generating, setGenerating] = useState<boolean>(false);
@@ -163,6 +164,36 @@ export const OrderDetails: React.FC = () => {
     generateAndPrintReceipt('legal', data);
   };
 
+  // Получение имени продавца из заказа или текущего пользователя
+  const getSellerName = (): string => {
+    // Если в заказе уже есть sellerName, используем его
+    if ((order as any)?.sellerName && (order as any).sellerName !== '___________________') {
+      return (order as any).sellerName;
+    }
+    // Иначе берем имя текущего пользователя
+    if (user?.name) {
+      return user.name;
+    }
+    if (user?.email) {
+      return user.email.split('@')[0];
+    }
+    return 'Менеджер';
+  };
+
+  // Получение процента скидки
+  const getDiscountPercent = (): number => {
+    // Если есть скидка клиента
+    if ((order as any)?.clientDiscount && (order as any).clientDiscount > 0) {
+      return (order as any).clientDiscount;
+    }
+    // Если есть ручная скидка, вычисляем процент
+    if (order?.discount && order?.subtotal && order.discount > 0) {
+      const percent = (order.discount / order.subtotal) * 100;
+      return Math.round(percent * 10) / 10; // Округляем до 1 знака
+    }
+    return 0;
+  };
+
   const generateAndPrintReceipt = async (type: ReceiptType, legalDataParam: LegalEntityData | null) => {
     if (!order) return;
     
@@ -175,7 +206,18 @@ export const OrderDetails: React.FC = () => {
       }
       
       await saleDocumentsApi.update(order.id, { documentType: 'receipt' });
-      const finalOrder = { ...order, documentType: 'receipt', paymentStatus: 'paid' };
+      
+      // Создаем финальный заказ с правильными данными для чека
+      const finalOrder = { 
+        ...order, 
+        documentType: 'receipt', 
+        paymentStatus: 'paid',
+        sellerName: getSellerName(),           // Имя продавца
+        discountPercent: getDiscountPercent(), // Процент скидки
+        discount: order.discount,               // Сумма скидки
+        subtotal: order.subtotal,               // Сумма без скидки
+        total: order.total                      // Итоговая сумма
+      };
       setOrder(finalOrder);
       
       toast.success(type === 'individual' ? 'Чек сформирован' : 'Счет-фактура сформирован');
@@ -203,7 +245,12 @@ export const OrderDetails: React.FC = () => {
     try {
       await saleDocumentsApi.update(order.id, { documentType: 'invoice' });
       
-      const updatedOrder = { ...order, documentType: 'invoice' };
+      const updatedOrder = { 
+        ...order, 
+        documentType: 'invoice',
+        sellerName: getSellerName(),
+        discountPercent: getDiscountPercent()
+      };
       setOrder(updatedOrder);
       
       toast.success('Счет сформирован');
@@ -223,7 +270,15 @@ export const OrderDetails: React.FC = () => {
     
     const type = order.documentType === 'receipt' ? 'receipt' : 'invoice';
     const receiptType = order.documentType === 'receipt' && legalData ? 'legal' : 'individual';
-    const { print } = PrintDocument({ order, type, receiptType, legalData });
+    
+    // Добавляем недостающие данные перед печатью
+    const printOrder = {
+      ...order,
+      sellerName: getSellerName(),
+      discountPercent: getDiscountPercent()
+    };
+    
+    const { print } = PrintDocument({ order: printOrder, type, receiptType, legalData });
     print();
   };
 
@@ -483,6 +538,7 @@ export const OrderDetails: React.FC = () => {
               <span className="dark:text-gray-300">{formatPrice(order.subtotal)}</span>
             </div>
             
+            {/* Скидка клиента */}
             {(order as any).clientDiscount && (order as any).clientDiscount > 0 && (
               <div className="flex justify-between text-sm text-green-600">
                 <span className="flex items-center gap-1">
@@ -493,9 +549,13 @@ export const OrderDetails: React.FC = () => {
               </div>
             )}
             
+            {/* Ручная скидка */}
             {order.discount > 0 && (!(order as any).clientDiscount || order.discount !== (order as any).clientDiscountAmount) && (
               <div className="flex justify-between text-sm text-green-600">
-                <span>Ручная скидка:</span>
+                <span className="flex items-center gap-1">
+                  <Percent size={14} />
+                  Ручная скидка:
+                </span>
                 <span>-{formatPrice(order.discount)}</span>
               </div>
             )}
@@ -511,12 +571,11 @@ export const OrderDetails: React.FC = () => {
               </span>
             </div>
             
-            {(order as any).sellerName && (
-              <div className="flex justify-between pt-2 text-xs text-gray-400 border-t border-gray-100">
-                <span>Продавец:</span>
-                <span>{(order as any).sellerName}</span>
-              </div>
-            )}
+            {/* Продавец */}
+            <div className="flex justify-between pt-2 text-xs text-gray-400 border-t border-gray-100">
+              <span>Продавец:</span>
+              <span>{getSellerName()}</span>
+            </div>
           </div>
         </div>
       </div>

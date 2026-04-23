@@ -80,12 +80,12 @@ async function getUserWithCache(userId: number) {
 /**
  * GET /api/sale-documents
  * Получить все документы (ОПТИМИЗИРОВАННО)
+ * ✅ ИСПРАВЛЕНО: добавлен полный client с city
  */
 export const getSaleDocuments = async (req: RequestWithUser, res: Response): Promise<void> => {
   const startTime = Date.now();
   
   try {
-    // Получаем документы с минимальными данными
     const documents = await prisma.saleDocument.findMany({
       select: {
         id: true,
@@ -104,6 +104,7 @@ export const getSaleDocuments = async (req: RequestWithUser, res: Response): Pro
         saleDate: true,
         createdAt: true,
         createdBy: true,
+        sellerName: true,
         items: {
           select: {
             id: true,
@@ -112,46 +113,38 @@ export const getSaleDocuments = async (req: RequestWithUser, res: Response): Pro
             productArticle: true,
             quantity: true,
             price: true,
-            total: true
+            total: true,
+            cost_price: true
           }
         },
+        // ✅ ИСПРАВЛЕНО: добавлен полный client с city
         client: {
           select: {
             id: true,
             firstName: true,
             lastName: true,
-            phone: true
+            middleName: true,
+            phone: true,
+            email: true,
+            city: true,        // 👈 ГОРОД
+            carModel: true,
+            carNumber: true,
+            discountPercent: true,
+            totalOrders: true,
+            totalSpent: true
           }
         }
       },
       orderBy: { saleDate: 'desc' },
-      take: 100 // Ограничиваем количество для производительности
+      take: 100
     });
-    
-    // Получаем уникальных продавцов и загружаем их одним запросом
-    const uniqueUserIds = [...new Set(documents.map(doc => doc.createdBy).filter(Boolean))];
-    let usersMap = new Map();
-    
-    if (uniqueUserIds.length > 0) {
-      const users = await prisma.user.findMany({
-        where: { id: { in: uniqueUserIds as number[] } },
-        select: { id: true, name: true, email: true }
-      });
-      usersMap = new Map(users.map(u => [u.id, u.name || u.email]));
-    }
-    
-    // Формируем результат
-    const documentsWithSeller = documents.map(doc => ({
-      ...doc,
-      sellerName: doc.createdBy ? usersMap.get(doc.createdBy) || null : null
-    }));
     
     const duration = Date.now() - startTime;
     if (duration > 500) {
       console.warn(`⚠️ Slow getSaleDocuments: ${duration}ms`);
     }
     
-    res.json(documentsWithSeller);
+    res.json(documents);
   } catch (error) {
     console.error('Error getting documents:', error);
     res.status(500).json({ message: 'Ошибка загрузки документов' });
@@ -161,6 +154,7 @@ export const getSaleDocuments = async (req: RequestWithUser, res: Response): Pro
 /**
  * GET /api/sale-documents/:id
  * Получить документ по ID (ОПТИМИЗИРОВАННО)
+ * ✅ ИСПРАВЛЕНО: добавлен полный client с city
  */
 export const getSaleDocumentById = async (req: RequestWithUser, res: Response): Promise<void> => {
   try {
@@ -195,6 +189,7 @@ export const getSaleDocumentById = async (req: RequestWithUser, res: Response): 
         saleDate: true,
         createdAt: true,
         createdBy: true,
+        sellerName: true,
         items: {
           select: {
             id: true,
@@ -207,6 +202,7 @@ export const getSaleDocumentById = async (req: RequestWithUser, res: Response): 
             total: true
           }
         },
+        // ✅ ИСПРАВЛЕНО: добавлен полный client с city
         client: {
           select: {
             id: true,
@@ -214,7 +210,13 @@ export const getSaleDocumentById = async (req: RequestWithUser, res: Response): 
             lastName: true,
             middleName: true,
             phone: true,
-            email: true
+            email: true,
+            city: true,        // 👈 ГОРОД
+            carModel: true,
+            carNumber: true,
+            discountPercent: true,
+            totalOrders: true,
+            totalSpent: true
           }
         }
       }
@@ -225,14 +227,7 @@ export const getSaleDocumentById = async (req: RequestWithUser, res: Response): 
       return;
     }
     
-    // Получаем имя продавца из кэша или БД
-    let sellerName = null;
-    if (document.createdBy) {
-      const user = await getUserWithCache(document.createdBy);
-      sellerName = user?.name || user?.email || null;
-    }
-    
-    res.json({ ...document, sellerName });
+    res.json(document);
   } catch (error) {
     console.error('Error getting document:', error);
     res.status(500).json({ message: 'Ошибка загрузки документа' });
@@ -247,7 +242,6 @@ export const createSaleDocument = async (req: RequestWithUser, res: Response): P
   const startTime = Date.now();
   
   try {
-    // Быстрая проверка авторизации
     if (!req.user) {
       res.status(401).json({ message: 'Не авторизован' });
       return;
@@ -268,27 +262,23 @@ export const createSaleDocument = async (req: RequestWithUser, res: Response): P
       paymentStatus = 'unpaid'
     } = data;
     
-    // Валидация корзины
     if (!items || items.length === 0) {
       res.status(400).json({ message: 'Корзина не может быть пустой' });
       return;
     }
     
-    // Проверка на дубликаты товаров
     const uniqueProductIds = new Set(items.map(i => i.productId));
     if (uniqueProductIds.size !== items.length) {
       res.status(400).json({ message: 'Обнаружены дубликаты товаров в корзине' });
       return;
     }
     
-    // Получаем ВСЕ товары одним запросом
     const productIds = items.map(i => i.productId);
     const products = await prisma.product.findMany({
       where: { id: { in: productIds } },
       select: { id: true, name: true, article: true, cost_price: true, stock: true }
     });
     
-    // Проверка наличия всех товаров
     if (products.length !== productIds.length) {
       const foundIds = new Set(products.map(p => p.id));
       const missingIds = productIds.filter(id => !foundIds.has(id));
@@ -296,10 +286,8 @@ export const createSaleDocument = async (req: RequestWithUser, res: Response): P
       return;
     }
     
-    // Создаем Map для быстрого доступа
     const productMap = new Map(products.map(p => [p.id, p]));
     
-    // Валидация остатков и расчет сумм (один проход)
     let subtotal = 0;
     const itemsWithDetails: Array<{
       productId: number;
@@ -332,7 +320,6 @@ export const createSaleDocument = async (req: RequestWithUser, res: Response): P
       });
     }
     
-    // Получаем данные клиента (если есть)
     let client = null;
     let finalClientName = customerName;
     let finalClientPhone = customerPhone;
@@ -341,7 +328,16 @@ export const createSaleDocument = async (req: RequestWithUser, res: Response): P
     if (clientId) {
       client = await prisma.client.findUnique({
         where: { id: clientId },
-        select: { id: true, firstName: true, lastName: true, middleName: true, phone: true, discountPercent: true }
+        select: { 
+          id: true, 
+          firstName: true, 
+          lastName: true, 
+          middleName: true, 
+          phone: true, 
+          email: true,
+          city: true,
+          discountPercent: true 
+        }
       });
       
       if (client) {
@@ -354,23 +350,27 @@ export const createSaleDocument = async (req: RequestWithUser, res: Response): P
       }
     }
     
-    // Расчет скидок
     const clientDiscountAmount = subtotal * (clientDiscount / 100);
     const totalDiscount = discount + clientDiscountAmount;
     const total = Math.max(0, subtotal - totalDiscount);
     
-    // Генерация номера документа
     const prefix = documentType === 'receipt' ? 'ЧЕК' : documentType === 'invoice' ? 'СЧЕТ' : 'ЗАКАЗ';
     const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
     const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
     const documentNumber = `${prefix}-${dateStr}-${random}`;
     
     const sellerId = req.user.id;
-    const sellerName = req.user.name || req.user.email;
     
-    // ОПТИМИЗИРОВАННАЯ ТРАНЗАКЦИЯ
+    let sellerName = req.user.name || req.user.email;
+    if (!req.user.name && req.user.email) {
+      const userFromDb = await prisma.user.findUnique({
+        where: { id: sellerId },
+        select: { name: true, email: true }
+      });
+      sellerName = userFromDb?.name || userFromDb?.email || 'Менеджер';
+    }
+    
     const result = await prisma.$transaction(async (tx) => {
-      // 1. Создаем документ
       const document = await tx.saleDocument.create({
         data: {
           documentNumber,
@@ -390,11 +390,11 @@ export const createSaleDocument = async (req: RequestWithUser, res: Response): P
           paymentStatus,
           saleDate: new Date(),
           createdBy: sellerId,
+          sellerName: sellerName,
           orderStatus: 'ordered'
         }
       });
       
-      // 2. МАССОВОЕ создание элементов документа
       await tx.saleDocumentItem.createMany({
         data: itemsWithDetails.map(item => ({
           documentId: document.id,
@@ -408,7 +408,6 @@ export const createSaleDocument = async (req: RequestWithUser, res: Response): P
         }))
       });
       
-      // 3. МАССОВОЕ создание записей о продажах
       await tx.sale.createMany({
         data: itemsWithDetails.map(item => {
           const itemTotalCost = item.product.cost_price * item.quantity;
@@ -427,7 +426,6 @@ export const createSaleDocument = async (req: RequestWithUser, res: Response): P
         })
       });
       
-      // 4. МАССОВОЕ списание товаров (один UPDATE)
       const updateCases = itemsWithDetails
         .map(item => `WHEN ${item.productId} THEN stock - ${item.quantity}`)
         .join(' ');
@@ -441,7 +439,6 @@ export const createSaleDocument = async (req: RequestWithUser, res: Response): P
         WHERE id IN (${Prisma.join(productIds)})
       `;
       
-      // 5. Обновляем статистику клиента
       if (client?.id) {
         await tx.client.update({
           where: { id: client.id },
@@ -463,13 +460,61 @@ export const createSaleDocument = async (req: RequestWithUser, res: Response): P
       console.warn(`⚠️ Slow order creation: ${duration}ms`);
     }
     
-    res.status(201).json({
-      document: { 
-        ...result.document, 
-        sellerName: result.sellerName,
-        clientDiscount: result.clientDiscount,
-        clientDiscountAmount: result.clientDiscountAmount
+    const createdDocument = await prisma.saleDocument.findUnique({
+      where: { id: result.document.id },
+      select: {
+        id: true,
+        documentNumber: true,
+        documentType: true,
+        clientId: true,
+        clientName: true,
+        clientPhone: true,
+        customerName: true,
+        customerPhone: true,
+        customerEmail: true,
+        customerAddress: true,
+        description: true,
+        subtotal: true,
+        discount: true,
+        total: true,
+        paymentMethod: true,
+        paymentStatus: true,
+        orderStatus: true,
+        saleDate: true,
+        createdAt: true,
+        createdBy: true,
+        sellerName: true,
+        items: {
+          select: {
+            id: true,
+            productId: true,
+            productName: true,
+            productArticle: true,
+            quantity: true,
+            price: true,
+            cost_price: true,
+            total: true
+          }
+        },
+        client: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            middleName: true,
+            phone: true,
+            email: true,
+            city: true,
+            discountPercent: true
+          }
+        }
       }
+    });
+    
+    res.status(201).json({
+      ...createdDocument,
+      clientDiscount: result.clientDiscount,
+      clientDiscountAmount: result.clientDiscountAmount
     });
     
   } catch (error) {
@@ -534,7 +579,7 @@ export const updateSaleDocument = async (req: RequestWithUser, res: Response): P
       } else {
         const client = await prisma.client.findUnique({
           where: { id: clientId },
-          select: { id: true, firstName: true, lastName: true, middleName: true, phone: true }
+          select: { id: true, firstName: true, lastName: true, middleName: true, phone: true, city: true }
         });
         
         if (client) {
@@ -556,7 +601,17 @@ export const updateSaleDocument = async (req: RequestWithUser, res: Response): P
         documentNumber: true,
         documentType: true,
         paymentStatus: true,
-        orderStatus: true
+        orderStatus: true,
+        sellerName: true,
+        client: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            city: true,
+            phone: true
+          }
+        }
       }
     });
     
@@ -588,7 +643,16 @@ export const updatePaymentStatus = async (req: RequestWithUser, res: Response): 
       select: {
         id: true,
         documentNumber: true,
-        paymentStatus: true
+        paymentStatus: true,
+        sellerName: true,
+        client: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            city: true
+          }
+        }
       }
     });
     
@@ -614,7 +678,6 @@ export const deleteSaleDocument = async (req: RequestWithUser, res: Response): P
     }
     
     await prisma.$transaction(async (tx) => {
-      // Получаем документ с товарами
       const document = await tx.saleDocument.findUnique({
         where: { id: documentId },
         select: {
@@ -634,7 +697,6 @@ export const deleteSaleDocument = async (req: RequestWithUser, res: Response): P
         throw new Error('Документ не найден');
       }
       
-      // МАССОВЫЙ возврат товаров на склад (один запрос)
       if (document.items.length > 0) {
         const updateCases = document.items
           .map(item => `WHEN ${item.productId} THEN stock + ${item.quantity}`)
@@ -652,7 +714,6 @@ export const deleteSaleDocument = async (req: RequestWithUser, res: Response): P
         `;
       }
       
-      // Обновляем статистику клиента
       if (document.clientId) {
         await tx.client.update({
           where: { id: document.clientId },
@@ -663,7 +724,6 @@ export const deleteSaleDocument = async (req: RequestWithUser, res: Response): P
         });
       }
       
-      // Удаляем документ (каскадно удалятся items и sales)
       await tx.saleDocument.delete({
         where: { id: documentId }
       });
@@ -680,6 +740,7 @@ export const deleteSaleDocument = async (req: RequestWithUser, res: Response): P
 /**
  * GET /api/sale-documents/client/:clientId
  * Получить документы по клиенту (ОПТИМИЗИРОВАННО)
+ * ✅ ИСПРАВЛЕНО: добавлен client с city
  */
 export const getDocumentsByClient = async (req: RequestWithUser, res: Response): Promise<void> => {
   try {
@@ -704,6 +765,7 @@ export const getDocumentsByClient = async (req: RequestWithUser, res: Response):
         orderStatus: true,
         saleDate: true,
         createdBy: true,
+        sellerName: true,
         items: {
           select: {
             id: true,
@@ -712,30 +774,24 @@ export const getDocumentsByClient = async (req: RequestWithUser, res: Response):
             price: true,
             total: true
           }
+        },
+        client: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            middleName: true,
+            phone: true,
+            city: true,
+            discountPercent: true
+          }
         }
       },
       orderBy: { saleDate: 'desc' },
       take: 50
     });
     
-    // Получаем имена продавцов
-    const uniqueUserIds = [...new Set(documents.map(doc => doc.createdBy).filter(Boolean))];
-    let usersMap = new Map();
-    
-    if (uniqueUserIds.length > 0) {
-      const users = await prisma.user.findMany({
-        where: { id: { in: uniqueUserIds as number[] } },
-        select: { id: true, name: true, email: true }
-      });
-      usersMap = new Map(users.map(u => [u.id, u.name || u.email]));
-    }
-    
-    const documentsWithSeller = documents.map(doc => ({
-      ...doc,
-      sellerName: doc.createdBy ? usersMap.get(doc.createdBy) || null : null
-    }));
-    
-    res.json(documentsWithSeller);
+    res.json(documents);
   } catch (error) {
     console.error('Error getting documents by client:', error);
     res.status(500).json({ message: 'Ошибка загрузки документов клиента' });
@@ -763,7 +819,16 @@ export const updateOrderStatus = async (req: RequestWithUser, res: Response): Pr
       select: {
         id: true,
         documentNumber: true,
-        orderStatus: true
+        orderStatus: true,
+        sellerName: true,
+        client: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            city: true
+          }
+        }
       }
     });
     
@@ -793,7 +858,16 @@ export const getOrderStatus = async (req: RequestWithUser, res: Response): Promi
       select: { 
         id: true, 
         orderStatus: true,
-        documentNumber: true
+        documentNumber: true,
+        sellerName: true,
+        client: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            city: true
+          }
+        }
       }
     });
     
@@ -821,12 +895,13 @@ export const getClientStatistics = async (req: RequestWithUser, res: Response): 
         c.first_name as firstName,
         c.last_name as lastName,
         c.phone,
+        c.city,
         COUNT(sd.id) as orderCount,
         COALESCE(SUM(sd.total), 0) as totalSpent,
         MAX(sd.sale_date) as lastOrderDate
       FROM "Client" c
       LEFT JOIN "SaleDocument" sd ON c.id = sd.client_id AND sd.payment_status = 'paid'
-      GROUP BY c.id, c.first_name, c.last_name, c.phone
+      GROUP BY c.id, c.first_name, c.last_name, c.phone, c.city
       ORDER BY totalSpent DESC NULLS LAST
       LIMIT 10
     `;

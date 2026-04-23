@@ -24,8 +24,7 @@ import {
   PieChart,
   Pie,
   Cell,
-  AreaChart,
-  Area
+  
 } from 'recharts';
 import { 
   TrendingUp, 
@@ -48,10 +47,7 @@ import {
   Info,
   Calculator,
   Wrench,
-  Truck,
-  PaintBucket,
-  Gauge,
-  ClipboardList
+ 
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -628,37 +624,37 @@ export const Reports: React.FC = () => {
   }, [period, startDate, endDate, filters]);
 
   const loadInitialData = async (): Promise<void> => {
-  try {
-    const [productsRes, clientsRes, allProductsRes] = await Promise.all([
-      productsApi.getAll(),
-      clientsApi.getAll({ limit: 1000 }),
-      productsApi.getAll()
-    ]);
-    
-    // Исправление: правильно извлекаем данные клиентов
-    let clientsData: Client[] = [];
-    if (clientsRes.data) {
-      if (Array.isArray(clientsRes.data)) {
-        clientsData = clientsRes.data;
-      } else if (clientsRes.data.data && Array.isArray(clientsRes.data.data)) {
-        clientsData = clientsRes.data.data;
-      } else if (clientsRes.data.clients && Array.isArray(clientsRes.data.clients)) {
-        clientsData = clientsRes.data.clients;
-      } else if (Array.isArray(clientsRes)) {
-        clientsData = clientsRes;
+    try {
+      const [productsRes, clientsRes, allProductsRes] = await Promise.all([
+        productsApi.getAll(),
+        clientsApi.getAll({ limit: 1000 }),
+        productsApi.getAll()
+      ]);
+      
+      // Исправление: правильно извлекаем данные клиентов
+      let clientsData: Client[] = [];
+      if (clientsRes.data) {
+        if (Array.isArray(clientsRes.data)) {
+          clientsData = clientsRes.data;
+        } else if (clientsRes.data.data && Array.isArray(clientsRes.data.data)) {
+          clientsData = clientsRes.data.data;
+        } else if (clientsRes.data.clients && Array.isArray(clientsRes.data.clients)) {
+          clientsData = clientsRes.data.clients;
+        } else if (Array.isArray(clientsRes)) {
+          clientsData = clientsRes;
+        }
       }
+      
+      console.log('📋 Загружено клиентов:', clientsData.length);
+      
+      setProducts(productsRes.data || []);
+      setClients(clientsData);
+      setAllProducts(allProductsRes.data || []);
+    } catch (error) {
+      console.error('Error loading initial data:', error);
+      toast.error('Ошибка загрузки данных для фильтров');
     }
-    
-    console.log('📋 Загружено клиентов:', clientsData.length);
-    
-    setProducts(productsRes.data || []);
-    setClients(clientsData);
-    setAllProducts(allProductsRes.data || []);
-  } catch (error) {
-    console.error('Error loading initial data:', error);
-    toast.error('Ошибка загрузки данных для фильтров');
-  }
-};
+  };
 
   const loadOrders = async (): Promise<void> => {
     setLoading(true);
@@ -725,6 +721,7 @@ export const Reports: React.FC = () => {
       const unpaidDocuments = allDocuments.filter(doc => doc.paymentStatus !== 'paid');
       const unpaidAmount = unpaidDocuments.reduce((sum, d) => sum + (d.total || 0), 0);
       
+      // ✅ ИСПРАВЛЕНО: правильное получение города из клиента
       const formattedSales: FormattedSale[] = filteredSales.map(sale => {
         const itemsWithCost = (sale.items || []).map(item => {
           const costPrice = item.cost_price || (item as { product?: { cost_price: number } }).product?.cost_price || 0;
@@ -745,12 +742,29 @@ export const Reports: React.FC = () => {
         
         const docType = sale.documentType === 'receipt' ? 'Чек' : sale.documentType === 'invoice' ? 'Счет' : 'Заказ';
         
+        // ✅ КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: правильно получаем город из клиента
+        let city = '-';
+        if (sale.client?.city && sale.client.city.trim() !== '') {
+          city = sale.client.city;
+        } else if ((sale as any).client?.city && (sale as any).client.city.trim() !== '') {
+          city = (sale as any).client.city;
+        } else if (sale.customerCity && sale.customerCity.trim() !== '') {
+          city = sale.customerCity;
+        } else if ((sale as any).city) {
+          city = (sale as any).city;
+        }
+        
+        // Для отладки - выводим в консоль
+        if (city !== '-') {
+          console.log(`🏙️ Заказ ${sale.documentNumber}: город = ${city}, клиент = ${sale.client?.firstName} ${sale.client?.lastName}`);
+        }
+        
         return {
           ...sale,
           documentType: docType,
           totalProfit,
           totalCost,
-          customerCity: sale.client?.city || '-'
+          customerCity: city
         };
       });
       
@@ -914,33 +928,71 @@ export const Reports: React.FC = () => {
     return Array.from(productMap.values()).sort((a, b) => b.revenue - a.revenue);
   }, [orders]);
 
+  // ✅ ИСПРАВЛЕНО: статистика по клиентам с городом
   const clientStats = useMemo(() => {
-    const clientMap = new Map<string, { name: string; phone?: string; city?: string; revenue: number; profit: number; orders: number }>();
+    const clientMap = new Map<number, { name: string; phone?: string; city?: string; revenue: number; profit: number; orders: number; clientId: number }>();
+    
     orders.forEach(order => {
-      if (order.customerName && order.customerName !== '-') {
-        if (!clientMap.has(order.customerName)) {
-          clientMap.set(order.customerName, { 
-            name: order.customerName, 
-            phone: order.customerPhone,
-            city: order.customerCity,
-            revenue: 0, 
-            profit: 0, 
-            orders: 0 
-          });
-        }
-        const c = clientMap.get(order.customerName)!;
-        c.revenue += order.total;
-        c.profit += order.totalProfit;
-        c.orders += 1;
+      // Получаем ID клиента
+      const clientId = order.clientId;
+      if (!clientId) return;
+      
+      // Находим клиента в загруженном списке
+      const client = clients.find(c => c.id === clientId);
+      if (!client) return;
+      
+      const fullName = [client.lastName, client.firstName, client.middleName].filter(Boolean).join(' ').trim() || client.firstName || 'Клиент';
+      
+      if (!clientMap.has(clientId)) {
+        // ✅ Берем город из объекта клиента
+        let clientCity = client.city || '-';
+        if (!clientCity || clientCity === '') clientCity = '-';
+        
+        clientMap.set(clientId, {
+          name: fullName,
+          phone: client.phone,
+          city: clientCity,
+          revenue: 0,
+          profit: 0,
+          orders: 0,
+          clientId: clientId
+        });
       }
+      
+      const c = clientMap.get(clientId)!;
+      c.revenue += order.total;
+      c.profit += order.totalProfit;
+      c.orders += 1;
     });
+    
     return Array.from(clientMap.values()).sort((a, b) => b.revenue - a.revenue);
-  }, [orders]);
+  }, [orders, clients]);
 
+  // ✅ ИСПРАВЛЕНО: улучшенная статистика по городам
   const cityStats = useMemo(() => {
     const cityMap = new Map<string, { name: string; revenue: number; profit: number; orders: number }>();
+    
     orders.forEach(order => {
-      const city = order.customerCity && order.customerCity !== '-' ? order.customerCity : 'Не указан';
+      // Пытаемся получить город из разных источников
+      let city = order.customerCity;
+      
+      // Если город не определен через customerCity, пробуем получить из клиента
+      if ((!city || city === '-') && order.clientId) {
+        const client = clients.find(c => c.id === order.clientId);
+        if (client && client.city && client.city.trim() !== '') {
+          city = client.city;
+        }
+      }
+      
+      // Если все еще нет города, пробуем через order.client
+      if ((!city || city === '-') && order.client?.city && order.client.city.trim() !== '') {
+        city = order.client.city;
+      }
+      
+      if (!city || city === '-') {
+        city = 'Не указан';
+      }
+      
       if (!cityMap.has(city)) {
         cityMap.set(city, { name: city, revenue: 0, profit: 0, orders: 0 });
       }
@@ -949,8 +1001,13 @@ export const Reports: React.FC = () => {
       c.profit += order.totalProfit;
       c.orders += 1;
     });
+    
+    // Логируем результат для отладки
+    console.log('📊 Статистика по городам:', Array.from(cityMap.entries()));
+    
+    // Сортируем по выручке и возвращаем
     return Array.from(cityMap.values()).sort((a, b) => b.revenue - a.revenue);
-  }, [orders]);
+  }, [orders, clients]);
 
   const exportToExcel = (): void => {
     let exportData: Record<string, unknown>[] = [];
@@ -1272,15 +1329,17 @@ export const Reports: React.FC = () => {
                         </td>
                         <td className="px-4 py-3 text-sm font-mono text-primary-600 dark:text-primary-400">{order.documentNumber}</td>
                         <td className="px-4 py-3 text-sm text-gray-500 dark:text-gray-400">{formatDate(order.saleDate)}</td>
-                        <td className="px-4 py-3 text-sm text-gray-900 dark:text-white">{order.customerName}</td>
-                        <td className="px-4 py-3 text-sm text-gray-500 dark:text-gray-400">{order.customerPhone}</td>
+                        <td className="px-4 py-3 text-sm text-gray-900 dark:text-white">{order.customerName || order.client?.firstName + ' ' + order.client?.lastName || '-'}</td>
+                        <td className="px-4 py-3 text-sm text-gray-500 dark:text-gray-400">{order.customerPhone || order.client?.phone || '-'}</td>
                         <td className="px-4 py-3 text-sm text-gray-500 dark:text-gray-400">
                           {order.customerCity && order.customerCity !== '-' ? (
                             <span className="flex items-center gap-1">
                               <MapPin size={12} className="text-gray-400" />
                               {order.customerCity}
                             </span>
-                          ) : '-'}
+                          ) : (
+                            <span className="text-gray-400">-</span>
+                          )}
                         </td>
                         <td className="px-4 py-3 text-sm text-gray-500 dark:text-gray-400 max-w-md truncate">
                           {order.items?.map(i => `${i.productName} x${i.quantity}`).join(', ') || '-'}
@@ -1352,7 +1411,7 @@ export const Reports: React.FC = () => {
         </Card>
       )}
 
-      {/* Аналитика по клиентам */}
+      {/* Аналитика по клиентам - ИСПРАВЛЕНО */}
       {activeTab === 'clients' && (
         <Card>
           <CardBody className="p-0">
@@ -1374,13 +1433,15 @@ export const Reports: React.FC = () => {
                     <tr key={idx} className="hover:bg-gray-50 dark:hover:bg-dark-800">
                       <td className="px-4 py-3 text-sm font-medium text-gray-900 dark:text-white">{client.name}</td>
                       <td className="px-4 py-3 text-sm text-gray-500 dark:text-gray-400">{client.phone || '-'}</td>
-                      <td className="px-4 py-3 text-sm text-gray-500 dark:text-gray-400">
+                      <td className="px-4 py-3 text-sm">
                         {client.city && client.city !== '-' ? (
-                          <span className="flex items-center gap-1">
+                          <span className="flex items-center gap-1 text-gray-700 dark:text-gray-300">
                             <MapPin size={12} className="text-gray-400" />
                             {client.city}
                           </span>
-                        ) : '-'}
+                        ) : (
+                          <span className="text-gray-400">-</span>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-sm text-right text-gray-700 dark:text-gray-300">{client.orders}</td>
                       <td className="px-4 py-3 text-sm text-right text-green-600 dark:text-green-400">{formatPrice(client.revenue)}</td>
@@ -1395,33 +1456,39 @@ export const Reports: React.FC = () => {
         </Card>
       )}
 
-      {/* Аналитика по городам */}
+      {/* Аналитика по городам - ИСПРАВЛЕНО */}
       {activeTab === 'cities' && (
         <Card>
           <CardBody className="p-0">
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 p-6 border-b border-gray-200 dark:border-dark-700">
               <div>
                 <h3 className="font-medium text-gray-900 dark:text-white mb-4">Выручка по городам</h3>
-                <ResponsiveContainer width="100%" height={400}>
-                  <PieChart margin={{ top: 20, bottom: 20, left: 20, right: 20 }}>
-                    <Pie
-                      data={cityStats.slice(0, 8)}
-                      dataKey="revenue"
-                      nameKey="name"
-                      cx="50%"
-                      cy="50%"
-                      outerRadius={120}
-                      label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
-                      labelLine={true}
-                    >
-                      {cityStats.slice(0, 8).map((_, index) => (
-                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip formatter={(value) => formatPrice(value as number)} contentStyle={{ backgroundColor: '#1f2937', border: 'none', borderRadius: '8px' }} />
-                    <Legend layout="vertical" align="right" verticalAlign="middle" wrapperStyle={{ fontSize: '12px' }} />
-                  </PieChart>
-                </ResponsiveContainer>
+                {cityStats.filter(c => c.name !== 'Не указан').length > 0 ? (
+                  <ResponsiveContainer width="100%" height={400}>
+                    <PieChart margin={{ top: 20, bottom: 20, left: 20, right: 20 }}>
+                      <Pie
+                        data={cityStats.filter(c => c.name !== 'Не указан').slice(0, 8)}
+                        dataKey="revenue"
+                        nameKey="name"
+                        cx="50%"
+                        cy="50%"
+                        outerRadius={120}
+                        label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                        labelLine={true}
+                      >
+                        {cityStats.filter(c => c.name !== 'Не указан').slice(0, 8).map((_, index) => (
+                          <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                        ))}
+                      </Pie>
+                      <Tooltip formatter={(value) => formatPrice(value as number)} contentStyle={{ backgroundColor: '#1f2937', border: 'none', borderRadius: '8px' }} />
+                      <Legend layout="vertical" align="right" verticalAlign="middle" wrapperStyle={{ fontSize: '12px' }} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="h-400 flex items-center justify-center text-gray-500">
+                    Нет данных о городах
+                  </div>
+                )}
               </div>
               <div>
                 <h3 className="font-medium text-gray-900 dark:text-white mb-4">Количество заказов по городам</h3>
