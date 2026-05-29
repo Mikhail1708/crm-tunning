@@ -1,0 +1,68 @@
+name: Deploy CRM
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Create .env file
+      run: |
+        echo "JWT_SECRET=${{ secrets.JWT_SECRET }}" > backend/.env
+        echo "DATABASE_URL=postgresql://postgres:postgres@db:5432/crm_db" >> backend/.env
+        echo "PORT=5000" >> backend/.env
+        echo "NODE_ENV=production" >> backend/.env
+        echo "BASE_URL=https://swapcrm38.ru" >> backend/.env
+    
+    - name: Copy files to server
+      uses: appleboy/scp-action@v0.1.7
+      with:
+        host: ${{ secrets.SERVER_IP }}
+        username: ${{ secrets.SERVER_USER }}
+        key: ${{ secrets.SSH_PRIVATE_KEY }}
+        port: 22
+        source: ".,!node_modules,!**/node_modules"
+        target: "/var/www/crm-tunning"
+        strip_components: 0
+        overwrite: true
+    
+    - name: Execute deployment commands
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.SERVER_IP }}
+        username: ${{ secrets.SERVER_USER }}
+        key: ${{ secrets.SSH_PRIVATE_KEY }}
+        port: 22
+        script: |
+          cd /var/www/crm-tunning
+          
+          # Проверяем наличие docker-compose
+          if ! command -v docker-compose &> /dev/null; then
+            echo "docker-compose not found, installing..."
+            apt-get update && apt-get install -y docker-compose
+          fi
+          
+          # Останавливаем контейнеры
+          docker-compose down || true
+          
+          # Очищаем старые образы
+          docker system prune -af || true
+          
+          # Собираем и запускаем
+          docker-compose build --no-cache
+          docker-compose up -d
+          
+          # Проверяем статус
+          docker-compose ps
+          
+          # Ждем запуска backend
+          sleep 10
+          
+          # Проверяем логи
+          docker-compose logs --tail=30 backend

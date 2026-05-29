@@ -1,0 +1,56 @@
+[
+  {
+    "id": 1775185266556,
+    "userId": 1,
+    "userName": "?????????????",
+    "userRole": "admin",
+    "action": "DELETE /api/categories/222",
+    "details": {
+      "method": "DELETE",
+      "path": "/222",
+      "body": {},
+      "query": {},
+      "params": {
+        "id": "222"
+      },
+      "responseStatus": 200
+    },
+    "createdAt": "2026-04-03T03:01:06.556Z"
+  },
+  {
+    "id": 1775185253253,
+    "userId": 1,
+    "userName": "?????????????",
+    "userRole": "admin",
+    "action": "DELETE /api/clients/46",
+    "details": {
+      "method": "DELETE",
+      "path": "/46",
+      "body": {},
+      "query": {},
+      "params": {
+        "id": "46"
+      },
+      "responseStatus": 200
+    },
+    "createdAt": "2026-04-03T03:00:53.253Z"
+  },
+  {
+    "id": 1775185245054,
+    "userId": 1,
+    "userName": "?????????????",
+    "userRole": "admin",
+    "action": "DELETE /api/sale-documents/72",
+    "details": {
+      "method": "DELETE",
+      "path": "/72",
+      "body": {},
+      "query": {},
+      "params": {
+        "id": "72"
+      },
+      "responseStatus": 200
+    },
+    "createdAt": "2026-04-03T03:00:45.054Z"
+  }
+]

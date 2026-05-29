@@ -1,0 +1,218 @@
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  email     String   @unique
+  password  String
+  name      String
+  role      String   @default("manager")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model ProductCategory {
+  productId  Int
+  categoryId Int
+  product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  category   Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@id([productId, categoryId])
+}
+
+model Product {
+  id           Int       @id @default(autoincrement())
+  name         String
+  article      String?   @unique
+  cost_price   Float     @default(0)
+  retail_price Float     @default(0)
+  description  String?   @db.Text
+  stock        Int       @default(0)
+  min_stock    Int       @default(5)
+  image_url    String?
+  costBreakdown Json?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  categories          ProductCategory[]
+  sales               Sale[]
+  characteristics    ProductCharacteristic[]
+  saleDocumentItems   SaleDocumentItem[]
+  images              ProductImage[]
+  priceHistory        PriceHistory[]
+}
+
+model Category {
+  id          Int       @id @default(autoincrement())
+  name        String    @unique
+  description String?   @db.Text
+  icon        String?
+  sortOrder   Int       @default(0)
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  products ProductCategory[]
+  fields   CategoryField[]
+}
+
+model CategoryField {
+  id         Int       @id @default(autoincrement())
+  categoryId Int
+  name       String
+  fieldType  String
+  isRequired Boolean   @default(false)
+  sortOrder  Int       @default(0)
+  options    String?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  category   Category  @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  values     ProductCharacteristic[]
+}
+
+model ProductCharacteristic {
+  id         Int           @id @default(autoincrement())
+  productId  Int
+  fieldId    Int
+  value      String
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+  product    Product       @relation(fields: [productId], references: [id], onDelete: Cascade)
+  field      CategoryField @relation(fields: [fieldId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, fieldId])
+}
+
+model Sale {
+  id             Int          @id @default(autoincrement())
+  productId      Int
+  quantity       Int
+  selling_price  Float
+  total_cost     Float
+  total_revenue  Float
+  profit         Float
+  customer_name  String?
+  customer_phone String?
+  sale_date      DateTime     @default(now())
+  createdAt      DateTime     @default(now())
+  documentId     Int?
+  product        Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  document       SaleDocument? @relation(fields: [documentId], references: [id], onDelete: SetNull)
+}
+
+model Expense {
+  id           Int      @id @default(autoincrement())
+  name         String
+  amount       Float
+  category     String
+  description  String?  @db.Text
+  expense_date DateTime @default(now())
+  createdAt    DateTime @default(now())
+}
+
+model Client {
+  id               Int       @id @default(autoincrement())
+  firstName        String
+  lastName         String?
+  middleName       String?
+  phone            String    @unique
+  email            String?
+  birthDate        DateTime?
+  address          String?
+  city             String?
+  passport         String?
+  driverLicense    String?
+  carModel         String?
+  carYear          Int?
+  carVin           String?
+  carNumber        String?
+  notes            String?   @db.Text
+  totalOrders      Int       @default(0)
+  totalSpent       Float     @default(0)
+  discountPercent  Int       @default(0)
+  discountUpdatedAt DateTime?
+  discountUpdatedBy Int?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  orders SaleDocument[]
+}
+
+model SaleDocument {
+  id               Int              @id @default(autoincrement())
+  documentNumber   String           @unique
+  documentType     String
+  clientId         Int?
+  client           Client?          @relation(fields: [clientId], references: [id])
+  clientName       String?
+  clientPhone      String?
+  customerName     String?
+  customerPhone    String?
+  customerEmail    String?
+  customerAddress  String?
+  description      String?
+  subtotal         Float
+  discount         Float            @default(0)
+  total            Float
+  paymentMethod    String?
+  paymentStatus    String           @default("unpaid")
+  orderStatus      String           @default("ordered")
+  saleDate         DateTime         @default(now())
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  createdBy        Int?
+  sellerName       String?
+  items            SaleDocumentItem[]
+  sales            Sale[]
+}
+
+model SaleDocumentItem {
+  id             Int          @id @default(autoincrement())
+  documentId     Int
+  document       SaleDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  productId      Int
+  product        Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  productName    String
+  productArticle String
+  quantity       Int
+  price          Float
+  cost_price     Float        @default(0)
+  total          Float
+  createdAt      DateTime     @default(now())
+}
+
+model ProductImage {
+  id         Int      @id @default(autoincrement())
+  productId  Int
+  product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  url        String
+  filename   String
+  size       Int
+  isMain     Boolean  @default(false)
+  sortOrder  Int      @default(0)
+  createdAt  DateTime @default(now())
+
+  @@index([productId])
+}
+
+model PriceHistory {
+  id         Int      @id @default(autoincrement())
+  productId  Int
+  product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  oldPrice   Float
+  newPrice   Float
+  changeType String
+  reason     String?
+  changedBy  Int
+  changedAt  DateTime @default(now())
+
+  @@index([productId])
+  @@index([changedAt])
+}

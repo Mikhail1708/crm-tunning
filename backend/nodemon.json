@@ -1,0 +1,9 @@
+{
+  "watch": ["src"],
+  "ignore": ["src/**/*.test.ts", "logs/*", "logs/**/*"],
+  "ext": "ts",
+  "exec": "ts-node src/server.ts",
+  "signal": "SIGTERM",
+  "delay": 1000,
+  "verbose": false
+}
