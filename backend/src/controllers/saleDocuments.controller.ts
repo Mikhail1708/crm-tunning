@@ -117,7 +117,10 @@ export const getSaleDocuments = async (req: RequestWithUser, res: Response): Pro
             cost_price: true
           }
         },
+<<<<<<< HEAD
         // ✅ ИСПРАВЛЕНО: добавлен полный client с city
+=======
+>>>>>>> feature/edit-order
         client: {
           select: {
             id: true,
@@ -126,7 +129,11 @@ export const getSaleDocuments = async (req: RequestWithUser, res: Response): Pro
             middleName: true,
             phone: true,
             email: true,
+<<<<<<< HEAD
             city: true,        // 👈 ГОРОД
+=======
+            city: true,
+>>>>>>> feature/edit-order
             carModel: true,
             carNumber: true,
             discountPercent: true,
@@ -202,7 +209,10 @@ export const getSaleDocumentById = async (req: RequestWithUser, res: Response): 
             total: true
           }
         },
+<<<<<<< HEAD
         // ✅ ИСПРАВЛЕНО: добавлен полный client с city
+=======
+>>>>>>> feature/edit-order
         client: {
           select: {
             id: true,
@@ -211,7 +221,11 @@ export const getSaleDocumentById = async (req: RequestWithUser, res: Response): 
             middleName: true,
             phone: true,
             email: true,
+<<<<<<< HEAD
             city: true,        // 👈 ГОРОД
+=======
+            city: true,
+>>>>>>> feature/edit-order
             carModel: true,
             carNumber: true,
             discountPercent: true,
@@ -623,6 +637,338 @@ export const updateSaleDocument = async (req: RequestWithUser, res: Response): P
 };
 
 /**
+<<<<<<< HEAD
+=======
+ * PUT /api/sale-documents/:id/full
+ * Полное обновление заказа (корзина, скидка, клиент)
+ */
+export const updateFullOrder = async (req: RequestWithUser, res: Response): Promise<void> => {
+  const startTime = Date.now();
+  
+  try {
+    if (!req.user) {
+      res.status(401).json({ message: 'Не авторизован' });
+      return;
+    }
+    
+    const { id } = req.params;
+    const documentId = parseInt(id);
+    
+    if (isNaN(documentId)) {
+      res.status(400).json({ message: 'Неверный ID документа' });
+      return;
+    }
+    
+    const { items, discount, description, clientData } = req.body;
+    
+    // Проверяем существование заказа
+    const existingDocument = await prisma.saleDocument.findUnique({
+      where: { id: documentId },
+      include: { items: true }
+    });
+    
+    if (!existingDocument) {
+      res.status(404).json({ message: 'Заказ не найден' });
+      return;
+    }
+    
+    if (!items || items.length === 0) {
+      res.status(400).json({ message: 'Заказ не может быть пустым' });
+      return;
+    }
+    
+    // Получаем актуальные данные о товарах
+    const productIds = items.map((item: any) => item.productId);
+    const products = await prisma.product.findMany({
+      where: { id: { in: productIds } },
+      select: { id: true, name: true, article: true, cost_price: true, stock: true }
+    });
+    
+    const productMap = new Map(products.map(p => [p.id, p]));
+    
+    // Проверяем наличие всех товаров
+    const missingIds = productIds.filter(id => !productMap.has(id));
+    if (missingIds.length > 0) {
+      res.status(404).json({ message: `Товары не найдены: ${missingIds.join(', ')}` });
+      return;
+    }
+    
+    // Вычисляем новую сумму заказа
+    let subtotal = 0;
+    const itemsWithDetails = [];
+    
+    // Создаем карту старых количеств для расчета возврата на склад
+    const oldQuantities = new Map<number, number>();
+    for (const oldItem of existingDocument.items) {
+      oldQuantities.set(oldItem.productId, oldItem.quantity);
+    }
+    
+    for (const item of items) {
+      const product = productMap.get(item.productId);
+      if (!product) continue;
+      
+      const oldQuantity = oldQuantities.get(item.productId) || 0;
+      const quantityDelta = item.quantity - oldQuantity;
+      
+      // Проверяем остатки только если количество увеличилось
+      if (quantityDelta > 0 && product.stock < quantityDelta) {
+        res.status(400).json({
+          message: `Недостаточно товара "${product.name}" на складе. Доступно: ${product.stock}, требуется еще: ${quantityDelta}`
+        });
+        return;
+      }
+      
+      const itemTotal = item.price * item.quantity;
+      subtotal += itemTotal;
+      
+      itemsWithDetails.push({
+        id: item.id,
+        productId: item.productId,
+        quantity: item.quantity,
+        price: item.price,
+        total: itemTotal,
+        product
+      });
+    }
+    
+    // Расчет скидки
+    const totalDiscount = discount || 0;
+    const total = Math.max(0, subtotal - totalDiscount);
+    
+    // Обновляем или создаем клиента
+    let clientId = existingDocument.clientId;
+    if (clientData && (clientData.name || clientData.phone)) {
+      // Ищем существующего клиента по телефону
+      let client = null;
+      if (clientData.phone) {
+        client = await prisma.client.findFirst({
+          where: { phone: clientData.phone }
+        });
+      }
+      
+      if (client) {
+        clientId = client.id;
+        // Обновляем данные клиента
+        await prisma.client.update({
+          where: { id: client.id },
+          data: {
+            firstName: clientData.name.split(' ')[1] || clientData.name,
+            lastName: clientData.name.split(' ')[0] || '',
+            middleName: clientData.name.split(' ')[2] || '',
+            phone: clientData.phone,
+            email: clientData.email || undefined,
+            city: clientData.city || undefined,
+          }
+        });
+      } else if (clientData.name || clientData.phone) {
+        // Создаем нового клиента
+        const nameParts = clientData.name.split(' ');
+        const newClient = await prisma.client.create({
+          data: {
+            firstName: nameParts[1] || clientData.name,
+            lastName: nameParts[0] || '',
+            middleName: nameParts[2] || '',
+            phone: clientData.phone,
+            email: clientData.email || null,
+            city: clientData.city || null,
+          }
+        });
+        clientId = newClient.id;
+      }
+    }
+    
+    // Обновляем сумму покупок клиента
+    const oldTotal = existingDocument.total;
+    const totalDelta = total - oldTotal;
+    
+    // Выполняем обновление в транзакции
+    const result = await prisma.$transaction(async (tx) => {
+      // 1. Возвращаем старые товары на склад
+      for (const oldItem of existingDocument.items) {
+        await tx.$executeRaw`
+          UPDATE "Product" 
+          SET stock = stock + ${oldItem.quantity}
+          WHERE id = ${oldItem.productId}
+        `;
+      }
+      
+      // 2. Обновляем документ
+      const updatedDocument = await tx.saleDocument.update({
+        where: { id: documentId },
+        data: {
+          clientId: clientId,
+          clientName: clientData?.name || existingDocument.clientName,
+          clientPhone: clientData?.phone || existingDocument.clientPhone,
+          customerName: clientData?.name || existingDocument.customerName,
+          customerPhone: clientData?.phone || existingDocument.customerPhone,
+          customerEmail: clientData?.email || existingDocument.customerEmail,
+          customerAddress: clientData?.address || existingDocument.customerAddress,
+          subtotal: subtotal,
+          discount: totalDiscount,
+          total: total,
+          description: description !== undefined ? description : existingDocument.description,
+        }
+      });
+      
+      // 3. Удаляем старые позиции
+      await tx.saleDocumentItem.deleteMany({
+        where: { documentId: documentId }
+      });
+      
+      // 4. Создаем новые позиции
+      await tx.saleDocumentItem.createMany({
+        data: itemsWithDetails.map(item => ({
+          documentId: documentId,
+          productId: item.productId,
+          productName: item.product.name,
+          productArticle: item.product.article || '—',
+          quantity: item.quantity,
+          price: item.price,
+          cost_price: item.product.cost_price,
+          total: item.total
+        }))
+      });
+      
+      // 5. Обновляем склад (списываем новые количества)
+      const updateCases = itemsWithDetails
+        .map(item => `WHEN ${item.productId} THEN stock - ${item.quantity}`)
+        .join(' ');
+      
+      await tx.$executeRaw`
+        UPDATE "Product" 
+        SET stock = CASE id 
+          ${Prisma.raw(updateCases)}
+          ELSE stock 
+        END
+        WHERE id IN (${Prisma.join(productIds)})
+      `;
+      
+      // 6. Обновляем статистику клиента
+      if (clientId) {
+        await tx.client.update({
+          where: { id: clientId },
+          data: {
+            totalSpent: { increment: totalDelta }
+          }
+        });
+      } else if (existingDocument.clientId && totalDelta !== 0) {
+        await tx.client.update({
+          where: { id: existingDocument.clientId },
+          data: {
+            totalSpent: { increment: totalDelta }
+          }
+        });
+      }
+      
+      // 7. Обновляем записи в таблице Sale
+      await tx.sale.deleteMany({
+        where: { documentId: documentId }
+      });
+      
+      await tx.sale.createMany({
+        data: itemsWithDetails.map(item => {
+          const itemTotalCost = item.product.cost_price * item.quantity;
+          const itemTotalRevenue = item.price * item.quantity;
+          return {
+            productId: item.productId,
+            quantity: item.quantity,
+            selling_price: item.price,
+            total_cost: itemTotalCost,
+            total_revenue: itemTotalRevenue,
+            profit: itemTotalRevenue - itemTotalCost,
+            customer_name: clientData?.name || existingDocument.customerName,
+            customer_phone: clientData?.phone || existingDocument.customerPhone,
+            documentId: documentId
+          };
+        })
+      });
+      
+      return updatedDocument;
+    }, {
+      timeout: 15000,
+      isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted
+    });
+    
+    const duration = Date.now() - startTime;
+    if (duration > 1000) {
+      console.warn(`⚠️ Slow order update: ${duration}ms`);
+    }
+    
+    // Получаем обновленный документ с полными данными
+    const updatedDocument = await prisma.saleDocument.findUnique({
+      where: { id: documentId },
+      select: {
+        id: true,
+        documentNumber: true,
+        documentType: true,
+        clientId: true,
+        clientName: true,
+        clientPhone: true,
+        customerName: true,
+        customerPhone: true,
+        customerEmail: true,
+        customerAddress: true,
+        description: true,
+        subtotal: true,
+        discount: true,
+        total: true,
+        paymentMethod: true,
+        paymentStatus: true,
+        orderStatus: true,
+        saleDate: true,
+        createdAt: true,
+        createdBy: true,
+        sellerName: true,
+        items: {
+          select: {
+            id: true,
+            productId: true,
+            productName: true,
+            productArticle: true,
+            quantity: true,
+            price: true,
+            cost_price: true,
+            total: true
+          }
+        },
+        client: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            middleName: true,
+            phone: true,
+            email: true,
+            city: true,
+            discountPercent: true
+          }
+        }
+      }
+    });
+    
+    res.json(updatedDocument);
+    
+  } catch (error) {
+    const duration = Date.now() - startTime;
+    console.error(`❌ Error updating order (${duration}ms):`, error);
+    
+    if (error instanceof Error) {
+      if (error.message.includes('Foreign key')) {
+        res.status(400).json({ message: 'Некорректные данные: проверьте ID товаров или клиента' });
+        return;
+      }
+      if (error.message.includes('timeout')) {
+        res.status(503).json({ message: 'Сервер перегружен, попробуйте позже' });
+        return;
+      }
+    }
+    
+    res.status(500).json({ message: error instanceof Error ? error.message : 'Ошибка обновления заказа' });
+  }
+};
+
+/**
+>>>>>>> feature/edit-order
  * PATCH /api/sale-documents/:id/payment-status
  * Обновить статус оплаты
  */

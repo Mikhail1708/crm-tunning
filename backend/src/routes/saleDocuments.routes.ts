@@ -10,7 +10,12 @@ import {
   getOrderStatus,
   deleteSaleDocument,
   getDocumentsByClient,
+<<<<<<< HEAD
   getClientStatistics
+=======
+  getClientStatistics,
+  updateFullOrder,        // 🆕
+>>>>>>> feature/edit-order
 } from '../controllers/saleDocuments.controller';
 import { authMiddleware, managerAccess } from '../middleware/auth.middleware';
 
@@ -26,6 +31,10 @@ router.get('/:id', getSaleDocumentById as any);
 router.get('/:id/status', getOrderStatus as any);
 router.post('/', managerAccess as any, createSaleDocument as any);
 router.put('/:id', managerAccess as any, updateSaleDocument as any);
+<<<<<<< HEAD
+=======
+router.put('/:id/full', managerAccess as any, updateFullOrder as any);  // 🆕
+>>>>>>> feature/edit-order
 router.patch('/:id/payment-status', managerAccess as any, updatePaymentStatus as any);
 router.put('/:id/payment', managerAccess as any, updatePaymentStatus as any);
 router.patch('/:id/status', updateOrderStatus as any);

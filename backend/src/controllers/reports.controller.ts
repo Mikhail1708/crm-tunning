@@ -412,7 +412,11 @@ export const getProfitByProduct = async (req: RequestWithUser, res: Response): P
     });
     
     if (paidOrderIds.length === 0) {
+<<<<<<< HEAD
       const emptyReport: ProductProfitReport[] = products.map(p => ({
+=======
+      const emptyReport: any[] = products.map(p => ({
+>>>>>>> feature/edit-order
         id: p.id,
         name: p.name,
         article: p.article,
@@ -444,7 +448,11 @@ export const getProfitByProduct = async (req: RequestWithUser, res: Response): P
       }
     });
     
+<<<<<<< HEAD
     const report: ProductProfitReport[] = products.map(product => {
+=======
+    const report: any[] = products.map(product => {
+>>>>>>> feature/edit-order
       const item = items.find(i => i.productId === product.id);
       const total_sold = item?._sum.quantity || 0;
       const total_revenue = item?._sum.total || 0;
@@ -740,6 +748,10 @@ export const getDatabaseDump = async (req: RequestWithUser, res: Response): Prom
       }
     };
     
+<<<<<<< HEAD
+=======
+    // Сохраняем на диск (опционально)
+>>>>>>> feature/edit-order
     const backupDir = path.join(process.cwd(), 'backups');
     if (!fs.existsSync(backupDir)) {
       fs.mkdirSync(backupDir, { recursive: true });
@@ -750,6 +762,11 @@ export const getDatabaseDump = async (req: RequestWithUser, res: Response): Prom
     fs.writeFileSync(filepath, JSON.stringify(dump, null, 2), 'utf-8');
     
     console.log(`✅ Дамп сохранен: ${filepath}`);
+<<<<<<< HEAD
+=======
+    
+    // Отправляем JSON клиенту
+>>>>>>> feature/edit-order
     res.json(dump);
   } catch (error) {
     console.error('Error creating database dump:', error);

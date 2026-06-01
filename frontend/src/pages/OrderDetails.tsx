@@ -8,6 +8,10 @@ import { formatPrice, formatDate } from '../utils/formatters';
 import { PrintDocument, ReceiptType, LegalEntityData } from '../components/ui/PrintDocument';
 import { ReceiptTypeModal } from '../components/ui/ReceiptTypeModal';
 import { LegalEntityModal } from '../components/ui/LegalEntityModal';
+<<<<<<< HEAD
+=======
+import { EditOrderModal } from '../components/modals/EditOrderModal';
+>>>>>>> feature/edit-order
 import { SaleDocument, OrderStatus } from '../types';
 import { OrderStatusBadge } from '../components/ui/OrderStatusBadge';
 import { OrderStatusSelect } from '../components/ui/OrderStatusSelect';
@@ -31,14 +35,23 @@ import {
   Percent,
   Edit2,
   Save,
+<<<<<<< HEAD
   X
+=======
+  X,
+  Edit3
+>>>>>>> feature/edit-order
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 export const OrderDetails: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+<<<<<<< HEAD
   const { user } = useAuth(); // Получаем текущего пользователя
+=======
+  const { user } = useAuth();
+>>>>>>> feature/edit-order
   const [order, setOrder] = useState<SaleDocument | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [generating, setGenerating] = useState<boolean>(false);
@@ -54,6 +67,12 @@ export const OrderDetails: React.FC = () => {
   const [showLegalEntityModal, setShowLegalEntityModal] = useState<boolean>(false);
   const [legalData, setLegalData] = useState<LegalEntityData | null>(null);
 
+<<<<<<< HEAD
+=======
+  // Состояние для модального окна редактирования заказа
+  const [showEditModal, setShowEditModal] = useState<boolean>(false);
+
+>>>>>>> feature/edit-order
   // Статус заказа из БД (сервера)
   const [orderStatus, setOrderStatus] = useState<OrderStatus>('ordered');
 
@@ -166,11 +185,17 @@ export const OrderDetails: React.FC = () => {
 
   // Получение имени продавца из заказа или текущего пользователя
   const getSellerName = (): string => {
+<<<<<<< HEAD
     // Если в заказе уже есть sellerName, используем его
     if ((order as any)?.sellerName && (order as any).sellerName !== '___________________') {
       return (order as any).sellerName;
     }
     // Иначе берем имя текущего пользователя
+=======
+    if ((order as any)?.sellerName && (order as any).sellerName !== '___________________') {
+      return (order as any).sellerName;
+    }
+>>>>>>> feature/edit-order
     if (user?.name) {
       return user.name;
     }
@@ -182,6 +207,7 @@ export const OrderDetails: React.FC = () => {
 
   // Получение процента скидки
   const getDiscountPercent = (): number => {
+<<<<<<< HEAD
     // Если есть скидка клиента
     if ((order as any)?.clientDiscount && (order as any).clientDiscount > 0) {
       return (order as any).clientDiscount;
@@ -190,6 +216,14 @@ export const OrderDetails: React.FC = () => {
     if (order?.discount && order?.subtotal && order.discount > 0) {
       const percent = (order.discount / order.subtotal) * 100;
       return Math.round(percent * 10) / 10; // Округляем до 1 знака
+=======
+    if ((order as any)?.clientDiscount && (order as any).clientDiscount > 0) {
+      return (order as any).clientDiscount;
+    }
+    if (order?.discount && order?.subtotal && order.discount > 0) {
+      const percent = (order.discount / order.subtotal) * 100;
+      return Math.round(percent * 10) / 10;
+>>>>>>> feature/edit-order
     }
     return 0;
   };
@@ -207,16 +241,27 @@ export const OrderDetails: React.FC = () => {
       
       await saleDocumentsApi.update(order.id, { documentType: 'receipt' });
       
+<<<<<<< HEAD
       // Создаем финальный заказ с правильными данными для чека
+=======
+>>>>>>> feature/edit-order
       const finalOrder = { 
         ...order, 
         documentType: 'receipt', 
         paymentStatus: 'paid',
+<<<<<<< HEAD
         sellerName: getSellerName(),           // Имя продавца
         discountPercent: getDiscountPercent(), // Процент скидки
         discount: order.discount,               // Сумма скидки
         subtotal: order.subtotal,               // Сумма без скидки
         total: order.total                      // Итоговая сумма
+=======
+        sellerName: getSellerName(),
+        discountPercent: getDiscountPercent(),
+        discount: order.discount,
+        subtotal: order.subtotal,
+        total: order.total
+>>>>>>> feature/edit-order
       };
       setOrder(finalOrder);
       
@@ -271,7 +316,10 @@ export const OrderDetails: React.FC = () => {
     const type = order.documentType === 'receipt' ? 'receipt' : 'invoice';
     const receiptType = order.documentType === 'receipt' && legalData ? 'legal' : 'individual';
     
+<<<<<<< HEAD
     // Добавляем недостающие данные перед печатью
+=======
+>>>>>>> feature/edit-order
     const printOrder = {
       ...order,
       sellerName: getSellerName(),
@@ -325,6 +373,16 @@ export const OrderDetails: React.FC = () => {
         </div>
         <div className="flex gap-2">
           <Button
+<<<<<<< HEAD
+=======
+            onClick={() => setShowEditModal(true)}
+            icon={Edit3}
+            variant="secondary"
+          >
+            Редактировать
+          </Button>
+          <Button
+>>>>>>> feature/edit-order
             onClick={handleOpenReceiptModal}
             disabled={generating}
             icon={Receipt}
@@ -345,7 +403,10 @@ export const OrderDetails: React.FC = () => {
 
       {/* Статус заказа и оплаты */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+<<<<<<< HEAD
         {/* Блок статуса заказа */}
+=======
+>>>>>>> feature/edit-order
         <div className={`p-4 rounded-lg border ${
           orderStatus === 'ordered' 
             ? 'bg-blue-50 border-blue-200 dark:bg-blue-900/20 dark:border-blue-800' 
@@ -382,7 +443,10 @@ export const OrderDetails: React.FC = () => {
           </div>
         </div>
 
+<<<<<<< HEAD
         {/* Блок статуса оплаты */}
+=======
+>>>>>>> feature/edit-order
         <div className={`p-4 rounded-lg border ${
           order.paymentStatus === 'paid' 
             ? 'bg-green-50 border-green-200 dark:bg-green-900/20 dark:border-green-800' 
@@ -428,7 +492,10 @@ export const OrderDetails: React.FC = () => {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+<<<<<<< HEAD
         {/* Информация о покупателе */}
+=======
+>>>>>>> feature/edit-order
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
           <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
             <User size={20} />
@@ -460,7 +527,17 @@ export const OrderDetails: React.FC = () => {
               </div>
             )}
 
+<<<<<<< HEAD
             {/* Комментарий к заказу с возможностью редактирования */}
+=======
+            {(order as any)?.client?.city && (
+              <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
+                <MapPin size={16} />
+                <span>{(order as any).client.city}</span>
+              </div>
+            )}
+
+>>>>>>> feature/edit-order
             <div className="mt-2 pt-2 border-t border-gray-100 dark:border-gray-700">
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2">
@@ -526,7 +603,10 @@ export const OrderDetails: React.FC = () => {
           </div>
         </div>
 
+<<<<<<< HEAD
         {/* Итоги */}
+=======
+>>>>>>> feature/edit-order
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
           <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
             <DollarSign size={20} />
@@ -538,7 +618,10 @@ export const OrderDetails: React.FC = () => {
               <span className="dark:text-gray-300">{formatPrice(order.subtotal)}</span>
             </div>
             
+<<<<<<< HEAD
             {/* Скидка клиента */}
+=======
+>>>>>>> feature/edit-order
             {(order as any).clientDiscount && (order as any).clientDiscount > 0 && (
               <div className="flex justify-between text-sm text-green-600">
                 <span className="flex items-center gap-1">
@@ -549,7 +632,10 @@ export const OrderDetails: React.FC = () => {
               </div>
             )}
             
+<<<<<<< HEAD
             {/* Ручная скидка */}
+=======
+>>>>>>> feature/edit-order
             {order.discount > 0 && (!(order as any).clientDiscount || order.discount !== (order as any).clientDiscountAmount) && (
               <div className="flex justify-between text-sm text-green-600">
                 <span className="flex items-center gap-1">
@@ -571,7 +657,10 @@ export const OrderDetails: React.FC = () => {
               </span>
             </div>
             
+<<<<<<< HEAD
             {/* Продавец */}
+=======
+>>>>>>> feature/edit-order
             <div className="flex justify-between pt-2 text-xs text-gray-400 border-t border-gray-100">
               <span>Продавец:</span>
               <span>{getSellerName()}</span>
@@ -580,7 +669,10 @@ export const OrderDetails: React.FC = () => {
         </div>
       </div>
 
+<<<<<<< HEAD
       {/* Список товаров с артикулами */}
+=======
+>>>>>>> feature/edit-order
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
         <div className="p-6 border-b border-gray-200 dark:border-gray-700">
           <h2 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
@@ -630,7 +722,10 @@ export const OrderDetails: React.FC = () => {
         </div>
       </div>
 
+<<<<<<< HEAD
       {/* Кнопки действий */}
+=======
+>>>>>>> feature/edit-order
       <div className="flex justify-end gap-3">
         {(order.documentType === 'receipt' || order.documentType === 'invoice') && (
           <Button
@@ -643,7 +738,10 @@ export const OrderDetails: React.FC = () => {
         )}
       </div>
 
+<<<<<<< HEAD
       {/* Модальные окна */}
+=======
+>>>>>>> feature/edit-order
       <ReceiptTypeModal
         isOpen={showReceiptTypeModal}
         onClose={() => setShowReceiptTypeModal(false)}
@@ -655,6 +753,16 @@ export const OrderDetails: React.FC = () => {
         onClose={() => setShowLegalEntityModal(false)}
         onSubmit={handleLegalEntitySubmit}
       />
+<<<<<<< HEAD
+=======
+
+      <EditOrderModal
+        isOpen={showEditModal}
+        onClose={() => setShowEditModal(false)}
+        order={order}
+        onOrderUpdated={loadOrder}
+      />
+>>>>>>> feature/edit-order
     </div>
   );
 };

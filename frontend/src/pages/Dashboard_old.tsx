@@ -25,24 +25,6 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
-<<<<<<< HEAD
-=======
-// 🔸 NEW: вспомогательные функции для работы с датами
-const getCurrentMonthRange = (): { start: Date; end: Date } => {
-  const now = new Date();
-  const start = new Date(now.getFullYear(), now.getMonth(), 1);
-  const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-  end.setHours(23, 59, 59, 999);
-  return { start, end };
-};
-
-const isDateInCurrentMonth = (dateStr: string): boolean => {
-  const date = new Date(dateStr);
-  const now = new Date();
-  return date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear();
-};
-
->>>>>>> feature/edit-order
 interface TopProduct {
   id: number;
   name: string;
@@ -103,11 +85,8 @@ export const Dashboard: React.FC = () => {
     try {
       setLoading(true);
       
-<<<<<<< HEAD
       //console.log('🔄 Loading dashboard data...', force ? '(force refresh)' : '');
       
-=======
->>>>>>> feature/edit-order
       const [productsRes, lowStockRes, clientsRes, salesRes] = await Promise.all([
         productsApi.getAll(),
         productsApi.getLowStock(),
@@ -119,40 +98,12 @@ export const Dashboard: React.FC = () => {
       const allSales = salesRes.data || [];
       const lowStockData = lowStockRes.data || [];
       
-<<<<<<< HEAD
       // 🔸 ИСПРАВЛЕНО: правильное получение клиентов
       let clients: Client[] = [];
       let totalClients = 0;
       
       if (clientsRes.data) {
         // Проверяем структуру ответа
-=======
-      // 🔸 NEW: получаем диапазон текущего месяца
-      const { start: monthStart, end: monthEnd } = getCurrentMonthRange();
-      
-      // Фильтруем оплаченные заказы + за текущий месяц
-      const paidSalesInMonth = allSales.filter(sale => {
-        const status = (sale.paymentStatus || '').toLowerCase();
-        const isPaid = status === 'paid' || status === 'оплачен' || status === 'payed' || status === true;
-        if (!isPaid) return false;
-        const saleDate = new Date(sale.saleDate);
-        return saleDate >= monthStart && saleDate <= monthEnd;
-      });
-      
-      // Неоплаченные за текущий месяц (для предупреждения)
-      const unpaidSalesInMonth = allSales.filter(sale => {
-        const status = (sale.paymentStatus || '').toLowerCase();
-        const isPaid = status === 'paid' || status === 'оплачен' || status === 'payed' || status === true;
-        if (isPaid) return false;
-        const saleDate = new Date(sale.saleDate);
-        return saleDate >= monthStart && saleDate <= monthEnd;
-      });
-      
-      // Клиенты (общее количество, без фильтрации по дате)
-      let clients: Client[] = [];
-      let totalClients = 0;
-      if (clientsRes.data) {
->>>>>>> feature/edit-order
         if (Array.isArray(clientsRes.data)) {
           clients = clientsRes.data;
           totalClients = clients.length;
@@ -166,16 +117,12 @@ export const Dashboard: React.FC = () => {
           clients = clientsRes.data.items;
           totalClients = clientsRes.data.total || clients.length;
         } else {
-<<<<<<< HEAD
           // Если ничего не подошло, пробуем получить из response
-=======
->>>>>>> feature/edit-order
           clients = Array.isArray(clientsRes.data) ? clientsRes.data : [];
           totalClients = clients.length;
         }
       }
       
-<<<<<<< HEAD
       // Фильтруем ТОЛЬКО ОПЛАЧЕННЫЕ заказы
       const paidSales = allSales.filter(sale => {
         const status = (sale.paymentStatus || '').toLowerCase();
@@ -192,13 +139,6 @@ export const Dashboard: React.FC = () => {
       let totalCost = 0;
       
       paidSales.forEach(sale => {
-=======
-      // 🔸 NEW: расчет статистики ТОЛЬКО по оплаченным заказам текущего месяца
-      let totalRevenue = 0;
-      let totalCost = 0;
-      
-      paidSalesInMonth.forEach(sale => {
->>>>>>> feature/edit-order
         const saleTotal = sale.total || 0;
         totalRevenue += saleTotal;
         
@@ -215,17 +155,10 @@ export const Dashboard: React.FC = () => {
       
       const totalProfit = totalRevenue - totalCost;
       const margin = totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0;
-<<<<<<< HEAD
       const totalSalesCount = paidSales.length;
       const averageCheck = totalSalesCount > 0 ? totalRevenue / totalSalesCount : 0;
       
       const unpaidTotal = unpaidSales.reduce((sum, sale) => sum + (sale.total || 0), 0);
-=======
-      const totalSalesCount = paidSalesInMonth.length;
-      const averageCheck = totalSalesCount > 0 ? totalRevenue / totalSalesCount : 0;
-      
-      const unpaidTotal = unpaidSalesInMonth.reduce((sum, sale) => sum + (sale.total || 0), 0);
->>>>>>> feature/edit-order
       const totalStock = allProducts.reduce((sum, p) => sum + (p.stock || 0), 0);
       const lowStockProductsList = lowStockData.length > 0 ? lowStockData : allProducts.filter(p => p.stock <= (p.min_stock || 5));
       
@@ -240,11 +173,7 @@ export const Dashboard: React.FC = () => {
         totalClients: totalClients,
         totalStock,
         averageCheck,
-<<<<<<< HEAD
         unpaidSales: unpaidSales.length,
-=======
-        unpaidSales: unpaidSalesInMonth.length,
->>>>>>> feature/edit-order
         unpaidTotal
       };
       
@@ -252,17 +181,10 @@ export const Dashboard: React.FC = () => {
       setLowStockProducts(lowStockProductsList);
       setLastUpdate(new Date());
       
-<<<<<<< HEAD
       // Формируем популярные товары
       const productSalesMap = new Map<number, { total_sold: number; total_revenue: number; name: string; article: string; price: number }>();
       
       paidSales.forEach(sale => {
-=======
-      // 🔸 NEW: популярные товары (на основе заказов текущего месяца)
-      const productSalesMap = new Map<number, { total_sold: number; total_revenue: number; name: string; article: string; price: number }>();
-      
-      paidSalesInMonth.forEach(sale => {
->>>>>>> feature/edit-order
         const items = sale.items || [];
         if (items.length > 0) {
           items.forEach(item => {
@@ -308,13 +230,8 @@ export const Dashboard: React.FC = () => {
         });
       setTopProducts(formattedTopProducts);
       
-<<<<<<< HEAD
       // Последние 5 заказов
       const recentSalesData: RecentSale[] = allSales
-=======
-      // 🔸 NEW: последние 5 заказов текущего месяца
-      const recentSalesData: RecentSale[] = paidSalesInMonth
->>>>>>> feature/edit-order
         .sort((a, b) => new Date(b.saleDate).getTime() - new Date(a.saleDate).getTime())
         .slice(0, 5)
         .map(sale => {
@@ -348,16 +265,11 @@ export const Dashboard: React.FC = () => {
         });
       setRecentSales(recentSalesData);
       
-<<<<<<< HEAD
       // 🔸 ИСПРАВЛЕНО: последние 5 клиентов (сортировка по дате создания)
-=======
-      // 🔸 NEW: новые клиенты, созданные в текущем месяце
->>>>>>> feature/edit-order
       const sortedClients = [...clients].sort((a, b) => 
         new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
       );
       
-<<<<<<< HEAD
       const recentClientsData: RecentClient[] = sortedClients.slice(0, 5).map((client: Client) => {
         // Формируем полное имя
         const fullName = [client.lastName, client.firstName, client.middleName]
@@ -376,27 +288,6 @@ export const Dashboard: React.FC = () => {
       });
       
       //console.log('📋 Recent clients:', recentClientsData);
-=======
-      const recentClientsData: RecentClient[] = sortedClients
-        .filter(client => isDateInCurrentMonth(client.createdAt))
-        .slice(0, 5)
-        .map((client: Client) => {
-          const fullName = [client.lastName, client.firstName, client.middleName]
-            .filter(Boolean)
-            .join(' ')
-            .trim();
-          
-          return {
-            id: client.id,
-            name: fullName || client.firstName || client.name || 'Без имени',
-            phone: client.phone,
-            city: client.city,
-            createdAt: client.createdAt,
-            totalSpent: client.totalSpent || 0
-          };
-        });
-      
->>>>>>> feature/edit-order
       setRecentClients(recentClientsData);
       
     } catch (error) {
@@ -432,12 +323,6 @@ export const Dashboard: React.FC = () => {
     );
   }
 
-<<<<<<< HEAD
-=======
-  // 🔸 NEW: добавим подзаголовок с указанием месяца
-  const currentMonthName = new Date().toLocaleString('ru-RU', { month: 'long', year: 'numeric' });
-
->>>>>>> feature/edit-order
   const stats = [
     {
       title: 'Продажи',
@@ -495,13 +380,7 @@ export const Dashboard: React.FC = () => {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Главная</h1>
-<<<<<<< HEAD
           <p className="text-gray-500 mt-1">Обзор состояния бизнеса</p>
-=======
-          <p className="text-gray-500 mt-1">
-            Обзор состояния бизнеса за <span className="font-medium">{currentMonthName}</span>
-          </p>
->>>>>>> feature/edit-order
           {lastUpdate && (
             <p className="text-xs text-gray-400 mt-1 flex items-center gap-1">
               <Calendar size={12} />
@@ -519,22 +398,14 @@ export const Dashboard: React.FC = () => {
         </button>
       </div>
 
-<<<<<<< HEAD
       {/* Предупреждение о неоплаченных заказах */}
-=======
-      {/* Предупреждение о неоплаченных заказах (за текущий месяц) */}
->>>>>>> feature/edit-order
       {summary.unpaidSales > 0 && (
         <div className="bg-yellow-50 border-l-4 border-yellow-400 rounded-lg p-4">
           <div className="flex items-start gap-3">
             <AlertCircle className="text-yellow-400 flex-shrink-0 mt-0.5" size={20} />
             <div>
               <p className="text-yellow-800 font-medium">
-<<<<<<< HEAD
                 Внимание: {summary.unpaidSales} неоплаченных заказов на сумму {formatPrice(summary.unpaidTotal)}
-=======
-                Внимание: {summary.unpaidSales} неоплаченных заказов за текущий месяц на сумму {formatPrice(summary.unpaidTotal)}
->>>>>>> feature/edit-order
               </p>
               <p className="text-yellow-700 text-sm mt-1">
                 В статистике главной страницы учитываются только оплаченные заказы. 
@@ -605,11 +476,7 @@ export const Dashboard: React.FC = () => {
           </div>
         </div>
 
-<<<<<<< HEAD
         {/* Популярные товары */}
-=======
-        {/* Популярные товары за текущий месяц */}
->>>>>>> feature/edit-order
         <div className="bg-white rounded-xl shadow-sm border border-gray-200">
           <div className="p-5 border-b border-gray-200">
             <div className="flex items-center justify-between">
@@ -617,22 +484,14 @@ export const Dashboard: React.FC = () => {
                 <TrendingUp size={20} className="text-primary-600" />
                 <h2 className="text-lg font-semibold text-gray-900">Популярные товары</h2>
               </div>
-<<<<<<< HEAD
               <span className="text-xs text-gray-400">Топ по продажам (оплаченные)</span>
-=======
-              <span className="text-xs text-gray-400">Топ по продажам (оплаченные, тек. месяц)</span>
->>>>>>> feature/edit-order
             </div>
           </div>
           <div className="p-5">
             {topProducts.length === 0 ? (
               <div className="text-center py-8">
                 <ShoppingBag size={48} className="mx-auto mb-3 text-gray-300" />
-<<<<<<< HEAD
                 <p className="text-gray-500">Нет данных о продажах</p>
-=======
-                <p className="text-gray-500">Нет данных о продажах за текущий месяц</p>
->>>>>>> feature/edit-order
                 <p className="text-sm text-gray-400 mt-1">Добавьте первые продажи</p>
               </div>
             ) : (
@@ -670,11 +529,7 @@ export const Dashboard: React.FC = () => {
 
       {/* Вторая строка */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-<<<<<<< HEAD
         {/* Последние заказы */}
-=======
-        {/* Последние заказы (только текущий месяц) */}
->>>>>>> feature/edit-order
         <div className="bg-white rounded-xl shadow-sm border border-gray-200">
           <div className="p-5 border-b border-gray-200">
             <div className="flex items-center justify-between">
@@ -694,11 +549,7 @@ export const Dashboard: React.FC = () => {
             {recentSales.length === 0 ? (
               <div className="text-center py-8">
                 <Receipt size={48} className="mx-auto mb-3 text-gray-300" />
-<<<<<<< HEAD
                 <p className="text-gray-500">Нет заказов</p>
-=======
-                <p className="text-gray-500">Нет оплаченных заказов за текущий месяц</p>
->>>>>>> feature/edit-order
                 <p className="text-sm text-gray-400 mt-1">Создайте первый заказ</p>
               </div>
             ) : (
@@ -756,11 +607,7 @@ export const Dashboard: React.FC = () => {
           </div>
         </div>
 
-<<<<<<< HEAD
         {/* Новые клиенты */}
-=======
-        {/* Новые клиенты (зарегистрированные в текущем месяце) */}
->>>>>>> feature/edit-order
         <div className="bg-white rounded-xl shadow-sm border border-gray-200">
           <div className="p-5 border-b border-gray-200">
             <div className="flex items-center justify-between">
@@ -780,11 +627,7 @@ export const Dashboard: React.FC = () => {
             {recentClients.length === 0 ? (
               <div className="text-center py-8">
                 <Users size={48} className="mx-auto mb-3 text-gray-300" />
-<<<<<<< HEAD
                 <p className="text-gray-500">Нет клиентов</p>
-=======
-                <p className="text-gray-500">Нет новых клиентов за текущий месяц</p>
->>>>>>> feature/edit-order
                 <p className="text-sm text-gray-400 mt-1">Добавьте первого клиента</p>
               </div>
             ) : (
@@ -822,19 +665,11 @@ export const Dashboard: React.FC = () => {
         </div>
       </div>
 
-<<<<<<< HEAD
       {/* Ключевые показатели */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200">
         <div className="p-5 border-b border-gray-200">
           <h2 className="text-lg font-semibold text-gray-900">Ключевые показатели</h2>
           <p className="text-xs text-gray-400 mt-1">* Данные только по оплаченным заказам</p>
-=======
-      {/* Ключевые показатели за текущий месяц */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200">
-        <div className="p-5 border-b border-gray-200">
-          <h2 className="text-lg font-semibold text-gray-900">Ключевые показатели</h2>
-          <p className="text-xs text-gray-400 mt-1">* Данные только по оплаченным заказам за текущий месяц</p>
->>>>>>> feature/edit-order
         </div>
         <div className="p-5">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

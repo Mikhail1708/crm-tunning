@@ -1,5 +1,10 @@
 generator client {
+<<<<<<< HEAD
   provider = "prisma-client-js"
+=======
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+>>>>>>> feature/edit-order
 }
 
 datasource db {
@@ -17,12 +22,20 @@ model User {
   updatedAt DateTime @updatedAt
 }
 
+<<<<<<< HEAD
 // СВЯЗУЮЩАЯ ТАБЛИЦА для many-to-many
 model ProductCategory {
   productId   Int
   categoryId  Int
   product     Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
   category    Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+=======
+model ProductCategory {
+  productId  Int
+  categoryId Int
+  product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  category   Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+>>>>>>> feature/edit-order
 
   @@id([productId, categoryId])
 }
@@ -37,6 +50,7 @@ model Product {
   stock        Int       @default(0)
   min_stock    Int       @default(5)
   image_url    String?
+<<<<<<< HEAD
   costBreakdown Json?     
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
@@ -48,6 +62,18 @@ model Product {
   saleDocumentItems SaleDocumentItem[]
   images         ProductImage[]      // 👈 ДОБАВИТЬ эту строку
   priceHistory   PriceHistory[]      // 👈 ДОБАВИТЬ эту строку
+=======
+  costBreakdown Json?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  categories          ProductCategory[]
+  sales               Sale[]
+  characteristics    ProductCharacteristic[]
+  saleDocumentItems   SaleDocumentItem[]
+  images              ProductImage[]
+  priceHistory        PriceHistory[]
+>>>>>>> feature/edit-order
 }
 
 model Category {
@@ -59,6 +85,7 @@ model Category {
   isActive    Boolean   @default(true)
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
+<<<<<<< HEAD
   
   // Связи
   products    ProductCategory[]
@@ -77,6 +104,25 @@ model CategoryField {
   updatedAt   DateTime  @updatedAt
   category    Category  @relation(fields: [categoryId], references: [id], onDelete: Cascade)
   values      ProductCharacteristic[]
+=======
+
+  products ProductCategory[]
+  fields   CategoryField[]
+}
+
+model CategoryField {
+  id         Int       @id @default(autoincrement())
+  categoryId Int
+  name       String
+  fieldType  String
+  isRequired Boolean   @default(false)
+  sortOrder  Int       @default(0)
+  options    String?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  category   Category  @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  values     ProductCharacteristic[]
+>>>>>>> feature/edit-order
 }
 
 model ProductCharacteristic {
@@ -110,6 +156,7 @@ model Sale {
 }
 
 model Expense {
+<<<<<<< HEAD
   id          Int      @id @default(autoincrement())
   name        String
   amount      Float
@@ -173,6 +220,71 @@ model SaleDocument {
   sellerName     String?
   items          SaleDocumentItem[]
   sales          Sale[]
+=======
+  id           Int      @id @default(autoincrement())
+  name         String
+  amount       Float
+  category     String
+  description  String?  @db.Text
+  expense_date DateTime @default(now())
+  createdAt    DateTime @default(now())
+}
+
+model Client {
+  id               Int       @id @default(autoincrement())
+  firstName        String
+  lastName         String?
+  middleName       String?
+  phone            String    @unique
+  email            String?
+  birthDate        DateTime?
+  address          String?
+  city             String?
+  passport         String?
+  driverLicense    String?
+  carModel         String?
+  carYear          Int?
+  carVin           String?
+  carNumber        String?
+  notes            String?   @db.Text
+  totalOrders      Int       @default(0)
+  totalSpent       Float     @default(0)
+  discountPercent  Int       @default(0)
+  discountUpdatedAt DateTime?
+  discountUpdatedBy Int?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  orders SaleDocument[]
+}
+
+model SaleDocument {
+  id               Int              @id @default(autoincrement())
+  documentNumber   String           @unique
+  documentType     String
+  clientId         Int?
+  client           Client?          @relation(fields: [clientId], references: [id])
+  clientName       String?
+  clientPhone      String?
+  customerName     String?
+  customerPhone    String?
+  customerEmail    String?
+  customerAddress  String?
+  description      String?
+  subtotal         Float
+  discount         Float            @default(0)
+  total            Float
+  paymentMethod    String?
+  paymentStatus    String           @default("unpaid")
+  orderStatus      String           @default("ordered")
+  saleDate         DateTime         @default(now())
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  createdBy        Int?
+  sellerName       String?
+  items            SaleDocumentItem[]
+  sales            Sale[]
+>>>>>>> feature/edit-order
 }
 
 model SaleDocumentItem {
@@ -190,8 +302,11 @@ model SaleDocumentItem {
   createdAt      DateTime     @default(now())
 }
 
+<<<<<<< HEAD
 // ========== НОВЫЕ МОДЕЛИ ==========
 
+=======
+>>>>>>> feature/edit-order
 model ProductImage {
   id         Int      @id @default(autoincrement())
   productId  Int
@@ -202,7 +317,11 @@ model ProductImage {
   isMain     Boolean  @default(false)
   sortOrder  Int      @default(0)
   createdAt  DateTime @default(now())
+<<<<<<< HEAD
   
+=======
+
+>>>>>>> feature/edit-order
   @@index([productId])
 }
 
@@ -216,7 +335,14 @@ model PriceHistory {
   reason     String?
   changedBy  Int
   changedAt  DateTime @default(now())
+<<<<<<< HEAD
   
   @@index([productId])
   @@index([changedAt])
 }
+=======
+
+  @@index([productId])
+  @@index([changedAt])
+}
+>>>>>>> feature/edit-order

@@ -988,7 +988,11 @@ export const NewOrder: React.FC = () => {
       const response = await saleDocumentsApi.create(orderData);
       
       toast.success('Заказ успешно создан');
+<<<<<<< HEAD
       navigate(`/sales/${response.data.document.id}`);
+=======
+      const orderId = response.data?.document?.id || response.data?.id; if (orderId) { navigate(`/sales/${orderId}`); } else { toast.success("Заказ создан"); navigate("/sales"); };
+>>>>>>> feature/edit-order
       
     } catch (error) {
       console.error('Error creating order:', error);

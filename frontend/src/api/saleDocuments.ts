@@ -14,7 +14,11 @@ export interface SaleDocument {
   total: number;
   paymentMethod?: string;
   paymentStatus: string;
+<<<<<<< HEAD
   orderStatus?: 'ordered' | 'assembling' | 'shipped';  // 🆕 добавить поле
+=======
+  orderStatus?: 'ordered' | 'assembling' | 'shipped';
+>>>>>>> feature/edit-order
   saleDate: string;
   items: SaleDocumentItem[];
   clientName?: string;
@@ -32,6 +36,30 @@ export interface SaleDocumentItem {
   total: number;
 }
 
+<<<<<<< HEAD
+=======
+// 🆕 Типы для редактирования заказа
+export interface UpdateOrderItemDto {
+  id?: number;           // ID существующей позиции (для обновления)
+  productId: number;
+  quantity: number;
+  price: number;
+}
+
+export interface UpdateFullOrderDto {
+  items: UpdateOrderItemDto[];
+  discount: number;
+  description?: string;
+  clientData?: {
+    name: string;
+    phone: string;
+    email: string;
+    city: string;
+    address: string;
+  };
+}
+
+>>>>>>> feature/edit-order
 export const saleDocumentsApi = {
   // Получить все документы
   getAll: (params?: any) => api.get('/sale-documents', { params }),
@@ -48,6 +76,13 @@ export const saleDocumentsApi = {
   // Обновить документ
   update: (id: number, data: any) => api.put(`/sale-documents/${id}`, data),
   
+<<<<<<< HEAD
+=======
+  // 🆕 Полное обновление заказа (корзина + скидка + клиент)
+  updateFullOrder: (id: number, data: UpdateFullOrderDto) => 
+    api.put(`/sale-documents/${id}/full`, data),
+  
+>>>>>>> feature/edit-order
   // Удалить документ
   delete: (id: number) => api.delete(`/sale-documents/${id}`),
   
@@ -55,7 +90,11 @@ export const saleDocumentsApi = {
   updatePaymentStatus: (id: number, status: 'paid' | 'unpaid') => 
     api.put(`/sale-documents/${id}/payment`, { paymentStatus: status }),
   
+<<<<<<< HEAD
   // 🆕 Обновить статус заказа
+=======
+  // Обновить статус заказа
+>>>>>>> feature/edit-order
   updateOrderStatus: (id: number, orderStatus: 'ordered' | 'assembling' | 'shipped') => 
     api.patch(`/sale-documents/${id}/status`, { orderStatus }),
   

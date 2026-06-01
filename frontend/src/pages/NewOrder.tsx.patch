@@ -1,0 +1,10 @@
+// Находим строку с navigate и заменяем
+// Было: navigate(`/sales/${response.data.document.id}`);
+// Стало:
+const orderId = response.data?.document?.id || response.data?.id;
+if (orderId) {
+  navigate(`/sales/${orderId}`);
+} else {
+  toast.success('Заказ успешно создан');
+  navigate('/sales');
+}

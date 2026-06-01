@@ -1,8 +1,13 @@
+<<<<<<< HEAD
 // backend/src/types/index.ts
 import { Request } from 'express';
 import { Multer } from 'multer';
 
 // Тип для пользователя в запросе
+=======
+import { Request } from 'express';
+
+>>>>>>> feature/edit-order
 export interface RequestWithUser extends Request {
   user?: {
     id: number;
@@ -10,6 +15,7 @@ export interface RequestWithUser extends Request {
     name: string;
     role: string;
   };
+<<<<<<< HEAD
   file?: Multer.File;  // 👈 ДОБАВИТЬ для загрузки файлов
   files?: Multer.File[]; // 👈 ДОБАВИТЬ для множественных файлов
 }
@@ -42,6 +48,8 @@ export interface UpdateProductDTO {
   characteristics?: Record<string, string | number | string[]>;
   costBreakdown?: any;
   priceChangeReason?: string; // ДОБАВЬТЕ ЭТУ СТРОКУ
+=======
+>>>>>>> feature/edit-order
 }
 
 // DTO для категорий
@@ -54,10 +62,17 @@ export interface CreateCategoryDTO {
 
 export interface CreateCategoryFieldDTO {
   name: string;
+<<<<<<< HEAD
   fieldType: 'text' | 'number' | 'select' | 'multiselect';
   isRequired?: boolean;
   sortOrder?: number;
   options?: string[];
+=======
+  fieldType: string;
+  isRequired?: boolean;
+  sortOrder?: number;
+  options?: string;
+>>>>>>> feature/edit-order
 }
 
 // DTO для клиентов
@@ -67,9 +82,15 @@ export interface CreateClientDTO {
   middleName?: string;
   phone: string;
   email?: string;
+<<<<<<< HEAD
   birthDate?: Date | string;
   address?: string;
   city?: string;
+=======
+  city?: string;
+  birthDate?: Date;
+  address?: string;
+>>>>>>> feature/edit-order
   passport?: string;
   driverLicense?: string;
   carModel?: string;
@@ -80,6 +101,7 @@ export interface CreateClientDTO {
   discountPercent?: number;
 }
 
+<<<<<<< HEAD
 export interface UpdateClientDTO extends Partial<CreateClientDTO> {}
 
 // DTO для обновления скидки клиента
@@ -149,10 +171,101 @@ export interface ProductProfitReport {
 }
 
 // Типы для расхода
+=======
+export interface UpdateClientDiscountDTO {
+  discountPercent: number;
+  reason?: string;
+}
+
+// DTO для товаров
+export interface CreateProductDTO {
+  name: string;
+  article?: string;
+  cost_price: number;
+  retail_price: number;
+  stock: number;
+  min_stock?: number;
+  description?: string;
+  image_url?: string;
+  costBreakdown?: any;
+  categoryIds?: number[];
+  characteristics?: Record<string, any>;
+}
+
+export interface UpdateProductDTO extends Partial<CreateProductDTO> {
+  priceChangeReason?: string;
+}
+
+// DTO для расходов
+>>>>>>> feature/edit-order
 export interface CreateExpenseDTO {
   name: string;
   amount: number;
   category: string;
   description?: string;
   expense_date?: Date;
+<<<<<<< HEAD
 }
+=======
+}
+
+// Отчеты
+export interface SalesStats {
+  totalRevenue: number;
+  totalProfit: number;
+  totalOrders: number;
+  averageCheck: number;
+  margin?: number;
+}
+
+export interface ProductProfitReport {
+  productId: number;
+  productName: string;
+  quantity: number;
+  revenue: number;
+  cost: number;
+  profit: number;
+  margin: number;
+  total_profit?: number;
+}
+
+// DTO для документов продаж
+export interface CreateSaleDocumentDTO {
+  clientId?: number;
+  client?: {
+    firstName: string;
+    lastName: string;
+    phone: string;
+    city?: string;
+  };
+  items: Array<{
+    productId: number;
+    quantity: number;
+    price: number;
+    cost_price?: number;
+  }>;
+  discount?: number;
+  discountPercent?: number;
+  notes?: string;
+  documentType?: 'receipt' | 'invoice';
+  paymentStatus?: 'paid' | 'pending';
+  customerName?: string;
+  customerPhone?: string;
+  customerEmail?: string;
+  customerAddress?: string;
+  description?: string;
+  paymentMethod?: string;
+}
+
+// DTO для продаж
+export interface CreateSaleDTO {
+  productId: number;
+  quantity: number;
+  selling_price: number;
+  clientId?: number;
+  customer_name?: string;
+  customer_phone?: string;
+}
+
+export type MulterFile = Express.Multer.File;
+>>>>>>> feature/edit-order
