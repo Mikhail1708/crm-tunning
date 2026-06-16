@@ -199,11 +199,11 @@ const CostBreakdownEditorComponent: React.FC<CostBreakdownEditorProps> = ({
         )}
       </div>
 
-      {/* Модальное окно для добавления/редактирования */}
+      {/* Модальное окно для добавления/редактирования - НЕ ЗАКРЫВАЕТСЯ ПО КЛИКУ НА ФОН */}
       {modalOpen && (
         <div 
           className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50"
-          onClick={closeModal}
+          onClick={(e) => e.stopPropagation()}
         >
           <div 
             className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl max-w-md w-full animate-scale-up"

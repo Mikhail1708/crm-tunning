@@ -10,6 +10,7 @@ interface ModalProps {
   title: string;
   children: ReactNode;
   size?: ModalSize;
+  closeOnOverlayClick?: boolean;
 }
 
 const sizes: Record<ModalSize, string> = {
@@ -24,8 +25,10 @@ export const Modal: React.FC<ModalProps> = ({
   onClose, 
   title, 
   children, 
-  size = 'md' 
+  size = 'md',
+  closeOnOverlayClick = false,
 }) => {
+  // Блокировка скролла body
   useEffect(() => {
     if (isOpen) {
       document.body.style.overflow = 'hidden';
@@ -37,12 +40,29 @@ export const Modal: React.FC<ModalProps> = ({
     };
   }, [isOpen]);
 
+  // Закрытие по ESC
+  useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isOpen) {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleEsc);
+    return () => window.removeEventListener('keydown', handleEsc);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
+  // Обработчик клика на фон - без useCallback
   const handleBackdropClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (e.target === e.currentTarget) {
+    if (closeOnOverlayClick && e.target === e.currentTarget) {
       onClose();
     }
+  };
+
+  // Предотвращаем закрытие при клике на саму модалку
+  const handleModalClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    e.stopPropagation();
   };
 
   return (
@@ -50,7 +70,10 @@ export const Modal: React.FC<ModalProps> = ({
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 animate-fade-in"
       onClick={handleBackdropClick}
     >
-      <div className={`${sizes[size]} w-full bg-white dark:bg-dark-800 rounded-2xl shadow-xl animate-scale-up`}>
+      <div 
+        className={`${sizes[size]} w-full bg-white dark:bg-dark-800 rounded-2xl shadow-xl animate-scale-up`}
+        onClick={handleModalClick}
+      >
         <div className="flex items-center justify-between p-6 border-b border-gray-100 dark:border-dark-700">
           <h2 className="text-xl font-semibold text-gray-900 dark:text-white">{title}</h2>
           <button
