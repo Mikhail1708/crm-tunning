@@ -27,14 +27,9 @@ export const Settings: React.FC = () => {
   const [loadingClear, setLoadingClear] = useState<boolean>(false);
   const [showClearConfirm, setShowClearConfirm] = useState<boolean>(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  
   const isAdmin = user?.role === 'admin';
 
-  // Экспорт дампа базы данных
-  // frontend/src/pages/Settings.tsx (фрагмент - обновите функции экспорта/импорта)
-
-// Экспорт дампа базы данных
-const exportDatabaseDump = async (): Promise<void> => {
+  const exportDatabaseDump = async (): Promise<void> => {
   if (!isAdmin) {
     toast.error('Доступ запрещен. Требуются права администратора');
     return;
@@ -43,7 +38,6 @@ const exportDatabaseDump = async (): Promise<void> => {
   setLoadingDump(true);
   try {
     const dump = await reportsApi.getDatabaseDump();
-    
     // Создаем файл для скачивания
     const dataStr = JSON.stringify(dump, null, 2);
     const blob = new Blob([dataStr], { type: 'application/json' });
@@ -64,14 +58,12 @@ const exportDatabaseDump = async (): Promise<void> => {
     setLoadingDump(false);
   }
 };
-
 // Импорт дампа базы данных (восстановление)
 const importDatabaseDump = async (event: React.ChangeEvent<HTMLInputElement>): Promise<void> => {
   if (!isAdmin) {
     toast.error('Доступ запрещен. Требуются права администратора');
     return;
   }
-
   const file = event.target.files?.[0];
   if (!file) return;
 
@@ -79,17 +71,14 @@ const importDatabaseDump = async (event: React.ChangeEvent<HTMLInputElement>): P
     toast.error('Пожалуйста, выберите JSON файл дампа');
     return;
   }
-
   setLoadingRestore(true);
   try {
     const text = await file.text();
     const dumpData = JSON.parse(text);
-    
     // Проверяем структуру дампа
     if (!dumpData.exportedAt || !dumpData.data) {
       throw new Error('Неверный формат файла дампа');
     }
-    
     // Проверяем версию дампа
     if (dumpData.version !== '3.0') {
       const confirmRestore = confirm(
@@ -106,7 +95,6 @@ const importDatabaseDump = async (event: React.ChangeEvent<HTMLInputElement>): P
         return;
       }
     }
-    
     // Подтверждение восстановления
     if (confirm(`Восстановить базу данных из дампа от ${new Date(dumpData.exportedAt).toLocaleString()}?\n\nВНИМАНИЕ! Текущие данные будут полностью заменены. Это действие нельзя отменить.`)) {
       const result = await reportsApi.restoreDatabase(dumpData);
@@ -126,7 +114,6 @@ const importDatabaseDump = async (event: React.ChangeEvent<HTMLInputElement>): P
     }
   }
 };
-
   // Очистка всей базы данных
   const clearDatabase = async (): Promise<void> => {
     if (!isAdmin) {
@@ -150,14 +137,12 @@ const importDatabaseDump = async (event: React.ChangeEvent<HTMLInputElement>): P
       setLoadingClear(false);
     }
   };
-
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Настройки</h1>
         <p className="text-gray-500 dark:text-gray-400 mt-1">Управление системой и внешним видом</p>
       </div>
-
       {/* Внешний вид */}
       <Card>
         <CardHeader>
@@ -184,7 +169,6 @@ const importDatabaseDump = async (event: React.ChangeEvent<HTMLInputElement>): P
           </div>
         </CardBody>
       </Card>
-
       {/* Управление данными */}
       <Card>
         <CardHeader>
@@ -242,7 +226,6 @@ const importDatabaseDump = async (event: React.ChangeEvent<HTMLInputElement>): P
               </Button>
             </div>
           </div>
-
           {/* Очистка базы */}
           <div className="flex items-center justify-between p-4 bg-red-50 dark:bg-red-900/20 rounded-lg border border-red-200 dark:border-red-800">
             <div>

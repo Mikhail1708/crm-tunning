@@ -1001,10 +1001,6 @@ export const Reports: React.FC = () => {
       c.profit += order.totalProfit;
       c.orders += 1;
     });
-    
-    // Логируем результат для отладки
-    console.log('📊 Статистика по городам:', Array.from(cityMap.entries()));
-    
     // Сортируем по выручке и возвращаем
     return Array.from(cityMap.values()).sort((a, b) => b.revenue - a.revenue);
   }, [orders, clients]);
