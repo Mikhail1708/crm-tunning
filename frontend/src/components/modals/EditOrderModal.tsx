@@ -47,7 +47,8 @@ export const EditOrderModal: React.FC<EditOrderModalProps> = ({
   onOrderUpdated,
 }) => {
   const [cart, setCart] = useState<CartItem[]>([]);
-  const [discount, setDiscount] = useState<number>(0);
+  const [discountPercent, setDiscountPercent] = useState<number>(0); // 🔥 Процент скидки
+  const [discountAmount, setDiscountAmount] = useState<number>(0); // 🔥 Сумма скидки
   const [description, setDescription] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -115,7 +116,20 @@ export const EditOrderModal: React.FC<EditOrderModalProps> = ({
         stock: 999,
       }));
       setCart(initialCart);
-      setDiscount(order.discount || 0);
+      
+      // 🔥 Вычисляем процент скидки из суммы
+      const subtotalValue = initialCart.reduce((sum, item) => sum + item.total, 0);
+      const discountValue = order.discount || 0;
+      
+      if (discountValue > 0 && subtotalValue > 0) {
+        const percent = (discountValue / subtotalValue) * 100;
+        setDiscountPercent(Math.round(percent * 10) / 10);
+        setDiscountAmount(discountValue);
+      } else {
+        setDiscountPercent(0);
+        setDiscountAmount(0);
+      }
+      
       setDescription(order.description || '');
       
       const client = (order as any).client;
@@ -237,13 +251,41 @@ export const EditOrderModal: React.FC<EditOrderModalProps> = ({
     toast.success('Товар удален из корзины');
   };
 
+  // 🔥 Подсчет суммы заказа
   const subtotal = useMemo(() => {
     return cart.reduce((sum, item) => sum + item.total, 0);
   }, [cart]);
 
+  // 🔥 При изменении процента - пересчитываем сумму скидки
+  const handleDiscountPercentChange = (value: string) => {
+    const cleanValue = value.replace(/[^0-9.]/g, '');
+    const percent = parseFloat(cleanValue) || 0;
+    const limitedPercent = Math.min(100, Math.max(0, percent));
+    setDiscountPercent(limitedPercent);
+    
+    const amount = (subtotal * limitedPercent) / 100;
+    setDiscountAmount(Math.round(amount * 100) / 100);
+  };
+
+  // 🔥 При изменении суммы - пересчитываем процент
+  const handleDiscountAmountChange = (value: string) => {
+    const cleanValue = value.replace(/[^0-9]/g, '');
+    const amount = parseFloat(cleanValue) || 0;
+    const limitedAmount = Math.min(amount, subtotal);
+    setDiscountAmount(limitedAmount);
+    
+    if (subtotal > 0) {
+      const percent = (limitedAmount / subtotal) * 100;
+      setDiscountPercent(Math.round(percent * 10) / 10);
+    } else {
+      setDiscountPercent(0);
+    }
+  };
+
+  // 🔥 Итоговая сумма с учетом скидки
   const total = useMemo(() => {
-    return Math.max(0, subtotal - discount);
-  }, [subtotal, discount]);
+    return Math.max(0, subtotal - discountAmount);
+  }, [subtotal, discountAmount]);
 
   const validateStock = useCallback(async () => {
     for (const item of cart) {
@@ -288,7 +330,7 @@ export const EditOrderModal: React.FC<EditOrderModalProps> = ({
           quantity: item.quantity,
           price: item.price,
         })),
-        discount: discount,
+        discount: discountAmount, // 🔥 Передаем сумму скидки
         description: description,
         clientData: clientData,
       };
@@ -458,50 +500,73 @@ export const EditOrderModal: React.FC<EditOrderModalProps> = ({
           )}
         </div>
 
-        {/* Скидка и итог - убран подытог */}
+        {/* 🔥 Скидка в процентах и сумма */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium mb-1 flex items-center gap-1">
               <Percent size={14} />
-              Скидка (₽)
+              Скидка (%)
             </label>
-            <input
-              type="text"
-              value={discount === 0 ? '' : discount}
-              onChange={(e) => {
-                const value = e.target.value;
-                if (value === '') {
-                  setDiscount(0);
-                } else {
-                  const numValue = parseInt(value.replace(/\D/g, ''), 10);
-                  if (!isNaN(numValue)) {
-                    setDiscount(Math.min(numValue, subtotal));
-                  }
-                }
-              }}
-              onKeyDown={(e) => {
-                if (e.key === 'Backspace' || e.key === 'Delete' || e.key === 'Tab' || e.key === 'Escape' || e.key === 'Enter') {
-                  return;
-                }
-                if (!/^\d$/.test(e.key)) {
-                  e.preventDefault();
-                }
-              }}
-              placeholder="0"
-              className="w-full border rounded-lg px-3 py-2 dark:bg-gray-700 dark:border-gray-600"
-            />
-            {discount > 0 && (
-              <p className="text-xs text-green-600 mt-1">
-                Скидка {subtotal > 0 ? Math.round((discount / subtotal) * 100) : 0}% от суммы
+            <div className="flex items-center gap-3">
+              <input
+                type="range"
+                min="0"
+                max="100"
+                step="0.1"
+                value={discountPercent}
+                onChange={(e) => handleDiscountPercentChange(e.target.value)}
+                className="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-green-600"
+              />
+              <input
+                type="text"
+                value={discountPercent || ''}
+                onChange={(e) => handleDiscountPercentChange(e.target.value)}
+                className="w-20 text-center border rounded-lg px-2 py-2 dark:bg-gray-700 dark:border-gray-600"
+                placeholder="0"
+              />
+              <span className="text-sm font-medium">%</span>
+            </div>
+            {discountPercent > 0 && (
+              <p className="text-xs text-green-600 dark:text-green-400 mt-1">
+                Скидка: {discountPercent}% от суммы заказа
               </p>
             )}
           </div>
           <div>
-            <label className="block text-sm font-medium mb-1">Итоговая сумма</label>
-            <div className="text-2xl font-bold text-primary-600">{formatPrice(total)}</div>
+            <label className="block text-sm font-medium mb-1 flex items-center gap-1">
+              Сумма скидки (₽)
+            </label>
+            <input
+              type="text"
+              value={discountAmount || ''}
+              onChange={(e) => handleDiscountAmountChange(e.target.value)}
+              className="w-full border rounded-lg px-3 py-2 dark:bg-gray-700 dark:border-gray-600"
+              placeholder="0"
+            />
           </div>
         </div>
 
+        {/* 🔥 Итоговая сумма */}
+        <div className="bg-green-50 dark:bg-green-900/20 rounded-lg p-4 border border-green-200 dark:border-green-800">
+          <div className="flex justify-between items-center">
+            <div>
+              <p className="text-sm text-gray-600 dark:text-gray-400">Сумма заказа</p>
+              <p className="text-lg font-semibold text-gray-900 dark:text-white">{formatPrice(subtotal)}</p>
+            </div>
+            {discountAmount > 0 && (
+              <div className="text-right">
+                <p className="text-sm text-red-500">-{formatPrice(discountAmount)}</p>
+                <p className="text-xs text-gray-400">скидка {discountPercent}%</p>
+              </div>
+            )}
+            <div className="text-right">
+              <p className="text-sm text-gray-600 dark:text-gray-400">Итого к оплате</p>
+              <p className="text-2xl font-bold text-green-600 dark:text-green-400">{formatPrice(total)}</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Комментарий */}
         <div>
           <label className="block text-sm font-medium mb-1">Комментарий к заказу</label>
           <textarea
