@@ -1,3 +1,4 @@
+// backend/src/controllers/products.controller.ts
 import { Response } from 'express';
 import { PrismaClient, Prisma } from '@prisma/client';
 import { RequestWithUser, CreateProductDTO, UpdateProductDTO } from '../types';
@@ -160,13 +161,14 @@ export const createProduct = async (req: RequestWithUser, res: Response): Promis
       return;
     }
     
+    // ✅ Исправлено: findFirst вместо findUnique (артикул больше не уникален)
     if (data.article) {
-      const existing = await prisma.product.findUnique({
+      const existing = await prisma.product.findFirst({
         where: { article: data.article }
       });
       
       if (existing) {
-        res.status(400).json({ message: 'Артикул уже существует' });
+        res.status(400).json({ message: `Артикул "${data.article}" уже существует` });
         return;
       }
     }
@@ -237,7 +239,6 @@ export const updateProduct = async (req: RequestWithUser, res: Response): Promis
     console.log('=== updateProduct called ===');
     console.log('Product ID:', productId);
     console.log('User ID:', userId);
-    console.log('Data:', JSON.stringify(data, null, 2));
     
     if (isNaN(productId)) {
       res.status(400).json({ message: 'Неверный ID товара' });
@@ -253,13 +254,13 @@ export const updateProduct = async (req: RequestWithUser, res: Response): Promis
         throw new Error('Товар не найден');
       }
       
-      // Проверяем, изменилась ли цена
       const oldPrice = existingProduct.retail_price;
       const newPrice = data.retail_price !== undefined ? data.retail_price : oldPrice;
       const priceChanged = data.retail_price !== undefined && data.retail_price !== oldPrice;
       
       console.log(`Price check: old=${oldPrice}, new=${newPrice}, changed=${priceChanged}`);
       
+      // ✅ Исправлено: findFirst вместо findUnique (артикул больше не уникален)
       if (data.article && data.article !== existingProduct.article) {
         const existing = await tx.product.findFirst({
           where: {
@@ -288,12 +289,11 @@ export const updateProduct = async (req: RequestWithUser, res: Response): Promis
         }
       });
       
-      // ЕСЛИ ЦЕНА ИЗМЕНИЛАСЬ - СОЗДАЁМ ЗАПИСЬ В ИСТОРИИ
       if (priceChanged && userId) {
         const changeType = newPrice > oldPrice ? 'increase' : 'decrease';
         const reason = data.priceChangeReason || `Изменение цены через редактирование товара (${oldPrice} → ${newPrice})`;
         
-        const historyRecord = await tx.priceHistory.create({
+        await tx.priceHistory.create({
           data: {
             productId,
             oldPrice,
@@ -303,14 +303,9 @@ export const updateProduct = async (req: RequestWithUser, res: Response): Promis
             changedBy: userId
           }
         });
-        console.log('✅ Price history created:', historyRecord);
-      } else if (priceChanged && !userId) {
-        console.log('⚠️ Price changed but no userId, skipping history');
-      } else {
-        console.log('ℹ️ Price not changed, skipping history');
+        console.log('✅ Price history created');
       }
       
-      // Обновляем категории
       if (data.categoryIds !== undefined) {
         await tx.productCategory.deleteMany({
           where: { productId: product.id }
@@ -328,7 +323,6 @@ export const updateProduct = async (req: RequestWithUser, res: Response): Promis
         }
       }
       
-      // Обновляем характеристики
       if (data.characteristics !== undefined) {
         await tx.productCharacteristic.deleteMany({
           where: { productId: product.id }
@@ -361,8 +355,7 @@ export const updateProduct = async (req: RequestWithUser, res: Response): Promis
     console.log('=== updateProduct SUCCESS ===');
     res.json(result);
   } catch (error) {
-    console.error('=== updateProduct ERROR ===');
-    console.error(error);
+    console.error('=== updateProduct ERROR ===', error);
     if (error instanceof Error) {
       if (error.message === 'Артикул уже существует') {
         res.status(400).json({ message: error.message });
@@ -496,39 +489,28 @@ export const getPriceHistory = async (req: RequestWithUser, res: Response): Prom
   }
 };
 
-// backend/src/controllers/products.controller.ts
 export const updateProductPrice = async (req: RequestWithUser, res: Response): Promise<void> => {
   console.log('=== updateProductPrice START ===');
-  console.log('req.body:', JSON.stringify(req.body, null, 2));
-  console.log('req.params:', req.params);
-  console.log('req.user:', req.user);
   
   try {
     const { id } = req.params;
-    // ВАЖНО: проверяем оба варианта названия поля
     const { newPrice, retail_price, reason } = req.body;
     const productId = parseInt(id);
     const userId = req.user?.id;
     
-    console.log('Parsed values:', { productId, newPrice, retail_price, reason, userId });
-    
     if (!userId) {
-      console.log('No userId!');
       res.status(401).json({ message: 'Не авторизован' });
       return;
     }
     
     if (isNaN(productId)) {
-      console.log('Invalid productId');
       res.status(400).json({ message: 'Неверный ID товара' });
       return;
     }
     
-    // Поддерживаем оба варианта: newPrice или retail_price
     const priceToUse = newPrice !== undefined ? newPrice : retail_price;
     
     if (priceToUse === undefined || priceToUse < 0) {
-      console.log('Invalid price:', priceToUse);
       res.status(400).json({ message: 'Укажите корректную цену' });
       return;
     }
@@ -548,7 +530,6 @@ export const updateProductPrice = async (req: RequestWithUser, res: Response): P
       console.log(`Price change: ${oldPrice} -> ${newPriceNum}, reason: ${reason}`);
       
       if (oldPrice === newPriceNum) {
-        console.log('Prices are equal, no change');
         return product;
       }
       
@@ -557,7 +538,7 @@ export const updateProductPrice = async (req: RequestWithUser, res: Response): P
         data: { retail_price: newPriceNum }
       });
       
-      const historyRecord = await tx.priceHistory.create({
+      await tx.priceHistory.create({
         data: {
           productId,
           oldPrice,
@@ -568,12 +549,10 @@ export const updateProductPrice = async (req: RequestWithUser, res: Response): P
         }
       });
       
-      console.log('History record created:', historyRecord);
-      
+      console.log('History record created');
       return updatedProduct;
     });
     
-    console.log('Update successful');
     res.json(result);
   } catch (error) {
     console.error('Error updating product price:', error);
@@ -779,4 +758,4 @@ export const setMainProductImage = async (req: RequestWithUser, res: Response): 
     console.error('Error setting main image:', error);
     res.status(500).json({ message: 'Ошибка установки главного фото' });
   }
-}; 
+};

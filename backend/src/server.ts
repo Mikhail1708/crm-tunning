@@ -9,7 +9,7 @@ import categoryRoutes from './routes/categories.routes';
 import saleDocumentRoutes from './routes/saleDocuments.routes';
 import clientRoutes from './routes/clients.routes';
 import auditRoutes from './routes/audit.routes';
-import reportsRoutes from './routes/reports.routes'; // 🆕 ДОБАВИТЬ reports
+import reportsRoutes from './routes/reports.routes';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -33,10 +33,23 @@ app.get('/api/csrf-token', (req, res) => {
   res.json({ csrfToken: token });
 });
 
-// CSRF проверка (кроме GET/HEAD/OPTIONS)
+// CSRF проверка (кроме GET/HEAD/OPTIONS и ПУБЛИЧНЫХ эндпоинтов)
 app.use((req, res, next) => {
+  // Исключаем публичные эндпоинты из CSRF проверки
+  const publicPaths = [
+    '/api/sale-documents/public',
+    '/api/public/'
+  ];
+  
+  const isPublicPath = publicPaths.some(path => req.path === path || req.path.startsWith(path));
+  
+  if (isPublicPath) {
+    return next();
+  }
+  
   const csrfToken = req.headers['x-csrf-token'];
   const cookieToken = req.cookies['csrf-token'];
+  
   if (req.method !== 'GET' && req.method !== 'HEAD' && req.method !== 'OPTIONS') {
     if (!csrfToken || !cookieToken || csrfToken !== cookieToken) {
       return res.status(403).json({ error: 'CSRF validation failed' });
@@ -52,8 +65,8 @@ app.use('/api/categories', categoryRoutes);
 app.use('/api/sale-documents', saleDocumentRoutes);
 app.use('/api/clients', clientRoutes);
 app.use('/api/audit', auditRoutes);
-app.use('/api/reports', reportsRoutes); // 🆕 ДОБАВИТЬ reports РОУТ
+app.use('/api/reports', reportsRoutes);
 
 app.get('/api/health', (req, res) => res.json({ status: 'OK' }));
 
-app.listen(5000, '0.0.0.0', () => console.log('Server running on port 5000 with CSRF enabled'));
+app.listen(5000, '0.0.0.0', () => console.log('Server running on port 5000 with CSRF enabled for protected endpoints'));

@@ -4,6 +4,7 @@ import { PrismaClient } from '@prisma/client';
 import { RequestWithUser, CreateCategoryDTO, CreateCategoryFieldDTO } from '../types';
 
 const prisma = new PrismaClient();
+
 export const getCategories = async (req: RequestWithUser, res: Response): Promise<void> => {
   try {
     const categories = await prisma.category.findMany({
@@ -53,6 +54,16 @@ export const createCategory = async (req: RequestWithUser, res: Response): Promi
     const data: CreateCategoryDTO = req.body;
     const { name, description, icon, sortOrder } = data;
     
+    // ✅ Проверка на дубликат названия
+    const existing = await prisma.category.findUnique({
+      where: { name }
+    });
+    
+    if (existing) {
+      res.status(400).json({ message: `Категория "${name}" уже существует` });
+      return;
+    }
+    
     const category = await prisma.category.create({
       data: {
         name,
@@ -65,10 +76,6 @@ export const createCategory = async (req: RequestWithUser, res: Response): Promi
     res.status(201).json(category);
   } catch (error) {
     console.error('Error creating category:', error);
-    if (error instanceof Error && 'code' in error && error.code === 'P2002') {
-      res.status(400).json({ message: 'Категория с таким названием уже существует' });
-      return;
-    }
     res.status(500).json({ message: 'Ошибка создания категории' });
   }
 };
@@ -110,6 +117,7 @@ export const deleteCategory = async (req: RequestWithUser, res: Response): Promi
     res.status(500).json({ message: 'Ошибка удаления категории' });
   }
 };
+
 export const getCategoryFields = async (req: RequestWithUser, res: Response): Promise<void> => {
   try {
     const { categoryId } = req.params;
@@ -119,7 +127,6 @@ export const getCategoryFields = async (req: RequestWithUser, res: Response): Pr
       orderBy: { sortOrder: 'asc' }
     });
     
-    // Исправлено: добавляем тип для параметра field
     const fieldsWithOptions = fields.map((field: any) => ({
       ...field,
       options: field.options ? JSON.parse(field.options) : null
@@ -131,6 +138,7 @@ export const getCategoryFields = async (req: RequestWithUser, res: Response): Pr
     res.status(500).json({ message: 'Ошибка загрузки полей' });
   }
 };
+
 export const createCategoryField = async (req: RequestWithUser, res: Response): Promise<void> => {
   try {
     const { categoryId } = req.params;

@@ -644,7 +644,7 @@ export const NewOrder: React.FC = () => {
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
   
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
-  const [clientDiscount, setClientDiscount] = useState<number>(0); // 🆕 Скидка клиента
+  const [clientDiscount, setClientDiscount] = useState<number>(0);
   const [customerName, setCustomerName] = useState<string>('');
   const [customerPhone, setCustomerPhone] = useState<string>('');
   const [customerEmail, setCustomerEmail] = useState<string>('');
@@ -734,7 +734,7 @@ export const NewOrder: React.FC = () => {
       setCustomerPhone(client.phone);
       setCustomerEmail(client.email || '');
       setCustomerCity(client.city || '');
-      setClientDiscount(client.discountPercent || 0); // 🆕 Устанавливаем скидку клиента
+      setClientDiscount(client.discountPercent || 0);
       setPhoneError('');
       toast.success(`Выбран клиент: ${fullName}${client.discountPercent ? ` (скидка ${client.discountPercent}%)` : ''}`);
     } catch (error) {
@@ -753,7 +753,7 @@ export const NewOrder: React.FC = () => {
     setCustomerPhone(client.phone);
     setCustomerEmail(client.email || '');
     setCustomerCity(client.city || '');
-    setClientDiscount(client.discountPercent || 0); // 🆕 Устанавливаем скидку клиента
+    setClientDiscount(client.discountPercent || 0);
     setAutoCreatedClient(null);
     setPhoneError('');
     toast.success(`Выбран клиент: ${fullName}${client.discountPercent ? ` (скидка ${client.discountPercent}%)` : ''}`);
@@ -762,7 +762,7 @@ export const NewOrder: React.FC = () => {
   const handleClearClient = (): void => {
     setSelectedClient(null);
     setAutoCreatedClient(null);
-    setClientDiscount(0); // 🆕 Сбрасываем скидку клиента
+    setClientDiscount(0);
   };
 
   const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>): void => {
@@ -803,7 +803,6 @@ export const NewOrder: React.FC = () => {
   const filteredProducts = useMemo(() => {
     let filtered = products.filter(p => p.stock > 0);
     
-    // Поиск по тексту
     if (filters.search) {
       const searchLower = filters.search.toLowerCase();
       filtered = filtered.filter(p => 
@@ -812,7 +811,6 @@ export const NewOrder: React.FC = () => {
       );
     }
     
-    // Фильтр по категориям
     if (filters.categoryIds.length > 0) {
       filtered = filtered.filter(p => {
         const productCategoryIds = p.categories?.map(c => c.id) || p.categoryIds || [];
@@ -820,7 +818,6 @@ export const NewOrder: React.FC = () => {
       });
     }
     
-    // Фильтр по цене
     if (filters.priceMin !== '') {
       filtered = filtered.filter(p => p.retail_price >= filters.priceMin);
     }
@@ -828,7 +825,6 @@ export const NewOrder: React.FC = () => {
       filtered = filtered.filter(p => p.retail_price <= filters.priceMax);
     }
     
-    // Фильтр по остатку
     if (filters.stockStatus !== 'all') {
       filtered = filtered.filter(p => {
         if (filters.stockStatus === 'low') return p.stock <= (p.min_stock || 5);
@@ -838,7 +834,6 @@ export const NewOrder: React.FC = () => {
       });
     }
     
-    // Фильтр по характеристикам
     if (Object.keys(filters.characteristics).length > 0) {
       filtered = filtered.filter(p => {
         const productChars = p.characteristics || {};
@@ -892,7 +887,7 @@ export const NewOrder: React.FC = () => {
         setCustomerPhone(existingClient.phone);
         setCustomerEmail(existingClient.email || '');
         setCustomerCity(existingClient.city || '');
-        setClientDiscount(existingClient.discountPercent || 0); // 🆕 Устанавливаем скидку клиента
+        setClientDiscount(existingClient.discountPercent || 0);
         setPhoneError('');
         toast.success(`Найден существующий клиент: ${fullName}${existingClient.discountPercent ? ` (скидка ${existingClient.discountPercent}%)` : ''}`);
         return existingClient;
@@ -914,7 +909,7 @@ export const NewOrder: React.FC = () => {
       
       setSelectedClient(newClient);
       setAutoCreatedClient(newClient);
-      setClientDiscount(0); // 🆕 У нового клиента скидка 0
+      setClientDiscount(0);
       toast.success(`Клиент "${customerName}" успешно добавлен в базу!`);
       return newClient;
       
@@ -961,7 +956,6 @@ export const NewOrder: React.FC = () => {
         }
       }
       
-      // Рассчитываем общую сумму для применения скидки клиента
       const subtotal = cartItems.reduce((sum, item) => sum + (item.selling_price * item.quantity), 0);
       const clientDiscountAmount = subtotal * (clientDiscount / 100);
       const manualDiscount = subtotal * (discountPercent / 100);
@@ -985,14 +979,25 @@ export const NewOrder: React.FC = () => {
         paymentStatus: 'unpaid' as const
       };
       
+      console.log('📤 Отправка заказа:', orderData);
+      
       const response = await saleDocumentsApi.create(orderData);
       
-      toast.success('Заказ успешно создан');
-      const orderId = response.data?.document?.id || response.data?.id; if (orderId) { navigate(`/sales/${orderId}`); } else { toast.success("Заказ создан"); navigate("/sales"); };
+      console.log('✅ Ответ сервера:', response);
       
-    } catch (error) {
-      console.error('Error creating order:', error);
-      toast.error((error as { response?: { data?: { message?: string } } }).response?.data?.message || 'Ошибка создания заказа');
+      toast.success('Заказ успешно создан');
+      const orderId = response.data?.document?.id || response.data?.id;
+      if (orderId) {
+        navigate(`/sales/${orderId}`);
+      } else {
+        toast.success("Заказ создан");
+        navigate("/sales");
+      }
+      
+    } catch (error: any) {
+      console.error('❌ Ошибка создания заказа:', error);
+      console.error('📝 Ответ сервера:', error.response?.data);
+      toast.error(error.response?.data?.message || 'Ошибка создания заказа');
     } finally {
       setOrderLoading(false);
     }
@@ -1366,7 +1371,6 @@ export const NewOrder: React.FC = () => {
                   <span className="font-medium text-green-600">{formatPrice(totals.totalProfit)}</span>
                 </div>
                 
-                {/* 🆕 Отображение скидки клиента */}
                 {clientDiscount > 0 && (
                   <div className="flex justify-between text-sm text-green-600 bg-green-50 p-2 rounded-lg">
                     <span className="flex items-center gap-1">

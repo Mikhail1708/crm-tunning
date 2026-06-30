@@ -14,10 +14,6 @@ interface GetClientsQuery {
   limit?: string;
 }
 
-/**
- * GET /api/clients
- * Получить всех клиентов с фильтрацией
- */
 export const getAllClients = async (req: RequestWithUser, res: Response): Promise<void> => {
   try {
     const { search, sortBy = 'createdAt', sortOrder = 'desc', page = '1', limit = '20' } = req.query as GetClientsQuery;
@@ -62,10 +58,6 @@ export const getAllClients = async (req: RequestWithUser, res: Response): Promis
   }
 };
 
-/**
- * GET /api/clients/:id
- * Получить клиента по ID
- */
 export const getClientById = async (req: RequestWithUser, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
@@ -101,10 +93,6 @@ export const getClientById = async (req: RequestWithUser, res: Response): Promis
   }
 };
 
-/**
- * POST /api/clients
- * Создать клиента
- */
 export const createClient = async (req: RequestWithUser, res: Response): Promise<void> => {
   try {
     const data: CreateClientDTO = req.body;
@@ -127,23 +115,21 @@ export const createClient = async (req: RequestWithUser, res: Response): Promise
       discountPercent
     } = data;
     
-    // Проверяем обязательное поле
     if (!firstName || !phone) {
       res.status(400).json({ error: 'Имя и телефон обязательны для заполнения' });
       return;
     }
     
-    // Проверяем уникальность телефона
+    // ✅ Проверка на дубликат телефона
     const existingClient = await prisma.client.findUnique({
       where: { phone }
     });
     
     if (existingClient) {
-      res.status(400).json({ error: 'Клиент с таким телефоном уже существует' });
+      res.status(400).json({ error: `Клиент с телефоном "${phone}" уже существует` });
       return;
     }
     
-    // Валидация скидки
     let finalDiscount = 0;
     if (discountPercent !== undefined) {
       finalDiscount = Math.min(100, Math.max(0, discountPercent));
@@ -172,7 +158,6 @@ export const createClient = async (req: RequestWithUser, res: Response): Promise
       }
     });
     
-    // Логируем создание клиента со скидкой
     if (finalDiscount > 0 && req.user) {
       await auditService.log(
         { id: req.user.id, name: req.user.name, role: req.user.role },
@@ -188,10 +173,6 @@ export const createClient = async (req: RequestWithUser, res: Response): Promise
   }
 };
 
-/**
- * PUT /api/clients/:id
- * Обновить клиента
- */
 export const updateClient = async (req: RequestWithUser, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
@@ -205,7 +186,6 @@ export const updateClient = async (req: RequestWithUser, res: Response): Promise
     const updateData = req.body;
     const oldClient = await prisma.client.findUnique({ where: { id: clientId } });
     
-    // Если обновляется телефон, проверяем уникальность
     if (updateData.phone) {
       const existingClient = await prisma.client.findFirst({
         where: {
@@ -220,7 +200,6 @@ export const updateClient = async (req: RequestWithUser, res: Response): Promise
       }
     }
     
-    // Валидация скидки
     let discountChanged = false;
     let oldDiscount = oldClient?.discountPercent || 0;
     let newDiscount = updateData.discountPercent !== undefined 
@@ -243,7 +222,6 @@ export const updateClient = async (req: RequestWithUser, res: Response): Promise
       }
     });
     
-    // Логируем изменение скидки
     if (discountChanged && req.user) {
       await auditService.log(
         { id: req.user.id, name: req.user.name, role: req.user.role },
@@ -259,10 +237,6 @@ export const updateClient = async (req: RequestWithUser, res: Response): Promise
   }
 };
 
-/**
- * DELETE /api/clients/:id
- * Удалить клиента
- */
 export const deleteClient = async (req: RequestWithUser, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
@@ -273,7 +247,6 @@ export const deleteClient = async (req: RequestWithUser, res: Response): Promise
       return;
     }
     
-    // Проверяем, есть ли у клиента заказы
     const ordersCount = await prisma.saleDocument.count({
       where: { clientId: clientId }
     });
@@ -296,10 +269,6 @@ export const deleteClient = async (req: RequestWithUser, res: Response): Promise
   }
 };
 
-/**
- * GET /api/clients/search
- * Поиск клиентов для автокомплита
- */
 export const searchClients = async (req: RequestWithUser, res: Response): Promise<void> => {
   try {
     const { q } = req.query;
@@ -333,10 +302,6 @@ export const searchClients = async (req: RequestWithUser, res: Response): Promis
   }
 };
 
-/**
- * GET /api/clients/stats/summary
- * Получить статистику по клиентам
- */
 export const getClientsStats = async (req: RequestWithUser, res: Response): Promise<void> => {
   try {
     const totalClients = await prisma.client.count();
@@ -379,10 +344,6 @@ export const getClientsStats = async (req: RequestWithUser, res: Response): Prom
   }
 };
 
-/**
- * PATCH /api/clients/:id/discount
- * Обновить только скидку клиента
- */
 export const updateClientDiscount = async (req: RequestWithUser, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
@@ -420,7 +381,6 @@ export const updateClientDiscount = async (req: RequestWithUser, res: Response):
       }
     });
     
-    // Логируем изменение скидки
     if (req.user) {
       await auditService.log(
         { id: req.user.id, name: req.user.name, role: req.user.role },

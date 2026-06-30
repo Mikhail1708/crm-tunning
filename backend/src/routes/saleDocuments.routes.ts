@@ -11,13 +11,18 @@ import {
   deleteSaleDocument,
   getDocumentsByClient,
   getClientStatistics,
-  updateFullOrder,        // 🆕
+  updateFullOrder,
+  createPublicOrder,        // 👈 НОВЫЙ КОНТРОЛЛЕР
 } from '../controllers/saleDocuments.controller';
 import { authMiddleware, managerAccess } from '../middleware/auth.middleware';
 
 const router = Router();
 
-// Все маршруты требуют аутентификации
+// 🔓 ПУБЛИЧНЫЙ ЭНДПОИНТ (без JWT) для создания заказа с сайта
+// Ограничение частоты запросов через rate-limit (настраивается отдельно)
+router.post('/public', createPublicOrder as any);
+
+// 🔒 Все остальные маршруты требуют аутентификации
 router.use(authMiddleware as any);
 
 router.get('/', getSaleDocuments as any);
@@ -27,7 +32,7 @@ router.get('/:id', getSaleDocumentById as any);
 router.get('/:id/status', getOrderStatus as any);
 router.post('/', managerAccess as any, createSaleDocument as any);
 router.put('/:id', managerAccess as any, updateSaleDocument as any);
-router.put('/:id/full', managerAccess as any, updateFullOrder as any);  // 🆕
+router.put('/:id/full', managerAccess as any, updateFullOrder as any);
 router.patch('/:id/payment-status', managerAccess as any, updatePaymentStatus as any);
 router.put('/:id/payment', managerAccess as any, updatePaymentStatus as any);
 router.patch('/:id/status', updateOrderStatus as any);

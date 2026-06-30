@@ -72,7 +72,9 @@ export const OrderDetails: React.FC = () => {
       const response = await saleDocumentsApi.getById(Number(id));
       setOrder(response.data);
       setEditingComment(response.data.description || '');
-      setOrderStatus(response.data.orderStatus || 'ordered');
+      // ✅ Безопасная установка статуса
+      const status = response.data.orderStatus || 'ordered';
+      setOrderStatus(status as OrderStatus);
     } catch (error) {
       console.error('Error loading order:', error);
       toast.error('Ошибка загрузки заказа');

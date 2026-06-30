@@ -16,21 +16,16 @@ model User {
   role      String   @default("manager")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-}
 
-model ProductCategory {
-  productId  Int
-  categoryId Int
-  product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
-  category   Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
-
-  @@id([productId, categoryId])
+  saleDocuments SaleDocument[] @relation("UserSaleDocuments")
+  priceHistory  PriceHistory[]
+  clientDiscount Client[]      @relation("ClientDiscount")
 }
 
 model Product {
   id           Int       @id @default(autoincrement())
   name         String
-  article      String?   @unique
+  article      String?   // ❌ УБИРАЕМ @unique
   cost_price   Float     @default(0)
   retail_price Float     @default(0)
   description  String?   @db.Text
@@ -63,6 +58,15 @@ model Category {
   fields   CategoryField[]
 }
 
+model ProductCategory {
+  productId  Int
+  categoryId Int
+  product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  category   Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@id([productId, categoryId])
+}
+
 model CategoryField {
   id         Int       @id @default(autoincrement())
   categoryId Int
@@ -74,7 +78,8 @@ model CategoryField {
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
   category   Category  @relation(fields: [categoryId], references: [id], onDelete: Cascade)
-  values     ProductCharacteristic[]
+
+  values ProductCharacteristic[]
 }
 
 model ProductCharacteristic {
@@ -88,33 +93,6 @@ model ProductCharacteristic {
   field      CategoryField @relation(fields: [fieldId], references: [id], onDelete: Cascade)
 
   @@unique([productId, fieldId])
-}
-
-model Sale {
-  id             Int          @id @default(autoincrement())
-  productId      Int
-  quantity       Int
-  selling_price  Float
-  total_cost     Float
-  total_revenue  Float
-  profit         Float
-  customer_name  String?
-  customer_phone String?
-  sale_date      DateTime     @default(now())
-  createdAt      DateTime     @default(now())
-  documentId     Int?
-  product        Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
-  document       SaleDocument? @relation(fields: [documentId], references: [id], onDelete: SetNull)
-}
-
-model Expense {
-  id           Int      @id @default(autoincrement())
-  name         String
-  amount       Float
-  category     String
-  description  String?  @db.Text
-  expense_date DateTime @default(now())
-  createdAt    DateTime @default(now())
 }
 
 model Client {
@@ -143,6 +121,7 @@ model Client {
   updatedAt        DateTime  @updatedAt
 
   orders SaleDocument[]
+  updatedBy User? @relation("ClientDiscount", fields: [discountUpdatedBy], references: [id])
 }
 
 model SaleDocument {
@@ -169,8 +148,11 @@ model SaleDocument {
   updatedAt        DateTime         @updatedAt
   createdBy        Int?
   sellerName       String?
-  items            SaleDocumentItem[]
-  sales            Sale[]
+  source           String?
+  
+  items SaleDocumentItem[]
+  sales Sale[]
+  creator User? @relation("UserSaleDocuments", fields: [createdBy], references: [id])
 }
 
 model SaleDocumentItem {
@@ -186,6 +168,34 @@ model SaleDocumentItem {
   cost_price     Float        @default(0)
   total          Float
   createdAt      DateTime     @default(now())
+}
+
+model Sale {
+  id             Int          @id @default(autoincrement())
+  productId      Int
+  quantity       Int
+  selling_price  Float
+  total_cost     Float
+  total_revenue  Float
+  profit         Float
+  customer_name  String?
+  customer_phone String?
+  sale_date      DateTime     @default(now())
+  createdAt      DateTime     @default(now())
+  documentId     Int?
+  
+  product        Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  document       SaleDocument? @relation(fields: [documentId], references: [id], onDelete: SetNull)
+}
+
+model Expense {
+  id           Int      @id @default(autoincrement())
+  name         String
+  amount       Float
+  category     String
+  description  String?  @db.Text
+  expense_date DateTime @default(now())
+  createdAt    DateTime @default(now())
 }
 
 model ProductImage {
@@ -212,6 +222,8 @@ model PriceHistory {
   reason     String?
   changedBy  Int
   changedAt  DateTime @default(now())
+
+  user User @relation(fields: [changedBy], references: [id])
 
   @@index([productId])
   @@index([changedAt])
