@@ -1,4 +1,4 @@
-// backend/src/controllers/clients.controller.ts
+// crm-project/backend/src/controllers/clients.controller.ts
 import { Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { RequestWithUser, CreateClientDTO, UpdateClientDiscountDTO } from '../types';
@@ -14,6 +14,10 @@ interface GetClientsQuery {
   limit?: string;
 }
 
+/**
+ * GET /api/clients
+ * Получить всех клиентов с фильтрацией
+ */
 export const getAllClients = async (req: RequestWithUser, res: Response): Promise<void> => {
   try {
     const { search, sortBy = 'createdAt', sortOrder = 'desc', page = '1', limit = '20' } = req.query as GetClientsQuery;
@@ -25,6 +29,7 @@ export const getAllClients = async (req: RequestWithUser, res: Response): Promis
         OR: [
           { firstName: { contains: search, mode: 'insensitive' } },
           { lastName: { contains: search, mode: 'insensitive' } },
+          { middleName: { contains: search, mode: 'insensitive' } }, // ✅
           { phone: { contains: search, mode: 'insensitive' } },
           { email: { contains: search, mode: 'insensitive' } },
           { carModel: { contains: search, mode: 'insensitive' } },
@@ -58,6 +63,10 @@ export const getAllClients = async (req: RequestWithUser, res: Response): Promis
   }
 };
 
+/**
+ * GET /api/clients/:id
+ * Получить клиента по ID
+ */
 export const getClientById = async (req: RequestWithUser, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
@@ -93,6 +102,10 @@ export const getClientById = async (req: RequestWithUser, res: Response): Promis
   }
 };
 
+/**
+ * POST /api/clients
+ * Создать клиента
+ */
 export const createClient = async (req: RequestWithUser, res: Response): Promise<void> => {
   try {
     const data: CreateClientDTO = req.body;
@@ -115,21 +128,23 @@ export const createClient = async (req: RequestWithUser, res: Response): Promise
       discountPercent
     } = data;
     
+    // Проверяем обязательное поле
     if (!firstName || !phone) {
       res.status(400).json({ error: 'Имя и телефон обязательны для заполнения' });
       return;
     }
     
-    // ✅ Проверка на дубликат телефона
+    // Проверяем уникальность телефона
     const existingClient = await prisma.client.findUnique({
       where: { phone }
     });
     
     if (existingClient) {
-      res.status(400).json({ error: `Клиент с телефоном "${phone}" уже существует` });
+      res.status(400).json({ error: 'Клиент с таким телефоном уже существует' });
       return;
     }
     
+    // Валидация скидки
     let finalDiscount = 0;
     if (discountPercent !== undefined) {
       finalDiscount = Math.min(100, Math.max(0, discountPercent));
@@ -139,7 +154,7 @@ export const createClient = async (req: RequestWithUser, res: Response): Promise
       data: {
         firstName,
         lastName,
-        middleName,
+        middleName, // ✅ ОТЧЕСТВО
         phone,
         email,
         birthDate: birthDate ? new Date(birthDate) : null,
@@ -158,10 +173,11 @@ export const createClient = async (req: RequestWithUser, res: Response): Promise
       }
     });
     
+    // Логируем создание клиента со скидкой
     if (finalDiscount > 0 && req.user) {
       await auditService.log(
         { id: req.user.id, name: req.user.name, role: req.user.role },
-        `Создан клиент "${firstName} ${lastName || ''}" со скидкой ${finalDiscount}%`,
+        `Создан клиент "${firstName} ${lastName || ''} ${middleName || ''}" со скидкой ${finalDiscount}%`,
         { clientId: client.id, discountPercent: finalDiscount }
       );
     }
@@ -173,6 +189,10 @@ export const createClient = async (req: RequestWithUser, res: Response): Promise
   }
 };
 
+/**
+ * PUT /api/clients/:id
+ * Обновить клиента
+ */
 export const updateClient = async (req: RequestWithUser, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
@@ -186,6 +206,7 @@ export const updateClient = async (req: RequestWithUser, res: Response): Promise
     const updateData = req.body;
     const oldClient = await prisma.client.findUnique({ where: { id: clientId } });
     
+    // Если обновляется телефон, проверяем уникальность
     if (updateData.phone) {
       const existingClient = await prisma.client.findFirst({
         where: {
@@ -200,6 +221,7 @@ export const updateClient = async (req: RequestWithUser, res: Response): Promise
       }
     }
     
+    // Валидация скидки
     let discountChanged = false;
     let oldDiscount = oldClient?.discountPercent || 0;
     let newDiscount = updateData.discountPercent !== undefined 
@@ -217,15 +239,18 @@ export const updateClient = async (req: RequestWithUser, res: Response): Promise
       where: { id: clientId },
       data: {
         ...updateData,
+        // ✅ Убедимся, что middleName обновляется
+        middleName: updateData.middleName !== undefined ? updateData.middleName : oldClient?.middleName,
         birthDate: updateData.birthDate ? new Date(updateData.birthDate) : undefined,
         carYear: updateData.carYear ? parseInt(updateData.carYear) : undefined
       }
     });
     
+    // Логируем изменение скидки
     if (discountChanged && req.user) {
       await auditService.log(
         { id: req.user.id, name: req.user.name, role: req.user.role },
-        `Изменена скидка клиента "${client.firstName} ${client.lastName || ''}" с ${oldDiscount}% на ${newDiscount}%`,
+        `Изменена скидка клиента "${client.firstName} ${client.lastName || ''} ${client.middleName || ''}" с ${oldDiscount}% на ${newDiscount}%`,
         { clientId, oldDiscount, newDiscount }
       );
     }
@@ -237,6 +262,10 @@ export const updateClient = async (req: RequestWithUser, res: Response): Promise
   }
 };
 
+/**
+ * DELETE /api/clients/:id
+ * Удалить клиента
+ */
 export const deleteClient = async (req: RequestWithUser, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
@@ -247,6 +276,7 @@ export const deleteClient = async (req: RequestWithUser, res: Response): Promise
       return;
     }
     
+    // Проверяем, есть ли у клиента заказы
     const ordersCount = await prisma.saleDocument.count({
       where: { clientId: clientId }
     });
@@ -269,6 +299,10 @@ export const deleteClient = async (req: RequestWithUser, res: Response): Promise
   }
 };
 
+/**
+ * GET /api/clients/search
+ * Поиск клиентов для автокомплита
+ */
 export const searchClients = async (req: RequestWithUser, res: Response): Promise<void> => {
   try {
     const { q } = req.query;
@@ -283,6 +317,7 @@ export const searchClients = async (req: RequestWithUser, res: Response): Promis
         OR: [
           { firstName: { contains: q, mode: 'insensitive' } },
           { lastName: { contains: q, mode: 'insensitive' } },
+          { middleName: { contains: q, mode: 'insensitive' } }, // ✅
           { phone: { contains: q, mode: 'insensitive' } },
           { email: { contains: q, mode: 'insensitive' } },
           { carNumber: { contains: q, mode: 'insensitive' } },
@@ -302,6 +337,10 @@ export const searchClients = async (req: RequestWithUser, res: Response): Promis
   }
 };
 
+/**
+ * GET /api/clients/stats/summary
+ * Получить статистику по клиентам
+ */
 export const getClientsStats = async (req: RequestWithUser, res: Response): Promise<void> => {
   try {
     const totalClients = await prisma.client.count();
@@ -317,6 +356,7 @@ export const getClientsStats = async (req: RequestWithUser, res: Response): Prom
         id: true,
         firstName: true,
         lastName: true,
+        middleName: true,
         phone: true,
         totalOrders: true,
         totalSpent: true,
@@ -344,6 +384,10 @@ export const getClientsStats = async (req: RequestWithUser, res: Response): Prom
   }
 };
 
+/**
+ * PATCH /api/clients/:id/discount
+ * Обновить только скидку клиента
+ */
 export const updateClientDiscount = async (req: RequestWithUser, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
@@ -364,7 +408,7 @@ export const updateClientDiscount = async (req: RequestWithUser, res: Response):
     
     const oldClient = await prisma.client.findUnique({
       where: { id: clientId },
-      select: { firstName: true, lastName: true, discountPercent: true }
+      select: { firstName: true, lastName: true, middleName: true, discountPercent: true }
     });
     
     if (!oldClient) {
@@ -381,10 +425,11 @@ export const updateClientDiscount = async (req: RequestWithUser, res: Response):
       }
     });
     
+    // Логируем изменение скидки
     if (req.user) {
       await auditService.log(
         { id: req.user.id, name: req.user.name, role: req.user.role },
-        `Изменена скидка клиента "${oldClient.firstName} ${oldClient.lastName || ''}" с ${oldClient.discountPercent}% на ${validDiscount}%`,
+        `Изменена скидка клиента "${oldClient.firstName} ${oldClient.lastName || ''} ${oldClient.middleName || ''}" с ${oldClient.discountPercent}% на ${validDiscount}%`,
         { clientId, oldDiscount: oldClient.discountPercent, newDiscount: validDiscount }
       );
     }

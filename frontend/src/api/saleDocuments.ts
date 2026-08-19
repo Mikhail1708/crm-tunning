@@ -1,5 +1,6 @@
 // frontend/src/api/saleDocuments.ts
 import { api } from './client';
+import type { OrderStatus } from '../types';
 
 export interface SaleDocument {
   id: number;
@@ -9,12 +10,15 @@ export interface SaleDocument {
   customerPhone?: string;
   customerEmail?: string;
   customerAddress?: string;
+  contactMethod?: string;
+  deliveryMethod?: string;
+  deliveryProvider?: string;
   subtotal: number;
   discount: number;
   total: number;
   paymentMethod?: string;
   paymentStatus: string;
-  orderStatus?: 'ordered' | 'assembling' | 'shipped';
+  orderStatus?: OrderStatus;
   saleDate: string;
   items: SaleDocumentItem[];
   clientName?: string;
@@ -81,7 +85,7 @@ export const saleDocumentsApi = {
     api.put(`/sale-documents/${id}/payment`, { paymentStatus: status }),
   
   // Обновить статус заказа
-  updateOrderStatus: (id: number, orderStatus: 'ordered' | 'assembling' | 'shipped') => 
+  updateOrderStatus: (id: number, orderStatus: OrderStatus) => 
     api.patch(`/sale-documents/${id}/status`, { orderStatus }),
   
   getOrderStatus: (id: number) => 

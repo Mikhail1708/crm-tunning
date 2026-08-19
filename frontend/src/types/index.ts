@@ -96,7 +96,7 @@ export interface SaleDocumentItem {
   isWork?: boolean;
 }
 
-export type OrderStatus = 'ordered' | 'assembling' | 'shipped';
+export type OrderStatus = 'confirmed' | 'assembling' | 'shipped' | 'cancelled';
 
 export interface SaleDocument {
   id: number;
@@ -108,6 +108,9 @@ export interface SaleDocument {
   customerPhone?: string;
   customerEmail?: string;
   customerAddress?: string;
+  contactMethod?: string;
+  deliveryMethod?: string;
+  deliveryProvider?: string;
   customerCity?: string;
   subtotal: number;
   discount: number;

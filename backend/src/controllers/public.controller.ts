@@ -1,0 +1,278 @@
+// crm-project/backend/src/controllers/public/products.controller.ts
+import { Request, Response } from 'express';
+import { PrismaClient } from '@prisma/client';
+
+const prisma = new PrismaClient();
+
+/**
+ * GET /api/public/products
+ * Публичный эндпоинт для получения товаров (без JWT)
+ */
+export const getPublicProducts = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { category, carModel, search, page = '1', limit = '12' } = req.query;
+    
+    const pageNum = parseInt(page as string) || 1;
+    const limitNum = parseInt(limit as string) || 12;
+    const skip = (pageNum - 1) * limitNum;
+
+    // Строим фильтры
+    const where: any = {
+      // Показываем только товары с остатком > 0
+      stock: { gt: 0 },
+    };
+
+    // Фильтр по поиску
+    if (search) {
+      where.OR = [
+        { name: { contains: search as string, mode: 'insensitive' } },
+        { description: { contains: search as string, mode: 'insensitive' } },
+        { article: { contains: search as string, mode: 'insensitive' } },
+      ];
+    }
+
+    // Фильтр по категории (через связи)
+    if (category) {
+      const categoryId = parseInt(category as string);
+      if (!isNaN(categoryId)) {
+        where.categories = {
+          some: {
+            categoryId: categoryId,
+          },
+        };
+      }
+    }
+
+    // Получаем товары с изображениями
+    const [products, total] = await Promise.all([
+      prisma.product.findMany({
+        where,
+        include: {
+          categories: {
+            include: {
+              category: true,
+            },
+          },
+          images: {
+            orderBy: { sortOrder: 'asc' },
+          },
+          characteristics: {
+            include: {
+              field: true,
+            },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limitNum,
+      }),
+      prisma.product.count({ where }),
+    ]);
+
+    // Форматируем ответ
+    const formattedProducts = products.map((product) => {
+      // Собираем категории
+      const categories = product.categories.map((pc: any) => ({
+        id: pc.category.id,
+        name: pc.category.name,
+      }));
+
+      // Собираем характеристики
+      const characteristics: Record<string, any> = {};
+      product.characteristics.forEach((char: any) => {
+        if (char.field?.name) {
+          try {
+            characteristics[char.field.name] = JSON.parse(char.value);
+          } catch {
+            characteristics[char.field.name] = char.value;
+          }
+        }
+      });
+
+      // Формируем URL изображений из таблицы ProductImage
+      const baseUrl = process.env.BASE_URL || 'https://swapcrm38.ru';
+      const images = product.images.map((img: any) => {
+        if (img.url.startsWith('http')) {
+          return img.url;
+        }
+        return `${baseUrl}${img.url}`;
+      });
+
+      // Если есть image_url, добавляем его в начало (для обратной совместимости)
+      if (product.image_url && images.length === 0) {
+        const mainImage = product.image_url.startsWith('http') 
+          ? product.image_url 
+          : `${baseUrl}${product.image_url}`;
+        images.unshift(mainImage);
+      }
+
+      // Если нет изображений — ставим заглушку
+      const finalImages = images.length > 0 ? images : ['/images/placeholder.jpg'];
+
+      return {
+        id: product.id,
+        name: product.name,
+        description: product.description || '',
+        price: product.retail_price,
+        oldPrice: null,
+        category: categories.length > 0 ? categories[0].name : '',
+        categories: categories,
+        carModel: 'Универсальный',
+        inStock: product.stock > 0,
+        stock: product.stock,
+        images: finalImages,
+        sku: product.article || '',
+        rating: null,
+        reviews: null,
+        characteristics: characteristics,
+        createdAt: product.createdAt,
+        updatedAt: product.updatedAt,
+      };
+    });
+
+    res.json({
+      items: formattedProducts,
+      total,
+      page: pageNum,
+      limit: limitNum,
+      totalPages: Math.ceil(total / limitNum),
+    });
+  } catch (error) {
+    console.error('Error in getPublicProducts:', error);
+    res.status(500).json({ error: 'Ошибка получения товаров' });
+  }
+};
+
+/**
+ * GET /api/public/products/:id
+ * Публичный эндпоинт для получения товара по ID
+ */
+export const getPublicProductById = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const productId = parseInt(id);
+
+    if (isNaN(productId)) {
+      res.status(400).json({ error: 'Неверный ID товара' });
+      return;
+    }
+
+    const product = await prisma.product.findUnique({
+      where: { id: productId },
+      include: {
+        categories: {
+          include: {
+            category: {
+              include: {
+                fields: true,
+              },
+            },
+          },
+        },
+        images: {
+          orderBy: { sortOrder: 'asc' },
+        },
+        characteristics: {
+          include: {
+            field: true,
+          },
+        },
+      },
+    });
+
+    if (!product) {
+      res.status(404).json({ error: 'Товар не найден' });
+      return;
+    }
+
+    // Формируем характеристики
+    const characteristics: Record<string, any> = {};
+    product.characteristics.forEach((char: any) => {
+      if (char.field?.name) {
+        try {
+          characteristics[char.field.name] = JSON.parse(char.value);
+        } catch {
+          characteristics[char.field.name] = char.value;
+        }
+      }
+    });
+
+    const baseUrl = process.env.BASE_URL || 'https://swapcrm38.ru';
+    const images = product.images.map((img: any) => {
+      if (img.url.startsWith('http')) return img.url;
+      return `${baseUrl}${img.url}`;
+    });
+
+    if (product.image_url && images.length === 0) {
+      const mainImage = product.image_url.startsWith('http') 
+        ? product.image_url 
+        : `${baseUrl}${product.image_url}`;
+      images.unshift(mainImage);
+    }
+
+    const finalImages = images.length > 0 ? images : ['/images/placeholder.jpg'];
+
+    const formattedProduct = {
+      id: product.id,
+      name: product.name,
+      description: product.description || '',
+      price: product.retail_price,
+      oldPrice: null,
+      category: product.categories?.[0]?.category?.name || '',
+      categories: product.categories.map((pc: any) => ({
+        id: pc.category.id,
+        name: pc.category.name,
+      })),
+      carModel: 'Универсальный',
+      inStock: product.stock > 0,
+      stock: product.stock,
+      images: finalImages,
+      sku: product.article || '',
+      rating: null,
+      reviews: null,
+      characteristics,
+      createdAt: product.createdAt,
+      updatedAt: product.updatedAt,
+    };
+
+    res.json(formattedProduct);
+  } catch (error) {
+    console.error('Error in getPublicProductById:', error);
+    res.status(500).json({ error: 'Ошибка получения товара' });
+  }
+};
+
+/**
+ * GET /api/public/categories
+ * Публичный эндпоинт для получения категорий
+ */
+export const getPublicCategories = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const categories = await prisma.category.findMany({
+      where: { isActive: true },
+      select: {
+        id: true,
+        name: true,
+        description: true,
+        icon: true,
+        _count: {
+          select: {
+            products: {
+              where: {
+                product: {
+                  stock: { gt: 0 },
+                },
+              },
+            },
+          },
+        },
+      },
+      orderBy: { sortOrder: 'asc' },
+    });
+
+    res.json(categories);
+  } catch (error) {
+    console.error('Error in getPublicCategories:', error);
+    res.status(500).json({ error: 'Ошибка получения категорий' });
+  }
+};

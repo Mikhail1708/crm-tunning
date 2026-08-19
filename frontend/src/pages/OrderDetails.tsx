@@ -60,7 +60,7 @@ export const OrderDetails: React.FC = () => {
   const [showEditModal, setShowEditModal] = useState<boolean>(false);
 
   // Статус заказа из БД (сервера)
-  const [orderStatus, setOrderStatus] = useState<OrderStatus>('ordered');
+  const [orderStatus, setOrderStatus] = useState<OrderStatus>('confirmed');
 
   useEffect(() => {
     loadOrder();
@@ -73,7 +73,7 @@ export const OrderDetails: React.FC = () => {
       setOrder(response.data);
       setEditingComment(response.data.description || '');
       // ✅ Безопасная установка статуса
-      const status = response.data.orderStatus || 'ordered';
+      const status = response.data.orderStatus || 'confirmed';
       setOrderStatus(status as OrderStatus);
     } catch (error) {
       console.error('Error loading order:', error);
@@ -106,10 +106,11 @@ export const OrderDetails: React.FC = () => {
     if (updatingStatus) return;
     
     setUpdatingStatus(true);
-    const statusLabels: Record<OrderStatus, string> = {
-      ordered: 'Оформлен',
+    const statusLabels: Partial<Record<OrderStatus, string>> = {
+      confirmed: 'Подтверждён',
       assembling: 'Собирается',
-      shipped: 'Отправлен'
+      shipped: 'Отправлен',
+      cancelled: 'Отменён'
     };
     
     setOrderStatus(newStatus);
@@ -127,7 +128,7 @@ export const OrderDetails: React.FC = () => {
       console.error('Error updating order status:', error);
       toast.error('Ошибка обновления статуса', { id: 'status-update' });
       if (order) {
-        setOrderStatus(order.orderStatus || 'ordered');
+        setOrderStatus(order.orderStatus || 'confirmed');
       }
     } finally {
       setUpdatingStatus(false);
@@ -354,19 +355,23 @@ export const OrderDetails: React.FC = () => {
       {/* Статус заказа и оплаты */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className={`p-4 rounded-lg border ${
-          orderStatus === 'ordered' 
-            ? 'bg-blue-50 border-blue-200 dark:bg-blue-900/20 dark:border-blue-800' 
+          orderStatus === 'confirmed' 
+            ? 'bg-indigo-50 border-indigo-200 dark:bg-indigo-900/20 dark:border-indigo-800' 
             : orderStatus === 'assembling'
             ? 'bg-yellow-50 border-yellow-200 dark:bg-yellow-900/20 dark:border-yellow-800'
+            : orderStatus === 'cancelled'
+            ? 'bg-red-50 border-red-200 dark:bg-red-900/20 dark:border-red-800'
             : 'bg-green-50 border-green-200 dark:bg-green-900/20 dark:border-green-800'
         }`}>
           <div className="flex items-center justify-between flex-wrap gap-3">
             <div className="flex items-center gap-2">
               <Truck size={20} className={
-                orderStatus === 'ordered' 
-                  ? 'text-blue-600' 
+                orderStatus === 'confirmed' 
+                  ? 'text-indigo-600' 
                   : orderStatus === 'assembling'
                   ? 'text-yellow-600'
+                  : orderStatus === 'cancelled'
+                  ? 'text-red-600'
                   : 'text-green-600'
               } />
               <span className="font-medium">Статус выполнения заказа</span>
@@ -382,9 +387,10 @@ export const OrderDetails: React.FC = () => {
           <div className="mt-3">
             <OrderStatusBadge status={orderStatus} size="lg" showIcon={true} />
             <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
-              {orderStatus === 'ordered' && 'Заказ принят, ожидает обработки'}
+              {orderStatus === 'confirmed' && 'Заказ подтверждён и принят в работу'}
               {orderStatus === 'assembling' && 'Идет сборка и подготовка заказа'}
-              {orderStatus === 'shipped' && 'Заказ передан клиенту'}
+              {orderStatus === 'shipped' && 'Заказ отправлен клиенту'}
+              {orderStatus === 'cancelled' && 'Заказ отменён'}
             </p>
           </div>
         </div>
@@ -462,6 +468,29 @@ export const OrderDetails: React.FC = () => {
               <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
                 <MapPin size={16} />
                 <span>{order.customerAddress}</span>
+              </div>
+            )}
+
+            {order.contactMethod && (
+              <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
+                <Phone size={16} />
+                <span>Связаться: {{ phone: 'звонок', whatsapp: 'WhatsApp', telegram: 'Telegram', email: 'email' }[order.contactMethod] || order.contactMethod}</span>
+              </div>
+            )}
+            {order.deliveryMethod && (
+              <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
+                <Truck size={16} />
+                <span>{{
+                  pickup: 'Самовывоз',
+                  courier: 'Курьерская доставка',
+                  post: 'Транспортная компания',
+                }[order.deliveryMethod] || order.deliveryMethod}</span>
+              </div>
+            )}
+            {order.deliveryProvider && (
+              <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
+                <Truck size={16} />
+                <span>Перевозчик: {order.deliveryProvider}</span>
               </div>
             )}
 

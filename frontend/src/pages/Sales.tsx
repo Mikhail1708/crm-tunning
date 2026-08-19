@@ -20,8 +20,7 @@ import {
   AlertCircle
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-
-type OrderStatus = 'ordered' | 'assembling' | 'shipped';
+import type { OrderStatus } from '../types';
 
 interface SalesStats {
   total: number;
@@ -84,10 +83,11 @@ export const Sales: React.FC = () => {
         doc.id === orderId ? { ...doc, orderStatus: newStatus } : doc
       ));
       
-      const statusLabels: Record<OrderStatus, string> = {
-        ordered: 'Оформлен',
+      const statusLabels: Partial<Record<OrderStatus, string>> = {
+        confirmed: 'Подтверждён',
         assembling: 'Собирается',
-        shipped: 'Отправлен'
+        shipped: 'Отправлен',
+        cancelled: 'Отменён'
       };
       toast.success(`Статус заказа изменен на "${statusLabels[newStatus]}"`);
     } catch (error) {
@@ -102,7 +102,7 @@ export const Sales: React.FC = () => {
 
   // Получить статус заказа
   const getOrderStatus = (doc: SaleDocument): OrderStatus => {
-    return (doc.orderStatus as OrderStatus) || 'ordered';
+    return (doc.orderStatus as OrderStatus) || 'confirmed';
   };
 
   // Фильтрация документов
@@ -275,14 +275,14 @@ export const Sales: React.FC = () => {
           Все заказы
         </button>
         <button
-          onClick={() => setStatusFilter('ordered')}
+          onClick={() => setStatusFilter('confirmed')}
           className={`px-3 py-1.5 rounded-full text-sm font-medium transition-all flex items-center gap-1 ${
-            statusFilter === 'ordered' 
-              ? 'bg-blue-600 text-white' 
-              : 'bg-blue-50 text-blue-600 hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-400'
+            statusFilter === 'confirmed' 
+              ? 'bg-indigo-600 text-white' 
+              : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100 dark:bg-indigo-900/30 dark:text-indigo-400'
           }`}
         >
-          Оформлен
+          Подтверждён
         </button>
         <button
           onClick={() => setStatusFilter('assembling')}
@@ -303,6 +303,16 @@ export const Sales: React.FC = () => {
           }`}
         >
           Отправлен
+        </button>
+        <button
+          onClick={() => setStatusFilter('cancelled')}
+          className={`px-3 py-1.5 rounded-full text-sm font-medium transition-all flex items-center gap-1 ${
+            statusFilter === 'cancelled'
+              ? 'bg-red-600 text-white'
+              : 'bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-900/30 dark:text-red-400'
+          }`}
+        >
+          Отменён
         </button>
       </div>
 
@@ -354,7 +364,7 @@ export const Sales: React.FC = () => {
                           currentStatus={getOrderStatus(doc)}
                           onStatusChange={handleStatusChange}
                           size="sm"
-                          isLoading={updatingStatusId === doc.id}
+                          disabled={updatingStatusId === doc.id}
                         />
                       </div>
                     </Td>

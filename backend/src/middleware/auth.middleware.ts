@@ -1,20 +1,48 @@
 // backend/src/middleware/auth.middleware.ts
+
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { RequestWithUser } from '../types';
 
 interface JwtPayload {
-  id: number;
+  id: number | string;
   email: string;
   name: string;
   role: string;
 }
+
+// ============================================================
+// ПУБЛИЧНЫЕ ПУТИ (НЕ ТРЕБУЮТ JWT)
+// ============================================================
+const PUBLIC_PATHS = [
+  '/api/sale-documents/public',
+  '/api/public',
+  '/api/health',
+  '/api/auth/login',
+  '/api/auth/reset-password',
+  '/api/auth/csrf-token',
+  '/api/webhooks',
+];
+
+const isPublicPath = (path: string): boolean => {
+  if (path === '/api/sale-documents/public') return true;
+  if (path === '/api/health') return true;
+  if (path.startsWith('/api/public/')) return true;
+  if (path.startsWith('/api/webhooks/')) return true;
+  return PUBLIC_PATHS.some(p => path === p || path.startsWith(p + '/'));
+};
 
 export const authMiddleware = async (
   req: RequestWithUser,
   res: Response,
   next: NextFunction
 ): Promise<void> => {
+  // ✅ ПРОПУСКАЕМ ПУБЛИЧНЫЕ ПУТИ
+  if (isPublicPath(req.path) || isPublicPath(req.originalUrl)) {
+    console.log(`✅ Пропускаем JWT для публичного эндпоинта: ${req.method} ${req.path}`);
+    return next();
+  }
+
   try {
     let token = req.cookies?.token;
     
@@ -26,6 +54,7 @@ export const authMiddleware = async (
     }
     
     console.log('Auth middleware - token exists:', !!token);
+    console.log('Auth middleware - path:', req.path);
     
     if (!token) {
       console.log('No token, sending 401');
@@ -35,13 +64,17 @@ export const authMiddleware = async (
     
     try {
       const decoded = jwt.verify(token, process.env.JWT_SECRET!) as JwtPayload;
-      console.log('Token verified for user:', decoded.email);
+      
+      console.log('Token verified for user:', decoded.email || decoded.id);
+      
+      // ✅ ПРИВОДИМ id К number (ЕСЛИ СТРОКА — ПАРСИМ)
+      const userId = typeof decoded.id === 'string' ? parseInt(decoded.id) : decoded.id;
       
       req.user = {
-        id: decoded.id,
-        email: decoded.email,
-        name: decoded.name,
-        role: decoded.role
+        id: userId,
+        email: decoded.email || '',
+        name: decoded.name || '',
+        role: decoded.role || 'user'
       };
       
       console.log('User set, proceeding to next middleware');

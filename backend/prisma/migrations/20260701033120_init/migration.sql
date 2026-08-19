@@ -1,3 +1,9 @@
+-- DropIndex
+DROP INDEX "Product_article_key";
+
+-- AlterTable
+ALTER TABLE "SaleDocument" ADD COLUMN     "source" TEXT;
+
 -- AddForeignKey
 ALTER TABLE "Client" ADD CONSTRAINT "Client_discountUpdatedBy_fkey" FOREIGN KEY ("discountUpdatedBy") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 

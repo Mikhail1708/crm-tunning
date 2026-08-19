@@ -15,12 +15,15 @@ import {
   createPublicOrder,        // 👈 НОВЫЙ КОНТРОЛЛЕР
 } from '../controllers/saleDocuments.controller';
 import { authMiddleware, managerAccess } from '../middleware/auth.middleware';
+import { requireInternalApiKey } from '../middleware/internalApiKey.middleware';
+import { orderLimiter } from '../middleware/rateLimit.middleware';
 
 const router = Router();
 
 // 🔓 ПУБЛИЧНЫЙ ЭНДПОИНТ (без JWT) для создания заказа с сайта
 // Ограничение частоты запросов через rate-limit (настраивается отдельно)
-router.post('/public', createPublicOrder as any);
+router.post('/public', orderLimiter, requireInternalApiKey, createPublicOrder as any);
+router.put('/internal/:id/full', orderLimiter, requireInternalApiKey, updateFullOrder as any);
 
 // 🔒 Все остальные маршруты требуют аутентификации
 router.use(authMiddleware as any);

@@ -1,4 +1,4 @@
-// backend/src/controllers/auth.controller.ts
+// backend/src/controllers/auth.controller.ts (CRM)
 import { Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
@@ -11,7 +11,6 @@ interface RegisterBody {
   email: string;
   password: string;
   name: string;
-  role?: string;
 }
 
 interface LoginBody {
@@ -21,7 +20,7 @@ interface LoginBody {
 
 export const register = async (req: RequestWithUser, res: Response): Promise<void> => {
   try {
-    const { email, password, name, role }: RegisterBody = req.body;
+    const { email, password, name }: RegisterBody = req.body;
     
     const existingUser = await prisma.user.findUnique({ where: { email } });
     if (existingUser) {
@@ -36,7 +35,7 @@ export const register = async (req: RequestWithUser, res: Response): Promise<voi
         email, 
         password: hashedPassword, 
         name, 
-        role: role || 'manager' 
+        role: 'manager'
       },
       select: { 
         id: true, 
@@ -85,14 +84,12 @@ export const login = async (req: RequestWithUser, res: Response): Promise<void> 
     
     console.log('Token generated, setting cookie...');
     
-    // Устанавливаем cookie с правильными настройками
     res.cookie('token', token, {
       httpOnly: true,
-      secure: true, // Для разработки - false
+      secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
-      maxAge: 24 * 60 * 60 * 1000, // 24 часа
+      maxAge: 24 * 60 * 60 * 1000,
       path: '/',
-     // domain: 'localhost' // Явно указываем домен
     });
     
     console.log('Cookie set, sending response');
@@ -115,7 +112,7 @@ export const logout = async (req: RequestWithUser, res: Response): Promise<void>
   try {
     res.clearCookie('token', {
       httpOnly: true,
-      secure: false,
+      secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
       path: '/'
     });
@@ -126,7 +123,9 @@ export const logout = async (req: RequestWithUser, res: Response): Promise<void>
   }
 };
 
-// backend/src/controllers/auth.controller.ts
+// ============================================================
+// ✅ ИСПРАВЛЕННЫЙ getMe — ИЩЕМ ПО EMAIL
+// ============================================================
 export const getMe = async (req: RequestWithUser, res: Response): Promise<void> => {
   try {
     console.log('getMe called, req.user:', req.user);
@@ -137,12 +136,25 @@ export const getMe = async (req: RequestWithUser, res: Response): Promise<void> 
       return;
     }
     
+    // ✅ ИЩЕМ ПО EMAIL (не по ID)
     const user = await prisma.user.findUnique({
-      where: { id: req.user.id },
-      select: { id: true, email: true, name: true, role: true, createdAt: true }
+      where: { email: req.user.email },
+      select: { 
+        id: true, 
+        email: true, 
+        name: true, 
+        role: true, 
+        createdAt: true 
+      }
     });
     
-    console.log('User found:', user?.email);
+    if (!user) {
+      console.log('User not found by email:', req.user.email);
+      res.status(404).json({ error: 'Пользователь не найден' });
+      return;
+    }
+    
+    console.log('User found:', user.email);
     res.json(user);
   } catch (error) {
     console.error('Get me error:', error);

@@ -1,114 +1,81 @@
-// backend/src/middleware/upload.middleware.ts
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
-import sharp from 'sharp';
-import crypto from 'crypto';
+import { processImage } from './imageProcessor';
 
-const uploadDir = path.join(__dirname, '../../uploads/products');
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, { recursive: true });
+const UPLOAD_DIR = path.join(__dirname, '../../uploads/products');
+
+// Создаем папку если нет
+if (!fs.existsSync(UPLOAD_DIR)) {
+  fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 }
 
-// Генерация хеша для имени файла
-function generateHash(originalName: string): string {
-  const timestamp = Date.now();
-  const random = Math.random().toString(36).substring(2, 10);
-  const hash = crypto.createHash('sha256');
-  hash.update(`${originalName}-${timestamp}-${random}`);
-  return hash.digest('hex').substring(0, 32);
-}
-
-// Временное хранилище
+// Настройка multer для временного хранения
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, uploadDir);
+    cb(null, UPLOAD_DIR);
   },
   filename: (req, file, cb) => {
-    const tempName = `temp_${Date.now()}_${Math.round(Math.random() * 1E9)}`;
-    cb(null, tempName);
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, uniqueSuffix + path.extname(file.originalname));
   }
 });
 
 const fileFilter = (req: any, file: any, cb: any) => {
-  const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
+  const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
   if (allowedTypes.includes(file.mimetype)) {
     cb(null, true);
   } else {
-    cb(new Error('Неподдерживаемый формат файла'), false);
+    cb(new Error('Неверный формат файла. Разрешены: jpeg, png, gif, webp'));
   }
 };
 
 export const upload = multer({
   storage: storage,
   limits: {
-    fileSize: 5 * 1024 * 1024
+    fileSize: 5 * 1024 * 1024, // 5MB
   },
   fileFilter: fileFilter
 });
 
-// Middleware для обработки изображения
+// Middleware для обработки изображения после загрузки
 export const processUploadedImage = async (req: any, res: any, next: any) => {
-  if (!req.file) {
-    return next();
-  }
-  
   try {
-    const tempPath = req.file.path;
-    const originalName = req.file.originalname;
-    
-    console.log('Processing image:', tempPath);
-    
-    // Генерируем хешированное имя
-    const hash = generateHash(originalName);
-    const outputFilename = `${hash}.webp`;
-    const outputPath = path.join(uploadDir, outputFilename);
-    
-    // Обрабатываем изображение
-    const metadata = await sharp(tempPath).metadata();
-    console.log('Original image size:', metadata.width, 'x', metadata.height);
-    
-    let sharpInstance = sharp(tempPath);
-    
-    // Уменьшаем если слишком большое
-    if (metadata.width && metadata.width > 1200) {
-      sharpInstance = sharpInstance.resize(1200, null, {
-        withoutEnlargement: true,
-        fit: 'inside'
-      });
+    if (!req.file) {
+      return res.status(400).json({ message: 'Файл не загружен' });
     }
-    
-    // Конвертируем в WebP с сжатием
-    await sharpInstance
-      .webp({
-        quality: 80,
-        effort: 6,
-        lossless: false
-      })
-      .toFile(outputPath);
-    
-    // Получаем размер сжатого файла
-    const stats = fs.statSync(outputPath);
-    console.log('Processed image size:', stats.size, 'bytes');
-    
-    // Удаляем временный файл
-    if (fs.existsSync(tempPath)) {
-      fs.unlinkSync(tempPath);
+
+    console.log('Processing image:', req.file.originalname);
+
+    // Обрабатываем изображение (конвертируем в webp)
+    const processed = await processImage(
+      req.file.path,
+      UPLOAD_DIR,
+      req.file.originalname
+    );
+
+    console.log('Image processed:', processed.filename);
+
+    // Удаляем оригинальный файл
+    if (fs.existsSync(req.file.path)) {
+      fs.unlinkSync(req.file.path);
     }
-    
-    // Обновляем информацию в req.file
-    req.file.filename = outputFilename;
-    req.file.path = outputPath;
-    req.file.size = stats.size;
-    
-    console.log('Image processed successfully:', outputFilename);
-    
+
+    // Подменяем файл на обработанный
+    req.file.filename = processed.filename;
+    req.file.path = processed.path;
+    req.file.size = processed.size;
+
     next();
   } catch (error) {
     console.error('Error processing image:', error);
+    // Если ошибка, удаляем оригинальный файл
     if (req.file && fs.existsSync(req.file.path)) {
       fs.unlinkSync(req.file.path);
     }
-    res.status(500).json({ message: 'Ошибка обработки изображения' });
+    res.status(500).json({ 
+      message: 'Ошибка обработки изображения',
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
   }
 };

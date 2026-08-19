@@ -24,37 +24,50 @@ export async function processImage(
   outputDir: string,
   originalName: string
 ): Promise<ProcessedImage> {
-  const hash = generateHash(originalName);
-  const outputFilename = `${hash}.webp`;
-  const outputPath = path.join(outputDir, outputFilename);
-  
-  const metadata = await sharp(inputPath).metadata();
-  
-  let sharpInstance = sharp(inputPath);
-  
-  if (metadata.width && metadata.width > 1200) {
-    sharpInstance = sharpInstance.resize(1200, null, {
-      withoutEnlargement: true,
-      fit: 'inside'
-    });
+  try {
+    const hash = generateHash(originalName);
+    const outputFilename = `${hash}.webp`;
+    const outputPath = path.join(outputDir, outputFilename);
+    
+    console.log(`Processing: ${inputPath} -> ${outputPath}`);
+    
+    const metadata = await sharp(inputPath).metadata();
+    console.log(`Original: ${metadata.width}x${metadata.height}, ${metadata.size} bytes`);
+    
+    let sharpInstance = sharp(inputPath);
+    
+    // Уменьшаем если слишком большое
+    if (metadata.width && metadata.width > 1200) {
+      sharpInstance = sharpInstance.resize(1200, null, {
+        withoutEnlargement: true,
+        fit: 'inside'
+      });
+      console.log('Resizing to max 1200px');
+    }
+    
+    // Конвертируем в webp с сжатием
+    await sharpInstance
+      .webp({
+        quality: 80,
+        effort: 6,
+        lossless: false
+      })
+      .toFile(outputPath);
+    
+    const stats = fs.statSync(outputPath);
+    const processedMetadata = await sharp(outputPath).metadata();
+    
+    console.log(`Processed: ${processedMetadata.width}x${processedMetadata.height}, ${stats.size} bytes`);
+    
+    return {
+      filename: outputFilename,
+      path: outputPath,
+      size: stats.size,
+      width: processedMetadata.width || 0,
+      height: processedMetadata.height || 0
+    };
+  } catch (error) {
+    console.error('Error in processImage:', error);
+    throw error;
   }
-  
-  await sharpInstance
-    .webp({
-      quality: 80,
-      effort: 6,
-      lossless: false
-    })
-    .toFile(outputPath);
-  
-  const stats = fs.statSync(outputPath);
-  const processedMetadata = await sharp(outputPath).metadata();
-  
-  return {
-    filename: outputFilename,
-    path: outputPath,
-    size: stats.size,
-    width: processedMetadata.width || 0,
-    height: processedMetadata.height || 0
-  };
 }

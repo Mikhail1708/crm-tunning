@@ -1,14 +1,14 @@
 // frontend/src/pages/Clients.tsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Search, Edit2, Trash2, User, Phone, Mail, Car, ChevronLeft, ChevronRight, Calendar, MapPin, Percent } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, User, Phone, Mail, Car, ChevronLeft, ChevronRight, Calendar, MapPin, Percent, RefreshCw } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { clientsApi } from '../api/clients';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { Card } from '../components/ui/Card';
 import { Modal } from '../components/ui/Modal';
-import { Client, PaginatedResponse } from '../types';
+import { Client } from '../types';
 import { formatDate, formatPrice } from '../utils/formatters';
 
 interface ClientFormData {
@@ -23,7 +23,7 @@ interface ClientFormData {
   carYear: string;
   carNumber: string;
   notes: string;
-  discountPercent: number;  // 🆕 Скидка
+  discountPercent: number;
 }
 
 interface ClientsStats {
@@ -92,39 +92,55 @@ export const Clients: React.FC = () => {
   });
   const [stats, setStats] = useState<ClientsStats | null>(null);
 
-  useEffect(() => {
-    fetchClients();
-    fetchStats();
-  }, [search, sortBy, sortOrder, page]);
-
-  const fetchClients = async () => {
+  // Загрузка клиентов с фильтрацией и пагинацией
+  const fetchClients = useCallback(async () => {
     try {
       setLoading(true);
-      const response = await clientsApi.getAll();
+      const params: any = {
+        page,
+        limit,
+        sortBy,
+        sortOrder
+      };
+      if (search.trim()) {
+        params.search = search.trim();
+      }
       
-      let clientsData = [];
-      if (response.data && Array.isArray(response.data)) {
-        clientsData = response.data;
-      } else if (response.data && Array.isArray(response.data.clients)) {
-        clientsData = response.data.clients;
-      } else if (Array.isArray(response)) {
-        clientsData = response;
-      } else if (response.data && response.data.data && Array.isArray(response.data.data)) {
-        clientsData = response.data.data;
-      } else {
-        clientsData = [];
-        console.warn('Unexpected API response structure:', response);
+      const response = await clientsApi.getAll(params);
+      
+      let clientsData: Client[] = [];
+      let totalCount = 0;
+      
+      if (response.data) {
+        if (Array.isArray(response.data)) {
+          clientsData = response.data;
+          totalCount = response.data.length;
+        } else if (response.data.data && Array.isArray(response.data.data)) {
+          clientsData = response.data.data;
+          totalCount = response.data.total || clientsData.length;
+        } else if (response.data.clients && Array.isArray(response.data.clients)) {
+          clientsData = response.data.clients;
+          totalCount = response.data.total || clientsData.length;
+        } else if (response.data.items && Array.isArray(response.data.items)) {
+          clientsData = response.data.items;
+          totalCount = response.data.total || clientsData.length;
+        } else {
+          clientsData = [];
+          totalCount = 0;
+        }
       }
       
       setClients(clientsData);
+      setTotal(totalCount);
     } catch (error) {
       console.error('Error fetching clients:', error);
       toast.error('Ошибка загрузки клиентов');
     } finally {
       setLoading(false);
     }
-  };
+  }, [search, sortBy, sortOrder, page, limit]);
 
+  // Загрузка статистики
   const fetchStats = async (): Promise<void> => {
     try {
       const response = await clientsApi.getStats();
@@ -133,6 +149,11 @@ export const Clients: React.FC = () => {
       console.error('Error fetching stats:', error);
     }
   };
+
+  useEffect(() => {
+    fetchClients();
+    fetchStats();
+  }, [fetchClients]);
 
   const handleDelete = async (): Promise<void> => {
     if (!selectedClient) return;
@@ -238,7 +259,7 @@ export const Clients: React.FC = () => {
       birthDate: client.birthDate ? client.birthDate.split('T')[0] : '',
       city: client.city || '',
       carModel: client.carModel || '',
-      carYear: client.carYear || '',
+      carYear: client.carYear?.toString() || '',
       carNumber: client.carNumber || '',
       notes: client.notes || '',
       discountPercent: client.discountPercent || 0
@@ -264,20 +285,25 @@ export const Clients: React.FC = () => {
     <div className="p-6">
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold">Клиенты</h1>
-        <Button onClick={() => {
-          setEditingClient(null);
-          setCarYearError('');
-          setPhoneError('');
-          setFormData({
-            firstName: '', lastName: '', middleName: '', phone: '', email: '',
-            birthDate: '', city: '', carModel: '', carYear: '', carNumber: '', notes: '',
-            discountPercent: 0
-          });
-          setShowClientModal(true);
-        }}>
-          <Plus className="w-4 h-4 mr-2" />
-          Добавить клиента
-        </Button>
+        <div className="flex gap-2">
+          <Button onClick={() => fetchClients()} variant="secondary" icon={RefreshCw}>
+            Обновить
+          </Button>
+          <Button onClick={() => {
+            setEditingClient(null);
+            setCarYearError('');
+            setPhoneError('');
+            setFormData({
+              firstName: '', lastName: '', middleName: '', phone: '', email: '',
+              birthDate: '', city: '', carModel: '', carYear: '', carNumber: '', notes: '',
+              discountPercent: 0
+            });
+            setShowClientModal(true);
+          }}>
+            <Plus className="w-4 h-4 mr-2" />
+            Добавить клиента
+          </Button>
+        </div>
       </div>
 
       {/* Статистика */}
@@ -310,14 +336,20 @@ export const Clients: React.FC = () => {
           <Input
             placeholder="Поиск по имени, телефону, городу, авто..."
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setPage(1);
+            }}
             icon={Search}
           />
         </div>
         <select
           className="px-3 py-2 border rounded-lg"
           value={sortBy}
-          onChange={(e) => setSortBy(e.target.value)}
+          onChange={(e) => {
+            setSortBy(e.target.value);
+            setPage(1);
+          }}
         >
           <option value="createdAt">Дата регистрации</option>
           <option value="totalSpent">Сумма покупок</option>
@@ -354,9 +386,13 @@ export const Clients: React.FC = () => {
             </thead>
             <tbody className="divide-y">
               {loading ? (
-                <tr><td colSpan={8} className="text-center py-8">Загрузка...</td></tr>
+                <tr>
+                  <td colSpan={8} className="text-center py-8">Загрузка...</td>
+                </tr>
               ) : clients.length === 0 ? (
-                <tr><td colSpan={8} className="text-center py-8 text-gray-500">Нет клиентов</td></tr>
+                <tr>
+                  <td colSpan={8} className="text-center py-8 text-gray-500">Клиенты не найдены</td>
+                </tr>
               ) : (
                 clients.map(client => (
                   <tr
@@ -399,7 +435,7 @@ export const Clients: React.FC = () => {
                         </div>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-right">{client.totalOrders}</td>
+                    <td className="px-4 py-3 text-right">{client.totalOrders || 0}</td>
                     <td className="px-4 py-3 text-right font-medium">{formatPrice(client.totalSpent || 0)}</td>
                     <td className="px-4 py-3 text-center">
                       {client.discountPercent && client.discountPercent > 0 ? (
@@ -441,9 +477,9 @@ export const Clients: React.FC = () => {
         {totalPages > 1 && (
           <div className="flex justify-between items-center px-4 py-3 border-t">
             <div className="text-sm text-gray-500">
-              {`${(page - 1) * limit + 1}-${Math.min(page * limit, total)} из ${total}`}
+              Показано {clients.length} из {total} клиентов
             </div>
-            <div className="flex gap-2">
+            <div className="flex gap-2 items-center">
               <Button
                 variant="secondary"
                 size="sm"
@@ -452,6 +488,9 @@ export const Clients: React.FC = () => {
               >
                 <ChevronLeft className="w-4 h-4" />
               </Button>
+              <span className="text-sm text-gray-600">
+                Страница {page} из {totalPages}
+              </span>
               <Button
                 variant="secondary"
                 size="sm"
@@ -587,7 +626,7 @@ export const Clients: React.FC = () => {
             </div>
           </div>
 
-          {/* 🆕 Поле скидки */}
+          {/* Поле скидки */}
           <div className="mt-4">
             <label className="block text-sm font-medium text-gray-700 mb-1">
               <Percent size={14} className="inline mr-1" />

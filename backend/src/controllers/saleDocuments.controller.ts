@@ -1,7 +1,18 @@
-// backend/src/controllers/saleDocuments.controller.ts
+// crm-project/backend/src/controllers/saleDocuments.controller.ts
 import { Response, Request } from 'express';
 import { PrismaClient, Prisma } from '@prisma/client';
 import { RequestWithUser, CreateSaleDocumentDTO } from '../types';
+import { sendOrderStatusWebhook } from '../services/webhook.service';
+import {
+  canTransitionOrderStatus,
+  canTransitionPaymentStatus,
+  isOrderStatus,
+  isPaymentStatus,
+} from '../domain/orderStateMachine';
+import {
+  buildExternalPayloadHash,
+  isValidExternalOrderId,
+} from '../domain/publicOrderIdempotency';
 
 const prisma = new PrismaClient();
 
@@ -25,6 +36,80 @@ const normalizePhone = (phone: string): string => {
   return phone.replace(/\D/g, '');
 };
 
+const findOrCreateWebsiteClient = async (
+  tx: Prisma.TransactionClient,
+  clientData: any
+): Promise<any> => {
+  const normalizedPhone = normalizePhone(clientData.phone);
+  const clients = await tx.client.findMany({
+    select: {
+      id: true,
+      firstName: true,
+      lastName: true,
+      middleName: true,
+      phone: true,
+      email: true,
+      preferredContact: true,
+      city: true,
+      address: true,
+    },
+  });
+  const existing = clients.find(item => normalizePhone(item.phone) === normalizedPhone);
+  if (existing) {
+    return tx.client.update({
+      where: { id: existing.id },
+      data: {
+        firstName: clientData.firstName || existing.firstName,
+        lastName: clientData.lastName ?? existing.lastName,
+        middleName: clientData.middleName ?? existing.middleName,
+        email: clientData.email || existing.email,
+        address: clientData.address || existing.address,
+        city: clientData.city || existing.city,
+        preferredContact: clientData.preferredContact || existing.preferredContact,
+      },
+    });
+  }
+
+  return tx.client.upsert({
+    where: { phone: clientData.phone },
+    update: {},
+    create: {
+      firstName: clientData.firstName || 'Клиент',
+      lastName: clientData.lastName || '',
+      middleName: clientData.middleName || '',
+      phone: clientData.phone,
+      email: clientData.email || null,
+      preferredContact: clientData.preferredContact || null,
+      city: clientData.city || null,
+      address: clientData.address || null,
+      discountPercent: 0,
+    },
+  });
+};
+
+const sendPublicOrderResponse = (
+  res: Response,
+  document: any,
+  statusCode: 200 | 201,
+  idempotent: boolean
+): void => {
+  res.status(statusCode).json({
+    success: true,
+    orderId: document.id,
+    externalOrderId: document.externalOrderId,
+    documentNumber: document.documentNumber,
+    total: document.total,
+    clientId: document.clientId,
+    paymentStatus: document.paymentStatus,
+    orderStatus: document.orderStatus,
+    statusVersion: document.statusVersion,
+    idempotent,
+    message: idempotent
+      ? 'Order already exists'
+      : 'Order successfully created',
+  });
+};
+
 /**
  * GET /api/sale-documents
  */
@@ -40,6 +125,11 @@ export const getSaleDocuments = async (req: RequestWithUser, res: Response): Pro
         clientPhone: true,
         customerName: true,
         customerPhone: true,
+        customerEmail: true,
+        customerAddress: true,
+        contactMethod: true,
+        deliveryMethod: true,
+        deliveryProvider: true,
         subtotal: true,
         discount: true,
         total: true,
@@ -49,6 +139,7 @@ export const getSaleDocuments = async (req: RequestWithUser, res: Response): Pro
         createdAt: true,
         createdBy: true,
         sellerName: true,
+        source: true,
         items: {
           select: {
             id: true,
@@ -79,7 +170,7 @@ export const getSaleDocuments = async (req: RequestWithUser, res: Response): Pro
         }
       },
       orderBy: { saleDate: 'desc' },
-      take: 100
+     
     });
     res.json(documents);
   } catch (error) {
@@ -112,6 +203,9 @@ export const getSaleDocumentById = async (req: RequestWithUser, res: Response): 
         customerPhone: true,
         customerEmail: true,
         customerAddress: true,
+        contactMethod: true,
+        deliveryMethod: true,
+        deliveryProvider: true,
         description: true,
         subtotal: true,
         discount: true,
@@ -123,6 +217,7 @@ export const getSaleDocumentById = async (req: RequestWithUser, res: Response): 
         createdAt: true,
         createdBy: true,
         sellerName: true,
+        source: true,
         items: {
           select: {
             id: true,
@@ -170,23 +265,70 @@ export const getSaleDocumentById = async (req: RequestWithUser, res: Response): 
  */
 export const createPublicOrder = async (req: Request, res: Response): Promise<void> => {
   const startTime = Date.now();
+  let requestExternalOrderId: string | null = null;
+  let requestPayloadHash: string | null = null;
   try {
     const data = req.body;
     const {
+      externalOrderId: externalOrderIdRaw,
       items,
       client,
       deliveryMethod,
       deliveryAddress,
-      comment,
-      source = 'website'
+      deliveryProvider,
+      contactMethod,
+      comment
     } = data;
 
-    if (!items || items.length === 0) {
+    if (
+      typeof externalOrderIdRaw !== 'string'
+      || !isValidExternalOrderId(externalOrderIdRaw)
+    ) {
+      res.status(400).json({
+        success: false,
+        message: 'externalOrderId is required and must be a valid identifier',
+      });
+      return;
+    }
+    requestExternalOrderId = externalOrderIdRaw.trim();
+
+    if (!Array.isArray(items) || items.length === 0) {
       res.status(400).json({ success: false, message: 'Корзина не может быть пустой' });
+      return;
+    }
+    const invalidItem = items.find((item: any) =>
+      !Number.isInteger(item?.productId) || item.productId <= 0 ||
+      !Number.isInteger(item?.quantity) || item.quantity <= 0
+    );
+    if (invalidItem) {
+      res.status(400).json({ success: false, message: 'productId и quantity должны быть положительными целыми числами' });
+      return;
+    }
+
+    const uniqueProductIds = new Set(items.map((item: any) => item.productId));
+    if (uniqueProductIds.size !== items.length) {
+      res.status(400).json({ success: false, message: 'Один товар не может повторяться в нескольких строках заказа' });
       return;
     }
     if (!client?.phone) {
       res.status(400).json({ success: false, message: 'Телефон клиента обязателен' });
+      return;
+    }
+
+    requestPayloadHash = buildExternalPayloadHash(data);
+    const existingOrder = await (prisma.saleDocument as any).findUnique({
+      where: { externalOrderId: requestExternalOrderId },
+    });
+    if (existingOrder) {
+      if (existingOrder.externalPayloadHash !== requestPayloadHash) {
+        res.status(409).json({
+          success: false,
+          message: 'externalOrderId is already used for a different order payload',
+        });
+        return;
+      }
+
+      sendPublicOrderResponse(res, existingOrder, 200, true);
       return;
     }
 
@@ -212,7 +354,8 @@ export const createPublicOrder = async (req: Request, res: Response): Promise<vo
         res.status(400).json({ success: false, message: `Недостаточно товара "${product.name}" на складе. Доступно: ${product.stock}` });
         return;
       }
-      const price = item.price || product.retail_price;
+      // Цена из запроса является только снимком корзины. Итог всегда считает CRM.
+      const price = product.retail_price;
       const itemTotal = price * item.quantity;
       subtotal += itemTotal;
       itemsWithDetails.push({
@@ -224,76 +367,49 @@ export const createPublicOrder = async (req: Request, res: Response): Promise<vo
       });
     }
 
-    // === ПОИСК/СОЗДАНИЕ КЛИЕНТА ===
-    const normalizedPhone = normalizePhone(client.phone);
-    let dbClient = null;
-
-    const allClients = await prisma.client.findMany({
-      select: { id: true, firstName: true, lastName: true, phone: true, email: true, city: true, address: true }
-    });
-    dbClient = allClients.find(c => normalizePhone(c.phone) === normalizedPhone) || null;
-
-    if (!dbClient) {
-      dbClient = await prisma.client.findFirst({
-        where: { phone: { contains: normalizedPhone } }
-      });
-    }
-
-    if (!dbClient) {
-      try {
-        dbClient = await prisma.client.create({
-          data: {
-            firstName: client.firstName || 'Клиент',
-            lastName: client.lastName || '',
-            phone: client.phone,
-            email: client.email || null,
-            city: client.city || null,
-            address: client.address || null,
-            discountPercent: 0
-          }
-        });
-        console.log(`✅ Создан новый клиент: ${dbClient.firstName} ${dbClient.lastName}, ID: ${dbClient.id}`);
-      } catch (error: any) {
-        if (error.code === 'P2002') {
-          const existing = await prisma.client.findFirst({
-            where: { phone: { contains: normalizedPhone } }
-          });
-          if (existing) {
-            dbClient = existing;
-            console.log(`✅ Найден существующий клиент (после конфликта): ${dbClient.firstName} ${dbClient.lastName}, ID: ${dbClient.id}`);
-          } else {
-            throw new Error('Не удалось создать клиента из-за конфликта уникальности');
-          }
-        } else {
-          throw error;
-        }
-      }
-    } else {
-      let updated = false;
-      const updateData: any = {};
-      if (client.email && client.email !== dbClient.email) {
-        updateData.email = client.email;
-        updated = true;
-      }
-      if (client.city && client.city !== dbClient.city) {
-        updateData.city = client.city;
-        updated = true;
-      }
-      if (client.address && client.address !== dbClient.address) {
-        updateData.address = client.address;
-        updated = true;
-      }
-      if (updated) {
-        dbClient = await prisma.client.update({
-          where: { id: dbClient.id },
-          data: updateData
-        });
-        console.log(`✅ Обновлены данные клиента ID: ${dbClient.id}`);
-      }
-    }
-
     // === СОЗДАНИЕ ЗАКАЗА ===
     const result = await prisma.$transaction(async (tx) => {
+      // Serializes all attempts for the same external order across CRM instances.
+      // PostgreSQL returns `void` here, which Prisma cannot deserialize (P2010).
+      // Casting keeps the transaction-scoped lock and makes the result transportable.
+      await tx.$queryRaw`
+        SELECT pg_advisory_xact_lock(
+          hashtextextended(${requestExternalOrderId}, 0)
+        )::text AS "lockResult"
+      `;
+
+      const orderAfterLock = await (tx.saleDocument as any).findUnique({
+        where: { externalOrderId: requestExternalOrderId },
+      });
+      if (orderAfterLock) {
+        if (orderAfterLock.externalPayloadHash !== requestPayloadHash) {
+          const conflict = new Error('externalOrderId payload conflict');
+          conflict.name = 'IdempotencyConflictError';
+          throw conflict;
+        }
+        return { document: orderAfterLock, idempotent: true };
+      }
+
+      const dbClient = await findOrCreateWebsiteClient(tx, client);
+
+      // Условное списание внутри транзакции не позволяет параллельным заказам
+      // одновременно пройти проверку и увести остаток ниже нуля.
+      for (const item of itemsWithDetails) {
+        const updated = await tx.product.updateMany({
+          where: {
+            id: item.productId,
+            stock: { gte: item.quantity },
+          },
+          data: { stock: { decrement: item.quantity } },
+        });
+
+        if (updated.count !== 1) {
+          const stockError = new Error(`Недостаточно товара "${item.product.name}" на складе`);
+          stockError.name = 'InsufficientStockError';
+          throw stockError;
+        }
+      }
+
       let documentNumber: string | null = null;
       let attempts = 0;
       const maxAttempts = 10;
@@ -324,17 +440,22 @@ export const createPublicOrder = async (req: Request, res: Response): Promise<vo
         documentNumber = `${prefix}-${dateStr}-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).substring(2, 10).toUpperCase()}`;
       }
 
-      const document = await tx.saleDocument.create({
+      const document = await (tx.saleDocument as any).create({
         data: {
           documentNumber,
+          externalOrderId: requestExternalOrderId,
+          externalPayloadHash: requestPayloadHash,
           documentType: 'order',
           clientId: dbClient.id,
-          clientName: [dbClient.lastName, dbClient.firstName].filter(Boolean).join(' ') || dbClient.firstName,
+          clientName: [dbClient.lastName, dbClient.firstName, dbClient.middleName].filter(Boolean).join(' ') || dbClient.firstName,
           clientPhone: dbClient.phone,
-          customerName: [dbClient.lastName, dbClient.firstName].filter(Boolean).join(' ') || dbClient.firstName,
+          customerName: [dbClient.lastName, dbClient.firstName, dbClient.middleName].filter(Boolean).join(' ') || dbClient.firstName,
           customerPhone: dbClient.phone,
           customerEmail: dbClient.email,
           customerAddress: deliveryAddress || null,
+          contactMethod: contactMethod || client?.preferredContact || 'phone',
+          deliveryMethod: deliveryMethod || 'pickup',
+          deliveryProvider: deliveryProvider || null,
           description: comment || null,
           subtotal,
           discount: 0,
@@ -344,12 +465,12 @@ export const createPublicOrder = async (req: Request, res: Response): Promise<vo
           saleDate: new Date(),
           createdBy: null,
           sellerName: 'Сайт SWAPSERVICE38',
-          source: source,
-          orderStatus: 'ordered'
+          source: 'website',
+          orderStatus: 'confirmed',
+          statusVersion: 0,
         }
       });
 
-      // Удаляем старые позиции для этого заказа
       await tx.saleDocumentItem.deleteMany({
         where: { documentId: document.id }
       });
@@ -366,20 +487,6 @@ export const createPublicOrder = async (req: Request, res: Response): Promise<vo
           total: item.total
         }))
       });
-
-      const productIdsForUpdate = itemsWithDetails.map(item => item.productId);
-      const updateCases = itemsWithDetails
-        .map(item => `WHEN ${item.productId} THEN stock - ${item.quantity}`)
-        .join(' ');
-      
-      await tx.$executeRaw`
-        UPDATE "Product" 
-        SET stock = CASE id 
-          ${Prisma.raw(updateCases)}
-          ELSE stock 
-        END
-        WHERE id IN (${Prisma.join(productIdsForUpdate)})
-      `;
 
       await tx.client.update({
         where: { id: dbClient.id },
@@ -404,7 +511,7 @@ export const createPublicOrder = async (req: Request, res: Response): Promise<vo
         }))
       });
 
-      return { document };
+      return { document, idempotent: false };
     }, {
       timeout: 15000,
       isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted
@@ -413,21 +520,54 @@ export const createPublicOrder = async (req: Request, res: Response): Promise<vo
     const duration = Date.now() - startTime;
     console.log(`✅ Заказ с сайта создан за ${duration}ms: ${result.document.documentNumber}`);
 
-    res.status(201).json({
-      success: true,
-      orderId: result.document.id,
-      documentNumber: result.document.documentNumber,
-      total: subtotal,
-      clientId: dbClient.id,
-      message: 'Заказ успешно создан'
-    });
+    sendPublicOrderResponse(
+      res,
+      result.document,
+      result.idempotent ? 200 : 201,
+      result.idempotent
+    );
 
   } catch (error) {
     const duration = Date.now() - startTime;
-    console.error(`❌ Ошибка создания заказа с сайта (${duration}ms):`, error);
+    if (error instanceof Error && error.name === 'InsufficientStockError') {
+      res.status(409).json({ success: false, message: error.message });
+      return;
+    }
+    if (error instanceof Error && error.name === 'IdempotencyConflictError') {
+      res.status(409).json({
+        success: false,
+        message: 'externalOrderId is already used for a different order payload',
+      });
+      return;
+    }
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError
+      && error.code === 'P2002'
+      && requestExternalOrderId
+      && requestPayloadHash
+    ) {
+      const existingOrder = await (prisma.saleDocument as any).findUnique({
+        where: { externalOrderId: requestExternalOrderId },
+      });
+      if (existingOrder?.externalPayloadHash === requestPayloadHash) {
+        sendPublicOrderResponse(res, existingOrder, 200, true);
+        return;
+      }
+      if (existingOrder) {
+        res.status(409).json({
+          success: false,
+          message: 'externalOrderId is already used for a different order payload',
+        });
+        return;
+      }
+    }
+    console.error(`Public order creation failed after ${duration}ms`, {
+      errorName: error instanceof Error ? error.name : 'UnknownError',
+      errorCode: error instanceof Prisma.PrismaClientKnownRequestError ? error.code : undefined,
+    });
     res.status(500).json({
       success: false,
-      message: error instanceof Error ? error.message : 'Ошибка создания заказа'
+      message: 'Ошибка создания заказа'
     });
   }
 };
@@ -440,7 +580,7 @@ export const createSaleDocument = async (req: RequestWithUser, res: Response): P
   const startTime = Date.now();
   
   try {
-    if (!req.user) {
+    if (!req.user && !(req as RequestWithUser & { internalService?: boolean }).internalService) {
       res.status(401).json({ message: 'Не авторизован' });
       return;
     }
@@ -462,6 +602,11 @@ export const createSaleDocument = async (req: RequestWithUser, res: Response): P
     
     if (!items || items.length === 0) {
       res.status(400).json({ message: 'Корзина не может быть пустой' });
+      return;
+    }
+
+    if (!isPaymentStatus(paymentStatus)) {
+      res.status(400).json({ message: 'Invalid paymentStatus' });
       return;
     }
     
@@ -614,11 +759,11 @@ export const createSaleDocument = async (req: RequestWithUser, res: Response): P
           saleDate: new Date(),
           createdBy: sellerId,
           sellerName: sellerName,
-          orderStatus: 'ordered'
+          orderStatus: 'confirmed',
+          source: 'instore'
         }
       });
 
-      // Удаляем старые позиции для этого заказа
       await tx.saleDocumentItem.deleteMany({
         where: { documentId: document.id }
       });
@@ -712,6 +857,7 @@ export const createSaleDocument = async (req: RequestWithUser, res: Response): P
         createdAt: true,
         createdBy: true,
         sellerName: true,
+        source: true,
         items: {
           select: {
             id: true,
@@ -775,6 +921,27 @@ export const updateSaleDocument = async (req: RequestWithUser, res: Response): P
       customerAddress,
       description
     } = req.body;
+
+    const existingDocument = await prisma.saleDocument.findUnique({
+      where: { id: documentId },
+      select: { paymentStatus: true },
+    });
+    if (!existingDocument) {
+      res.status(404).json({ message: 'Document not found' });
+      return;
+    }
+    if (paymentStatus !== undefined) {
+      if (!isPaymentStatus(paymentStatus)) {
+        res.status(400).json({ message: 'Invalid paymentStatus' });
+        return;
+      }
+      if (!canTransitionPaymentStatus(existingDocument.paymentStatus, paymentStatus)) {
+        res.status(409).json({
+          message: `Invalid payment status transition: ${existingDocument.paymentStatus} -> ${paymentStatus}`,
+        });
+        return;
+      }
+    }
     
     const updateData: any = {
       documentType,
@@ -818,6 +985,7 @@ export const updateSaleDocument = async (req: RequestWithUser, res: Response): P
         paymentStatus: true,
         orderStatus: true,
         sellerName: true,
+        source: true,
         client: {
           select: {
             id: true,
@@ -844,7 +1012,8 @@ export const updateFullOrder = async (req: RequestWithUser, res: Response): Prom
   const startTime = Date.now();
   
   try {
-    if (!req.user) {
+    const isInternalService = (req as RequestWithUser & { internalService?: boolean }).internalService === true;
+    if (!req.user && !isInternalService) {
       res.status(401).json({ message: 'Не авторизован' });
       return;
     }
@@ -857,7 +1026,16 @@ export const updateFullOrder = async (req: RequestWithUser, res: Response): Prom
       return;
     }
     
-    const { items, discount, description, clientData } = req.body;
+    const {
+      items,
+      discount,
+      description,
+      clientData,
+      deliveryMethod,
+      deliveryAddress,
+      deliveryProvider,
+      contactMethod,
+    } = req.body;
     
     const existingDocument = await prisma.saleDocument.findUnique({
       where: { id: documentId },
@@ -944,6 +1122,8 @@ export const updateFullOrder = async (req: RequestWithUser, res: Response): Prom
             phone: clientData.phone,
             email: clientData.email || undefined,
             city: clientData.city || undefined,
+            address: clientData.address || undefined,
+            preferredContact: clientData.preferredContact || contactMethod || undefined,
           }
         });
       } else if (clientData.name || clientData.phone) {
@@ -956,6 +1136,8 @@ export const updateFullOrder = async (req: RequestWithUser, res: Response): Prom
             phone: clientData.phone,
             email: clientData.email || null,
             city: clientData.city || null,
+            address: clientData.address || null,
+            preferredContact: clientData.preferredContact || contactMethod || null,
           }
         });
         clientId = newClient.id;
@@ -984,6 +1166,9 @@ export const updateFullOrder = async (req: RequestWithUser, res: Response): Prom
           customerPhone: clientData?.phone || existingDocument.customerPhone,
           customerEmail: clientData?.email || existingDocument.customerEmail,
           customerAddress: clientData?.address || existingDocument.customerAddress,
+          contactMethod: contactMethod !== undefined ? contactMethod : existingDocument.contactMethod,
+          deliveryMethod: deliveryMethod !== undefined ? deliveryMethod : existingDocument.deliveryMethod,
+          deliveryProvider: deliveryProvider !== undefined ? deliveryProvider : existingDocument.deliveryProvider,
           subtotal: subtotal,
           discount: totalDiscount,
           total: total,
@@ -1079,6 +1264,9 @@ export const updateFullOrder = async (req: RequestWithUser, res: Response): Prom
         customerPhone: true,
         customerEmail: true,
         customerAddress: true,
+        contactMethod: true,
+        deliveryMethod: true,
+        deliveryProvider: true,
         description: true,
         subtotal: true,
         discount: true,
@@ -1090,6 +1278,7 @@ export const updateFullOrder = async (req: RequestWithUser, res: Response): Prom
         createdAt: true,
         createdBy: true,
         sellerName: true,
+        source: true,
         items: {
           select: {
             id: true,
@@ -1138,15 +1327,44 @@ export const updatePaymentStatus = async (req: RequestWithUser, res: Response): 
       res.status(400).json({ message: 'Неверный ID документа' });
       return;
     }
-    
-    const document = await prisma.saleDocument.update({
+
+    if (!isPaymentStatus(paymentStatus)) {
+      res.status(400).json({ message: 'Invalid paymentStatus' });
+      return;
+    }
+
+    const currentDocument = await prisma.saleDocument.findUnique({
       where: { id: documentId },
+      select: { paymentStatus: true },
+    });
+    if (!currentDocument) {
+      res.status(404).json({ message: 'Document not found' });
+      return;
+    }
+    if (!canTransitionPaymentStatus(currentDocument.paymentStatus, paymentStatus)) {
+      res.status(409).json({
+        message: `Invalid payment status transition: ${currentDocument.paymentStatus} -> ${paymentStatus}`,
+      });
+      return;
+    }
+
+    const updated = await prisma.saleDocument.updateMany({
+      where: { id: documentId, paymentStatus: currentDocument.paymentStatus },
       data: { paymentStatus },
+    });
+    if (updated.count !== 1) {
+      res.status(409).json({ message: 'Payment status changed concurrently; reload and retry' });
+      return;
+    }
+
+    const document = await prisma.saleDocument.findUniqueOrThrow({
+      where: { id: documentId },
       select: {
         id: true,
         documentNumber: true,
         paymentStatus: true,
         sellerName: true,
+        source: true,
         client: {
           select: {
             id: true,
@@ -1162,6 +1380,152 @@ export const updatePaymentStatus = async (req: RequestWithUser, res: Response): 
   } catch (error) {
     console.error('Error updating payment status:', error);
     res.status(500).json({ message: 'Ошибка обновления статуса' });
+  }
+};
+
+/**
+ * PATCH /api/sale-documents/:id/status
+ * ОБНОВЛЕНИЕ СТАТУСА ЗАКАЗА С ОТПРАВКОЙ ВЕБХУКА
+ */
+export const updateOrderStatus = async (req: RequestWithUser, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const documentId = parseInt(id);
+    const { orderStatus } = req.body;
+    
+    if (isNaN(documentId)) {
+      res.status(400).json({ message: 'Неверный ID документа' });
+      return;
+    }
+
+    if (!isOrderStatus(orderStatus)) {
+      res.status(400).json({ message: 'Invalid orderStatus' });
+      return;
+    }
+    
+    // Получаем текущий документ, чтобы проверить source и старый статус
+    const currentDoc = await (prisma.saleDocument as any).findUnique({
+      where: { id: documentId },
+      select: { source: true, orderStatus: true, documentNumber: true, statusVersion: true }
+    });
+    
+    if (!currentDoc) {
+      res.status(404).json({ message: 'Документ не найден' });
+      return;
+    }
+
+    if (!canTransitionOrderStatus(currentDoc.orderStatus, orderStatus)) {
+      res.status(409).json({
+        message: `Invalid order status transition: ${currentDoc.orderStatus} -> ${orderStatus}`,
+      });
+      return;
+    }
+
+    if (currentDoc.orderStatus !== orderStatus) {
+      const updated = await (prisma.saleDocument as any).updateMany({
+        where: { id: documentId, orderStatus: currentDoc.orderStatus },
+        data: {
+          orderStatus,
+          statusVersion: { increment: 1 },
+        },
+      });
+      if (updated.count !== 1) {
+        res.status(409).json({ message: 'Order status changed concurrently; reload and retry' });
+        return;
+      }
+    }
+
+    const document = await (prisma.saleDocument as any).findUniqueOrThrow({
+      where: { id: documentId },
+      select: {
+        id: true,
+        documentNumber: true,
+        orderStatus: true,
+        statusVersion: true,
+        sellerName: true,
+        source: true,
+        client: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            city: true
+          }
+        }
+      }
+    });
+    
+    // Always deliver the current version for website orders. Re-saving the
+    // same status becomes a safe manual retry after a temporary site outage.
+    if (document.source === 'website') {
+      console.log(`Sending webhook for CRM order ${document.id}, status: ${orderStatus}`);
+      const delivered = await sendOrderStatusWebhook(
+        document.id,
+        orderStatus,
+        document.documentNumber,
+        document.statusVersion
+      );
+      if (!delivered) {
+        console.error(`Webhook delivery exhausted retries for CRM order ${document.id}`);
+        res.status(502).json({
+          ...document,
+          statusSaved: true,
+          siteSynchronized: false,
+          message: 'Статус сохранён в CRM, но сайт временно недоступен. Повторите сохранение статуса.',
+        });
+        return;
+      }
+    }
+    
+    res.json(document);
+  } catch (error) {
+    console.error('Error updating order status:', error);
+    res.status(500).json({ message: 'Ошибка обновления статуса заказа' });
+  }
+};
+
+/**
+ * GET /api/sale-documents/:id/status
+ */
+export const getOrderStatus = async (req: RequestWithUser, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const documentId = parseInt(id);
+    
+    if (isNaN(documentId)) {
+      res.status(400).json({ message: 'Неверный ID документа' });
+      return;
+    }
+    
+    const document = await (prisma.saleDocument as any).findUnique({
+      where: { id: documentId },
+      select: { 
+        id: true, 
+        orderStatus: true,
+        statusVersion: true,
+        documentNumber: true,
+        sellerName: true,
+        source: true,
+        client: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            city: true
+          }
+        }
+      }
+    });
+    
+    if (!document) {
+      res.status(404).json({ message: 'Документ не найден' });
+      return;
+    }
+    
+    res.json(document);
+  } catch (error) {
+    console.error('Error getting order status:', error);
+    res.status(500).json({ message: 'Ошибка получения статуса заказа' });
   }
 };
 
@@ -1239,6 +1603,7 @@ export const deleteSaleDocument = async (req: RequestWithUser, res: Response): P
 
 /**
  * GET /api/sale-documents/client/:clientId
+ * Получить все заказы клиента (для страницы "Мои заказы")
  */
 export const getDocumentsByClient = async (req: RequestWithUser, res: Response): Promise<void> => {
   try {
@@ -1262,15 +1627,24 @@ export const getDocumentsByClient = async (req: RequestWithUser, res: Response):
         paymentStatus: true,
         orderStatus: true,
         saleDate: true,
+        createdAt: true,
         createdBy: true,
         sellerName: true,
+        source: true,
+        customerName: true,
+        customerPhone: true,
+        customerEmail: true,
+        customerAddress: true,
+        description: true,
         items: {
           select: {
             id: true,
             productName: true,
+            productArticle: true,
             quantity: true,
             price: true,
-            total: true
+            total: true,
+            cost_price: true,
           }
         },
         client: {
@@ -1280,102 +1654,22 @@ export const getDocumentsByClient = async (req: RequestWithUser, res: Response):
             lastName: true,
             middleName: true,
             phone: true,
+            email: true,
             city: true,
-            discountPercent: true
+            discountPercent: true,
+            totalOrders: true,
+            totalSpent: true,
           }
         }
       },
       orderBy: { saleDate: 'desc' },
-      take: 50
+      take: 9999
     });
     
     res.json(documents);
   } catch (error) {
     console.error('Error getting documents by client:', error);
     res.status(500).json({ message: 'Ошибка загрузки документов клиента' });
-  }
-};
-
-/**
- * PATCH /api/sale-documents/:id/status
- */
-export const updateOrderStatus = async (req: RequestWithUser, res: Response): Promise<void> => {
-  try {
-    const { id } = req.params;
-    const documentId = parseInt(id);
-    const { orderStatus } = req.body;
-    
-    if (isNaN(documentId)) {
-      res.status(400).json({ message: 'Неверный ID документа' });
-      return;
-    }
-    
-    const document = await prisma.saleDocument.update({
-      where: { id: documentId },
-      data: { orderStatus },
-      select: {
-        id: true,
-        documentNumber: true,
-        orderStatus: true,
-        sellerName: true,
-        client: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            city: true
-          }
-        }
-      }
-    });
-    
-    res.json(document);
-  } catch (error) {
-    console.error('Error updating order status:', error);
-    res.status(500).json({ message: 'Ошибка обновления статуса заказа' });
-  }
-};
-
-/**
- * GET /api/sale-documents/:id/status
- */
-export const getOrderStatus = async (req: RequestWithUser, res: Response): Promise<void> => {
-  try {
-    const { id } = req.params;
-    const documentId = parseInt(id);
-    
-    if (isNaN(documentId)) {
-      res.status(400).json({ message: 'Неверный ID документа' });
-      return;
-    }
-    
-    const document = await prisma.saleDocument.findUnique({
-      where: { id: documentId },
-      select: { 
-        id: true, 
-        orderStatus: true,
-        documentNumber: true,
-        sellerName: true,
-        client: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            city: true
-          }
-        }
-      }
-    });
-    
-    if (!document) {
-      res.status(404).json({ message: 'Документ не найден' });
-      return;
-    }
-    
-    res.json(document);
-  } catch (error) {
-    console.error('Error getting order status:', error);
-    res.status(500).json({ message: 'Ошибка получения статуса заказа' });
   }
 };
 

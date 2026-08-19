@@ -161,7 +161,6 @@ export const createProduct = async (req: RequestWithUser, res: Response): Promis
       return;
     }
     
-    // ✅ Исправлено: findFirst вместо findUnique (артикул больше не уникален)
     if (data.article) {
       const existing = await prisma.product.findFirst({
         where: { article: data.article }
@@ -260,7 +259,6 @@ export const updateProduct = async (req: RequestWithUser, res: Response): Promis
       
       console.log(`Price check: old=${oldPrice}, new=${newPrice}, changed=${priceChanged}`);
       
-      // ✅ Исправлено: findFirst вместо findUnique (артикул больше не уникален)
       if (data.article && data.article !== existingProduct.article) {
         const existing = await tx.product.findFirst({
           where: {
@@ -589,13 +587,21 @@ export const getProductImages = async (req: RequestWithUser, res: Response): Pro
   }
 };
 
+// ============================================================
+// ✅ ИСПРАВЛЕННАЯ ФУНКЦИЯ ЗАГРУЗКИ ФОТО
+// ============================================================
 export const uploadProductImage = async (req: RequestWithUser, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
     const productId = parseInt(id);
     
+    console.log('=== uploadProductImage START ===');
+    console.log('Product ID:', productId);
+    console.log('File:', req.file ? req.file.filename : 'NO FILE');
+    console.log('NODE_ENV:', process.env.NODE_ENV);
+    
     if (isNaN(productId)) {
-      if (req.file) {
+      if (req.file && fs.existsSync(req.file.path)) {
         fs.unlinkSync(req.file.path);
       }
       res.status(400).json({ message: 'Неверный ID товара' });
@@ -614,19 +620,37 @@ export const uploadProductImage = async (req: RequestWithUser, res: Response): P
     });
     
     if (!product) {
-      fs.unlinkSync(file.path);
+      if (fs.existsSync(file.path)) {
+        fs.unlinkSync(file.path);
+      }
       res.status(404).json({ message: 'Товар не найден' });
       return;
     }
     
     if (product.images.length >= MAX_PRODUCT_IMAGES) {
-      fs.unlinkSync(file.path);
+      if (fs.existsSync(file.path)) {
+        fs.unlinkSync(file.path);
+      }
       res.status(400).json({ message: `Максимум ${MAX_PRODUCT_IMAGES} фото на товар` });
       return;
     }
     
-    const baseUrl = process.env.BASE_URL || `http://localhost:5000`;
+    // 🔥 ИСПРАВЛЕНО: правильно определяем базовый URL
+    const isProduction = process.env.NODE_ENV === 'production';
+    const port = process.env.PORT || 5000;
+    
+    // Если продакшен — используем домен, иначе localhost
+    let baseUrl: string;
+    if (isProduction) {
+      baseUrl = process.env.BASE_URL || 'https://swapcrm.ru';
+    } else {
+      baseUrl = `http://localhost:${port}`;
+    }
+    
     const imageUrl = `${baseUrl}/uploads/products/${file.filename}`;
+    
+    console.log('📍 Image URL:', imageUrl);
+    console.log('📍 Environment:', isProduction ? 'PRODUCTION' : 'DEVELOPMENT');
     
     const existingImagesCount = product.images.length;
     
@@ -648,13 +672,17 @@ export const uploadProductImage = async (req: RequestWithUser, res: Response): P
       });
     }
     
+    console.log('✅ Image uploaded successfully:', productImage.id);
     res.status(201).json(productImage);
   } catch (error) {
-    console.error('Error uploading image:', error);
+    console.error('❌ Error uploading image:', error);
     if (req.file && fs.existsSync(req.file.path)) {
       fs.unlinkSync(req.file.path);
     }
-    res.status(500).json({ message: 'Ошибка загрузки фото' });
+    res.status(500).json({ 
+      message: 'Ошибка загрузки фото',
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
   }
 };
 
@@ -664,12 +692,17 @@ export const deleteProductImage = async (req: RequestWithUser, res: Response): P
     const productId = parseInt(id);
     const imageIdNum = parseInt(imageId);
     
+    console.log('=== deleteProductImage START ===');
+    console.log('Product ID:', productId);
+    console.log('Image ID:', imageIdNum);
+    
     if (isNaN(productId) || isNaN(imageIdNum)) {
       res.status(400).json({ message: 'Неверные ID' });
       return;
     }
     
     await prisma.$transaction(async (tx) => {
+      // Находим изображение
       const image = await tx.productImage.findFirst({
         where: { id: imageIdNum, productId }
       });
@@ -678,22 +711,40 @@ export const deleteProductImage = async (req: RequestWithUser, res: Response): P
         throw new Error('Фото не найдено');
       }
       
+      console.log('Found image:', image.filename);
+      
+      // Пытаемся удалить файл с диска
       const filePath = path.join(__dirname, '../../uploads/products', image.filename);
-      if (fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath);
+      console.log('File path:', filePath);
+      
+      try {
+        if (fs.existsSync(filePath)) {
+          fs.unlinkSync(filePath);
+          console.log('✅ File deleted successfully');
+        } else {
+          console.log('⚠️ File not found on disk, continuing with DB deletion');
+        }
+      } catch (fileError) {
+        console.error('⚠️ Error deleting file, continuing:', fileError);
+        // Продолжаем даже если файл не удалился
       }
       
+      // Удаляем запись из БД
       await tx.productImage.delete({
         where: { id: imageIdNum }
       });
+      console.log('✅ DB record deleted');
       
+      // Если удалили главное фото, назначаем новое
       if (image.isMain) {
+        console.log('Deleted main image, looking for replacement...');
         const nextImage = await tx.productImage.findFirst({
           where: { productId },
           orderBy: { sortOrder: 'asc' }
         });
         
         if (nextImage) {
+          console.log('Found replacement image:', nextImage.id);
           await tx.productImage.update({
             where: { id: nextImage.id },
             data: { isMain: true }
@@ -703,23 +754,29 @@ export const deleteProductImage = async (req: RequestWithUser, res: Response): P
             where: { id: productId },
             data: { image_url: nextImage.url }
           });
+          console.log('✅ New main image set');
         } else {
           await tx.product.update({
             where: { id: productId },
             data: { image_url: null }
           });
+          console.log('✅ No more images, product image_url set to null');
         }
       }
     });
     
+    console.log('=== deleteProductImage SUCCESS ===');
     res.json({ message: 'Фото удалено' });
   } catch (error) {
-    console.error('Error deleting image:', error);
+    console.error('❌ Error deleting image:', error);
     if (error instanceof Error && error.message === 'Фото не найдено') {
       res.status(404).json({ message: error.message });
       return;
     }
-    res.status(500).json({ message: 'Ошибка удаления фото' });
+    res.status(500).json({ 
+      message: 'Ошибка удаления фото',
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
   }
 };
 

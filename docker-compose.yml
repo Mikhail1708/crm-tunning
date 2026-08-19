@@ -6,9 +6,9 @@ services:
     container_name: crm-db
     restart: unless-stopped
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: 123
-      POSTGRES_DB: crm_db
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in the environment}
+      POSTGRES_DB: ${POSTGRES_DB:-crm_db}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
@@ -27,8 +27,11 @@ services:
     restart: unless-stopped
     environment:
       NODE_ENV: production
-      DATABASE_URL: postgresql://crm_user:123@db:5432/crm_db
-      JWT_SECRET: swapcrm38_super_secret_key_2026
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL in the environment}
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in the environment}
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:?Set INTERNAL_API_KEY in the environment}
+      SITE_WEBHOOK_URL: ${SITE_WEBHOOK_URL:?Set SITE_WEBHOOK_URL in the environment}
+      WEBHOOK_SECRET: ${WEBHOOK_SECRET:?Set WEBHOOK_SECRET in the environment}
       PORT: 5000
       BASE_URL: https://swapcrm38.ru
       COOKIE_DOMAIN: .swapcrm38.ru
@@ -71,7 +74,7 @@ services:
     container_name: grafana
     restart: unless-stopped
     environment:
-      GF_SECURITY_ADMIN_PASSWORD: swapcrm38_admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:?Set GRAFANA_PASSWORD in the environment}
     volumes:
       - grafana_data:/var/lib/grafana
     ports:

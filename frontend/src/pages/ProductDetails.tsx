@@ -93,7 +93,6 @@ const FullscreenImageViewer: React.FC<{
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [images.length, onClose]);
 
-  // Предотвращаем скролл body при открытом просмотрщике
   useEffect(() => {
     document.body.style.overflow = 'hidden';
     return () => {
@@ -117,7 +116,6 @@ const FullscreenImageViewer: React.FC<{
           }}
         />
         
-        {/* Кнопка закрытия */}
         <button
           onClick={onClose}
           className={`absolute top-4 right-4 p-2 bg-black/50 text-white rounded-full hover:bg-black/70 transition-all duration-300 hover:scale-110 z-10 ${
@@ -127,7 +125,6 @@ const FullscreenImageViewer: React.FC<{
           <X size={24} />
         </button>
         
-        {/* Кнопка "Сделать главным" */}
         {!isMain && (
           <button
             onClick={handleSetMain}
@@ -140,7 +137,6 @@ const FullscreenImageViewer: React.FC<{
           </button>
         )}
         
-        {/* Индикатор текущего фото */}
         <div className={`absolute bottom-4 left-1/2 -translate-x-1/2 px-3 py-1 bg-black/50 text-white text-sm rounded-full transition-all duration-300 z-10 ${
           showControls ? 'opacity-100' : 'opacity-0'
         }`}>
@@ -148,7 +144,6 @@ const FullscreenImageViewer: React.FC<{
           {isMain && <span className="ml-2 text-yellow-400">★ Главное</span>}
         </div>
         
-        {/* Кнопка назад */}
         {images.length > 1 && (
           <button
             onClick={goPrev}
@@ -160,7 +155,6 @@ const FullscreenImageViewer: React.FC<{
           </button>
         )}
         
-        {/* Кнопка вперед */}
         {images.length > 1 && (
           <button
             onClick={goNext}
@@ -172,7 +166,6 @@ const FullscreenImageViewer: React.FC<{
           </button>
         )}
         
-        {/* Миниатюры внизу */}
         {images.length > 1 && (
           <div className={`absolute bottom-16 left-0 right-0 flex justify-center gap-2 px-4 transition-all duration-300 z-10 ${
             showControls ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-10'
@@ -266,7 +259,6 @@ const ProductGallery: React.FC<{
   };
 
   const openImageViewer = (index: number) => {
-    console.log('Opening viewer at index:', index);
     setSelectedImageIndex(index);
     setViewerOpen(true);
   };
@@ -318,7 +310,6 @@ const ProductGallery: React.FC<{
         </div>
       ) : (
         <div className="space-y-4">
-          {/* Главное фото */}
           {mainImage && (
             <div className="relative group cursor-pointer" onClick={() => openImageViewer(mainImageIndex)}>
               <img
@@ -353,7 +344,6 @@ const ProductGallery: React.FC<{
             </div>
           )}
 
-          {/* Сетка остальных фото */}
           {otherImages.length > 0 && (
             <div className="grid grid-cols-4 gap-2">
               {otherImages.map((img, idx) => {
@@ -398,7 +388,6 @@ const ProductGallery: React.FC<{
         </div>
       )}
 
-      {/* Полноэкранный просмотр */}
       {viewerOpen && (
         <FullscreenImageViewer
           images={images}
@@ -606,6 +595,7 @@ export const ProductDetails: React.FC = () => {
   });
   const [characteristics, setCharacteristics] = useState<ProductCharacteristic>({});
   const [selectedCategoryFields, setSelectedCategoryFields] = useState<CategoryField[]>([]);
+  const [originalCharacteristics, setOriginalCharacteristics] = useState<ProductCharacteristic>({});
 
   const loadData = useCallback(async () => {
     if (!id) return;
@@ -638,8 +628,40 @@ export const ProductDetails: React.FC = () => {
         costBreakdown: productData.costBreakdown || []
       });
       
-      setCharacteristics(productData.characteristics || {});
+      // Получаем характеристики из productData
+      const loadedCharacteristics = productData.characteristics || {};
       
+      // Преобразуем характеристики: если ключ - название поля, нужно найти fieldId
+      const convertedCharacteristics: ProductCharacteristic = {};
+      
+      for (const [key, value] of Object.entries(loadedCharacteristics)) {
+        // Проверяем, является ли ключ числом (fieldId)
+        if (!isNaN(Number(key))) {
+          convertedCharacteristics[key] = value;
+        } else {
+          // Если ключ - название поля, ищем field по имени во всех категориях
+          let found = false;
+          for (const cat of categoriesRes.data) {
+            if (cat.fields) {
+              const field = cat.fields.find((f: CategoryField) => f.name === key);
+              if (field) {
+                convertedCharacteristics[field.id] = value;
+                found = true;
+                break;
+              }
+            }
+          }
+          if (!found) {
+            convertedCharacteristics[key] = value;
+          }
+        }
+      }
+      
+      console.log('Converted characteristics:', convertedCharacteristics);
+      setCharacteristics(convertedCharacteristics);
+      setOriginalCharacteristics(convertedCharacteristics);
+      
+      // Загружаем поля категорий для выбранных категорий
       const selectedCategories = categoriesRes.data.filter((cat: Category) => 
         (productData.categoryIds || []).includes(cat.id)
       );
@@ -768,16 +790,20 @@ export const ProductDetails: React.FC = () => {
         uniqueFields.push(field);
       }
     });
-    
     setSelectedCategoryFields(uniqueFields);
     
-    const newCharacteristics: ProductCharacteristic = {};
+    // Сохраняем существующие характеристики, добавляем новые поля если нужно
+    const newCharacteristics = { ...characteristics };
     uniqueFields.forEach(field => {
-      if (characteristics[field.id] !== undefined) {
-        newCharacteristics[field.id] = characteristics[field.id];
+      if (originalCharacteristics[field.id] !== undefined && newCharacteristics[field.id] === undefined) {
+        newCharacteristics[field.id] = originalCharacteristics[field.id];
       }
     });
     setCharacteristics(newCharacteristics);
+  };
+
+  const handleCharacteristicChange = (fieldId: number, value: string | number | string[]) => {
+    setCharacteristics(prev => ({ ...prev, [fieldId]: value }));
   };
 
   const handleCostBreakdownChange = (items: CostBreakdownItem[]) => {
@@ -1018,6 +1044,7 @@ export const ProductDetails: React.FC = () => {
         onClose={() => {
           setIsEditing(false);
           setPriceChangeReason('');
+          setCharacteristics(originalCharacteristics);
         }}
         title="Редактировать товар"
         size="lg"
@@ -1066,20 +1093,47 @@ export const ProductDetails: React.FC = () => {
           )}
           
           <div className="grid grid-cols-2 gap-4">
-            <Input
-              label="Остаток на складе"
-              type="number"
-              value={editFormData.stock}
-              onChange={(e) => setEditFormData({ ...editFormData, stock: parseInt(e.target.value) })}
-              required
-            />
-            <Input
-              label="Минимальный остаток"
-              type="number"
-              value={editFormData.min_stock}
-              onChange={(e) => setEditFormData({ ...editFormData, min_stock: parseInt(e.target.value) })}
-              required
-            />
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Остаток на складе *
+              </label>
+              <input
+                type="number"
+                value={editFormData.stock}
+                onChange={(e) => {
+                  let value = parseInt(e.target.value);
+                  if (isNaN(value)) value = 0;
+                  if (value < 0) value = 0;
+                  setEditFormData({ ...editFormData, stock: value });
+                }}
+                onBlur={() => {
+                  if (editFormData.stock < 0 || isNaN(editFormData.stock)) {
+                    setEditFormData({ ...editFormData, stock: 0 });
+                  }
+                }}
+                min="0"
+                className="w-full px-3 py-2 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Минимальный остаток *
+              </label>
+              <input
+                type="number"
+                value={editFormData.min_stock}
+                onChange={(e) => {
+                  let value = parseInt(e.target.value);
+                  if (isNaN(value)) value = 0;
+                  if (value < 0) value = 0;
+                  setEditFormData({ ...editFormData, min_stock: value });
+                }}
+                min="0"
+                className="w-full px-3 py-2 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                required
+              />
+            </div>
           </div>
           
           <ProductCategoriesSelector
@@ -1099,7 +1153,7 @@ export const ProductDetails: React.FC = () => {
           <ProductCharacteristicsForm
             fields={selectedCategoryFields}
             characteristics={characteristics}
-            onChange={(fieldId, value) => setCharacteristics(prev => ({ ...prev, [fieldId]: value }))}
+            onChange={handleCharacteristicChange}
           />
           
           <Input
@@ -1118,6 +1172,7 @@ export const ProductDetails: React.FC = () => {
             <Button type="button" variant="secondary" onClick={() => {
               setIsEditing(false);
               setPriceChangeReason('');
+              setCharacteristics(originalCharacteristics);
             }} fullWidth>
               Отмена
             </Button>

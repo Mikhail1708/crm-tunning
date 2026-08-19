@@ -1,7 +1,6 @@
-// frontend/src/components/ui/OrderStatusSelect.tsx
 import React from 'react';
 import { OrderStatus } from '../../types';
-import { Package, Settings, Truck, Loader } from 'lucide-react';
+import { Loader } from 'lucide-react';
 
 interface OrderStatusSelectProps {
   orderId: number;
@@ -11,60 +10,51 @@ interface OrderStatusSelectProps {
   disabled?: boolean;
 }
 
-const statusConfig: Record<OrderStatus, { label: string; icon: React.ReactNode; color: string }> = {
-  ordered: {
-    label: 'Оформлен',
-    icon: <Package size={16} />,
-    color: 'blue'
-  },
-  assembling: {
-    label: 'Собирается',
-    icon: <Settings size={16} />,
-    color: 'yellow'
-  },
-  shipped: {
-    label: 'Отправлен',
-    icon: <Truck size={16} />,
-    color: 'green'
-  }
+export const orderStatusLabels: Record<OrderStatus, string> = {
+  confirmed: 'Подтверждён',
+  assembling: 'Собирается',
+  shipped: 'Отправлен',
+  cancelled: 'Отменён',
 };
 
-export const OrderStatusSelect: React.FC<OrderStatusSelectProps> = ({ 
-  orderId, 
-  currentStatus, 
+const nextStatuses: Record<OrderStatus, readonly OrderStatus[]> = {
+  confirmed: ['assembling', 'shipped', 'cancelled'],
+  assembling: ['shipped', 'cancelled'],
+  shipped: [],
+  cancelled: [],
+};
+
+const statusClasses: Record<OrderStatus, string> = {
+  confirmed: 'border-indigo-300 bg-indigo-50 text-indigo-800 dark:border-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300',
+  assembling: 'border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-700 dark:bg-amber-950/50 dark:text-amber-300',
+  shipped: 'border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300',
+  cancelled: 'border-red-300 bg-red-50 text-red-800 dark:border-red-700 dark:bg-red-950/50 dark:text-red-300',
+};
+
+export const OrderStatusSelect: React.FC<OrderStatusSelectProps> = ({
+  orderId,
+  currentStatus,
   onStatusChange,
   size = 'md',
-  disabled = false
+  disabled = false,
 }) => {
-  const handleChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    onStatusChange(orderId, e.target.value as OrderStatus);
-  };
-
-  const sizeClasses = {
-    sm: 'px-2 py-1 text-xs',
-    md: 'px-3 py-1.5 text-sm',
-    lg: 'px-4 py-2 text-base'
-  };
+  const choices = [currentStatus, ...nextStatuses[currentStatus]];
+  const isTerminal = nextStatuses[currentStatus].length === 0;
+  const sizeClasses = { sm: 'px-2 py-1 text-xs', md: 'px-3 py-1.5 text-sm', lg: 'px-4 py-2 text-base' };
 
   return (
     <div className="relative">
       <select
         value={currentStatus}
-        onChange={handleChange}
-        disabled={disabled}
-        className={`
-          ${sizeClasses[size]}
-          rounded-lg border-2 font-medium cursor-pointer
-          transition-all duration-200 appearance-none pr-8
-          ${disabled ? 'opacity-50 cursor-not-allowed' : 'hover:shadow-md'}
-          ${currentStatus === 'ordered' && 'border-blue-300 bg-blue-50 text-blue-700'}
-          ${currentStatus === 'assembling' && 'border-yellow-300 bg-yellow-50 text-yellow-700'}
-          ${currentStatus === 'shipped' && 'border-green-300 bg-green-50 text-green-700'}
-        `}
+        onChange={(event) => onStatusChange(orderId, event.target.value as OrderStatus)}
+        disabled={disabled || isTerminal}
+        className={`${sizeClasses[size]} rounded-lg border-2 font-medium transition-all duration-200 pr-8
+          ${(disabled || isTerminal) ? 'opacity-70 cursor-not-allowed' : 'cursor-pointer hover:shadow-md'}
+          ${statusClasses[currentStatus]}`}
       >
-        <option value="ordered">Оформлен</option>
-        <option value="assembling">Собирается</option>
-        <option value="shipped">Отправлен</option>
+        {choices.map((status) => (
+          <option key={status} value={status}>{orderStatusLabels[status]}</option>
+        ))}
       </select>
       {disabled && (
         <div className="absolute right-2 top-1/2 -translate-y-1/2">

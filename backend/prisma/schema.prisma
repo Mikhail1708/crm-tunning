@@ -102,6 +102,7 @@ model Client {
   middleName       String?
   phone            String    @unique
   email            String?
+  preferredContact String?
   birthDate        DateTime?
   address          String?
   city             String?
@@ -127,6 +128,8 @@ model Client {
 model SaleDocument {
   id               Int              @id @default(autoincrement())
   documentNumber   String           @unique
+  externalOrderId  String?          @unique
+  externalPayloadHash String?
   documentType     String
   clientId         Int?
   client           Client?          @relation(fields: [clientId], references: [id])
@@ -136,13 +139,17 @@ model SaleDocument {
   customerPhone    String?
   customerEmail    String?
   customerAddress  String?
+  contactMethod    String?
+  deliveryMethod   String?
+  deliveryProvider String?
   description      String?
   subtotal         Float
   discount         Float            @default(0)
   total            Float
   paymentMethod    String?
   paymentStatus    String           @default("unpaid")
-  orderStatus      String           @default("ordered")
+  orderStatus      String           @default("confirmed")
+  statusVersion    Int              @default(0)
   saleDate         DateTime         @default(now())
   createdAt        DateTime         @default(now())
   updatedAt        DateTime         @updatedAt

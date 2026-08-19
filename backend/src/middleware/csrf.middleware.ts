@@ -22,7 +22,7 @@ export const getCsrfToken = (req: Request, res: Response) => {
   
   // Устанавливаем cookie
   res.cookie('csrf-token', token, {
-    httpOnly: false, // Должен быть доступен из JS
+    httpOnly: false,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'lax',
     maxAge: 24 * 60 * 60 * 1000
@@ -38,30 +38,61 @@ export const getCsrfToken = (req: Request, res: Response) => {
   return token;
 };
 
+// Список публичных путей, для которых НЕ нужна CSRF-защита
+const PUBLIC_PATHS = [
+  '/api/sale-documents/public',
+  '/api/public',
+  '/public',
+  '/api/health',
+  '/api/csrf/token',
+];
+
+// Проверка, является ли путь публичным
+const isPublicPath = (path: string): boolean => {
+  return PUBLIC_PATHS.some(publicPath => path.includes(publicPath));
+};
+
 // Middleware для проверки CSRF токена
 export const csrfProtection = async (
   req: RequestWithUser,
   res: Response,
   next: NextFunction
 ): Promise<void> => {
-  // Пропускаем GET, HEAD, OPTIONS запросы
+  // 1. Пропускаем GET, HEAD, OPTIONS запросы
   if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
     return next();
   }
   
-  // Пропускаем в разработке (опционально)
+  // 2. Пропускаем публичные эндпоинты (ПО ЛЮБОМУ ПУТИ)
+  if (isPublicPath(req.path) || isPublicPath(req.originalUrl)) {
+    console.log(`🔓 Пропускаем CSRF для публичного эндпоинта: ${req.method} ${req.path}`);
+    return next();
+  }
+  
+  // 3. В режиме разработки отключаем CSRF полностью (для удобства)
   if (process.env.NODE_ENV !== 'production') {
     console.log('⚠️ CSRF protection disabled in development');
     return next();
   }
   
-  // Получаем токен из заголовка
-  const csrfToken = req.headers['x-csrf-token'] || req.headers['xsrf-token'];
+  // 4. Проверяем CSRF токен
+  const csrfToken = req.headers['x-csrf-token'] || req.headers['xsrf-token'] || req.headers['csrf-token'];
   const cookieToken = req.cookies?.['csrf-token'];
   
+  console.log('🔒 CSRF проверка:', { 
+    hasCsrfToken: !!csrfToken, 
+    hasCookieToken: !!cookieToken,
+    match: csrfToken === cookieToken
+  });
+  
   if (!csrfToken || !cookieToken || csrfToken !== cookieToken) {
-    console.error('CSRF validation failed:', { csrfToken: !!csrfToken, cookieToken: !!cookieToken });
-    res.status(403).json({ error: 'CSRF token validation failed' });
+    console.error('❌ CSRF validation failed:', { 
+      csrfToken: !!csrfToken, 
+      cookieToken: !!cookieToken,
+      path: req.path,
+      method: req.method
+    });
+    res.status(403).json({ error: 'CSRF validation failed' });
     return;
   }
   

@@ -29,7 +29,7 @@ export interface CreateCategoryFieldDTO {
 export interface CreateClientDTO {
   firstName: string;
   lastName?: string;
-  middleName?: string;
+  middleName?: string; // ✅ ОТЧЕСТВО
   phone: string;
   email?: string;
   city?: string;
@@ -104,6 +104,7 @@ export interface CreateSaleDocumentDTO {
   client?: {
     firstName: string;
     lastName: string;
+    middleName?: string; // ✅ ОТЧЕСТВО
     phone: string;
     city?: string;
   };
