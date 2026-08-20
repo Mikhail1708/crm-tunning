@@ -42,6 +42,7 @@ model Product {
   saleDocumentItems   SaleDocumentItem[]
   images              ProductImage[]
   priceHistory        PriceHistory[]
+  reservationItems    InventoryReservationItem[]
 }
 
 model Category {
@@ -130,6 +131,9 @@ model SaleDocument {
   documentNumber   String           @unique
   externalOrderId  String?          @unique
   externalPayloadHash String?
+  externalPaymentId String?         @unique
+  paidAmountMinor  BigInt?
+  paymentCurrency  String?
   documentType     String
   clientId         Int?
   client           Client?          @relation(fields: [clientId], references: [id])
@@ -160,6 +164,7 @@ model SaleDocument {
   items SaleDocumentItem[]
   sales Sale[]
   creator User? @relation("UserSaleDocuments", fields: [createdBy], references: [id])
+  inventoryReservation InventoryReservation?
 }
 
 model SaleDocumentItem {
@@ -234,4 +239,41 @@ model PriceHistory {
 
   @@index([productId])
   @@index([changedAt])
+}
+
+model InventoryReservation {
+  id              String   @id @default(cuid())
+  externalOrderId String   @unique
+  payloadHash     String
+  status          String   @default("active")
+  currency        String   @default("RUB")
+  totalMinor      BigInt
+  expiresAt       DateTime
+  paymentId       String?  @unique
+  paidAmountMinor BigInt?
+  saleDocumentId  Int?     @unique
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  items        InventoryReservationItem[]
+  saleDocument SaleDocument?              @relation(fields: [saleDocumentId], references: [id], onDelete: Restrict)
+
+  @@index([status, expiresAt])
+}
+
+model InventoryReservationItem {
+  reservationId  String
+  productId      Int
+  quantity       Int
+  unitPriceMinor BigInt
+  totalMinor     BigInt
+  productName    String
+  productArticle String
+  costPrice      Float
+
+  reservation InventoryReservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+  product     Product              @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@id([reservationId, productId])
+  @@index([productId])
 }

@@ -17,6 +17,12 @@ import {
 import { authMiddleware, managerAccess } from '../middleware/auth.middleware';
 import { requireInternalApiKey } from '../middleware/internalApiKey.middleware';
 import { orderLimiter } from '../middleware/rateLimit.middleware';
+import {
+  consumeInventoryReservation,
+  createInventoryReservation,
+  expireInventoryReservations,
+  releaseInventoryReservation,
+} from '../controllers/inventoryReservations.controller';
 
 const router = Router();
 
@@ -24,6 +30,10 @@ const router = Router();
 // Ограничение частоты запросов через rate-limit (настраивается отдельно)
 router.post('/public', orderLimiter, requireInternalApiKey, createPublicOrder as any);
 router.put('/internal/:id/full', orderLimiter, requireInternalApiKey, updateFullOrder as any);
+router.post('/internal/v1/reservations', orderLimiter, requireInternalApiKey, createInventoryReservation as any);
+router.post('/internal/v1/reservations/expire', orderLimiter, requireInternalApiKey, expireInventoryReservations as any);
+router.post('/internal/v1/reservations/:reservationId/release', orderLimiter, requireInternalApiKey, releaseInventoryReservation as any);
+router.post('/internal/v1/reservations/:reservationId/consume', orderLimiter, requireInternalApiKey, consumeInventoryReservation as any);
 
 // 🔒 Все остальные маршруты требуют аутентификации
 router.use(authMiddleware as any);

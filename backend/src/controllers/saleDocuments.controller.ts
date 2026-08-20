@@ -269,6 +269,17 @@ export const createPublicOrder = async (req: Request, res: Response): Promise<vo
   let requestPayloadHash: string | null = null;
   try {
     const data = req.body;
+    // A reservation already owns both stock and its immutable quote. Never let
+    // an old/misrouted worker send that payload through the legacy path, which
+    // would perform a second stock decrement and a fresh price lookup.
+    if (data?.reservationId != null || data?.contractVersion != null) {
+      res.status(409).json({
+        success: false,
+        code: 'RESERVED_ORDER_REQUIRES_V1_CONSUME',
+        message: 'Reserved orders must use the versioned reservation consume endpoint',
+      });
+      return;
+    }
     const {
       externalOrderId: externalOrderIdRaw,
       items,

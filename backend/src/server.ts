@@ -8,6 +8,7 @@ import authRoutes from './routes/auth.routes';
 import productRoutes from './routes/products.routes';
 import categoryRoutes from './routes/categories.routes';
 import saleDocumentRoutes from './routes/saleDocuments.routes';
+import { startInventoryReservationExpiryWorker } from './controllers/inventoryReservations.controller';
 import clientRoutes from './routes/clients.routes';
 import auditRoutes from './routes/audit.routes';
 import reportsRoutes from './routes/reports.routes';
@@ -89,6 +90,7 @@ const publicLimiter = rateLimit({
 // ============================================================
 const PUBLIC_PATHS = [
   '/api/sale-documents/public',
+  '/api/sale-documents/internal',
   '/api/public',
   '/api/health',
   '/api/auth/csrf-token',
@@ -177,6 +179,7 @@ app.get('/api/health', (req, res) => {
 const PORT = parseInt(process.env.PORT || '5000', 10);
 
 app.listen(PORT, '0.0.0.0', () => {
+  startInventoryReservationExpiryWorker();
   console.log(`🚀 CRM Server running on port ${PORT}`);
   console.log(`📋 Health: http://localhost:${PORT}/api/health`);
   console.log(`🔐 Auth: http://localhost:${PORT}/api/auth`);
