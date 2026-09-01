@@ -17,6 +17,7 @@ import {
 import { authMiddleware, managerAccess } from '../middleware/auth.middleware';
 import { requireInternalApiKey } from '../middleware/internalApiKey.middleware';
 import { orderLimiter } from '../middleware/rateLimit.middleware';
+import { cancelWebsiteOrder } from '../controllers/internalCancellation.controller';
 import {
   consumeInventoryReservation,
   createInventoryReservation,
@@ -34,6 +35,7 @@ router.post('/internal/v1/reservations', orderLimiter, requireInternalApiKey, cr
 router.post('/internal/v1/reservations/expire', orderLimiter, requireInternalApiKey, expireInventoryReservations as any);
 router.post('/internal/v1/reservations/:reservationId/release', orderLimiter, requireInternalApiKey, releaseInventoryReservation as any);
 router.post('/internal/v1/reservations/:reservationId/consume', orderLimiter, requireInternalApiKey, consumeInventoryReservation as any);
+router.post('/internal/v1/orders/:crmOrderId/cancellation', orderLimiter, requireInternalApiKey, cancelWebsiteOrder as any);
 
 // 🔒 Все остальные маршруты требуют аутентификации
 router.use(authMiddleware as any);
@@ -48,7 +50,7 @@ router.put('/:id', managerAccess as any, updateSaleDocument as any);
 router.put('/:id/full', managerAccess as any, updateFullOrder as any);
 router.patch('/:id/payment-status', managerAccess as any, updatePaymentStatus as any);
 router.put('/:id/payment', managerAccess as any, updatePaymentStatus as any);
-router.patch('/:id/status', updateOrderStatus as any);
+router.patch('/:id/status', managerAccess as any, updateOrderStatus as any);
 router.delete('/:id', managerAccess as any, deleteSaleDocument as any);
 
 export default router;

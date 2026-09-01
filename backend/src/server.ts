@@ -9,6 +9,7 @@ import productRoutes from './routes/products.routes';
 import categoryRoutes from './routes/categories.routes';
 import saleDocumentRoutes from './routes/saleDocuments.routes';
 import { startInventoryReservationExpiryWorker } from './controllers/inventoryReservations.controller';
+import { startOrderStatusOutboxDispatcher } from './services/statusOutbox.service';
 import clientRoutes from './routes/clients.routes';
 import auditRoutes from './routes/audit.routes';
 import reportsRoutes from './routes/reports.routes';
@@ -180,6 +181,7 @@ const PORT = parseInt(process.env.PORT || '5000', 10);
 
 app.listen(PORT, '0.0.0.0', () => {
   startInventoryReservationExpiryWorker();
+  startOrderStatusOutboxDispatcher();
   console.log(`🚀 CRM Server running on port ${PORT}`);
   console.log(`📋 Health: http://localhost:${PORT}/api/health`);
   console.log(`🔐 Auth: http://localhost:${PORT}/api/auth`);

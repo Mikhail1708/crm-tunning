@@ -154,6 +154,12 @@ model SaleDocument {
   paymentStatus    String           @default("unpaid")
   orderStatus      String           @default("confirmed")
   statusVersion    Int              @default(0)
+  cancellationRequestId String?     @unique
+  cancellationDecision String?
+  cancellationReasonCode String?
+  cancellationReason String?
+  cancellationRequestedAt DateTime?
+  cancellationDecidedAt DateTime?
   saleDate         DateTime         @default(now())
   createdAt        DateTime         @default(now())
   updatedAt        DateTime         @updatedAt
@@ -165,6 +171,28 @@ model SaleDocument {
   sales Sale[]
   creator User? @relation("UserSaleDocuments", fields: [createdBy], references: [id])
   inventoryReservation InventoryReservation?
+  statusOutboxEvents CrmStatusOutboxEvent[]
+}
+
+model CrmStatusOutboxEvent {
+  id             String       @id
+  saleDocumentId Int
+  statusVersion  Int
+  payload        Json
+  deliveryStatus String       @default("pending")
+  attempts       Int          @default(0)
+  nextAttemptAt  DateTime     @default(now())
+  lockedAt       DateTime?
+  lastError      String?      @db.Text
+  deliveredAt    DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  saleDocument SaleDocument @relation(fields: [saleDocumentId], references: [id], onDelete: Cascade)
+
+  @@unique([saleDocumentId, statusVersion])
+  @@index([deliveryStatus, nextAttemptAt])
+  @@index([deliveryStatus, lockedAt])
 }
 
 model SaleDocumentItem {

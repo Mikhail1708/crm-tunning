@@ -2,11 +2,12 @@
 import { Response, Request } from 'express';
 import { PrismaClient, Prisma } from '@prisma/client';
 import { RequestWithUser, CreateSaleDocumentDTO } from '../types';
-import { sendOrderStatusWebhook } from '../services/webhook.service';
 import {
-  canTransitionOrderStatus,
+  OrderLifecycleError,
+  updateAuthoritativeOrderStatus,
+} from '../services/orderLifecycle.service';
+import {
   canTransitionPaymentStatus,
-  isOrderStatus,
   isPaymentStatus,
 } from '../domain/orderStateMachine';
 import {
@@ -1409,43 +1410,7 @@ export const updateOrderStatus = async (req: RequestWithUser, res: Response): Pr
       return;
     }
 
-    if (!isOrderStatus(orderStatus)) {
-      res.status(400).json({ message: 'Invalid orderStatus' });
-      return;
-    }
-    
-    // Получаем текущий документ, чтобы проверить source и старый статус
-    const currentDoc = await (prisma.saleDocument as any).findUnique({
-      where: { id: documentId },
-      select: { source: true, orderStatus: true, documentNumber: true, statusVersion: true }
-    });
-    
-    if (!currentDoc) {
-      res.status(404).json({ message: 'Документ не найден' });
-      return;
-    }
-
-    if (!canTransitionOrderStatus(currentDoc.orderStatus, orderStatus)) {
-      res.status(409).json({
-        message: `Invalid order status transition: ${currentDoc.orderStatus} -> ${orderStatus}`,
-      });
-      return;
-    }
-
-    if (currentDoc.orderStatus !== orderStatus) {
-      const updated = await (prisma.saleDocument as any).updateMany({
-        where: { id: documentId, orderStatus: currentDoc.orderStatus },
-        data: {
-          orderStatus,
-          statusVersion: { increment: 1 },
-        },
-      });
-      if (updated.count !== 1) {
-        res.status(409).json({ message: 'Order status changed concurrently; reload and retry' });
-        return;
-      }
-    }
-
+    const lifecycle = await updateAuthoritativeOrderStatus(prisma, documentId, orderStatus);
     const document = await (prisma.saleDocument as any).findUniqueOrThrow({
       where: { id: documentId },
       select: {
@@ -1460,36 +1425,21 @@ export const updateOrderStatus = async (req: RequestWithUser, res: Response): Pr
             id: true,
             firstName: true,
             lastName: true,
-            city: true
-          }
-        }
-      }
+            city: true,
+          },
+        },
+      },
     });
-    
-    // Always deliver the current version for website orders. Re-saving the
-    // same status becomes a safe manual retry after a temporary site outage.
-    if (document.source === 'website') {
-      console.log(`Sending webhook for CRM order ${document.id}, status: ${orderStatus}`);
-      const delivered = await sendOrderStatusWebhook(
-        document.id,
-        orderStatus,
-        document.documentNumber,
-        document.statusVersion
-      );
-      if (!delivered) {
-        console.error(`Webhook delivery exhausted retries for CRM order ${document.id}`);
-        res.status(502).json({
-          ...document,
-          statusSaved: true,
-          siteSynchronized: false,
-          message: 'Статус сохранён в CRM, но сайт временно недоступен. Повторите сохранение статуса.',
-        });
-        return;
-      }
-    }
-    
-    res.json(document);
+    res.json({
+      ...document,
+      statusSaved: true,
+      siteSynchronizationQueued: lifecycle.source === 'website',
+    });
   } catch (error) {
+    if (error instanceof OrderLifecycleError) {
+      res.status(error.statusCode).json({ code: error.code, message: error.message });
+      return;
+    }
     console.error('Error updating order status:', error);
     res.status(500).json({ message: 'Ошибка обновления статуса заказа' });
   }

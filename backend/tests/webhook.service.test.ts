@@ -2,27 +2,40 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import axios from 'axios';
 import crypto from 'crypto';
-import { sendOrderStatusWebhook } from '../src/services/webhook.service';
+import {
+  deliverOrderStatusWebhook,
+  OrderStatusWebhookPayload,
+} from '../src/services/webhook.service';
 
-test('webhook sender reads dotenv-backed configuration at call time', async () => {
+const payload: OrderStatusWebhookPayload = {
+  eventId: 'crm-order-status:42:v3',
+  crmOrderId: 42,
+  externalOrderId: 'website-order-42',
+  documentNumber: 'ORDER-42',
+  status: 'shipped',
+  version: 3,
+  timestamp: '2026-08-31T00:00:00.000Z',
+};
+
+test('webhook sender signs and sends the immutable outbox payload once', async () => {
   const originalPost = axios.post;
   process.env.SITE_WEBHOOK_URL = 'http://site.test/api/webhooks/crm/order-status';
   process.env.WEBHOOK_SECRET = 'shared-test-secret';
-  process.env.WEBHOOK_MAX_ATTEMPTS = '1';
 
   let request: { url?: string; body?: any; config?: any } = {};
+  let attempts = 0;
   (axios.post as any) = async (url: string, body: any, config: any) => {
+    attempts += 1;
     request = { url, body, config };
     return { status: 200 };
   };
 
   try {
-    const delivered = await sendOrderStatusWebhook(42, 'shipped', 'ORDER-42', 3);
-    assert.equal(delivered, true);
-    assert.equal(request.url, process.env.SITE_WEBHOOK_URL);
-
-    const canonicalPayload = Object.keys(request.body).sort().reduce<Record<string, unknown>>((result, key) => {
-      result[key] = request.body[key];
+    await deliverOrderStatusWebhook(payload);
+    assert.equal(attempts, 1);
+    assert.deepEqual(request.body, payload);
+    const canonicalPayload = Object.keys(payload).sort().reduce<Record<string, unknown>>((result, key) => {
+      result[key] = payload[key as keyof OrderStatusWebhookPayload];
       return result;
     }, {});
     const expectedSignature = crypto
@@ -34,29 +47,19 @@ test('webhook sender reads dotenv-backed configuration at call time', async () =
     axios.post = originalPost;
   }
 });
-
-test('webhook sender retries a temporary order-not-found race', async () => {
+test('webhook sender leaves retry ownership to the durable dispatcher', async () => {
   const originalPost = axios.post;
   process.env.SITE_WEBHOOK_URL = 'http://site.test/api/webhooks/crm/order-status';
   process.env.WEBHOOK_SECRET = 'shared-test-secret';
-  process.env.WEBHOOK_MAX_ATTEMPTS = '3';
-  process.env.WEBHOOK_RETRY_BASE_MS = '50';
-
   let attempts = 0;
   (axios.post as any) = async () => {
     attempts += 1;
-    if (attempts === 1) {
-      const error: any = new Error('Order is not linked yet');
-      error.response = { status: 404 };
-      throw error;
-    }
-    return { status: 200 };
+    throw new Error('temporary outage');
   };
 
   try {
-    const delivered = await sendOrderStatusWebhook(42, 'assembling', 'ORDER-42', 1);
-    assert.equal(delivered, true);
-    assert.equal(attempts, 2);
+    await assert.rejects(deliverOrderStatusWebhook(payload), /temporary outage/);
+    assert.equal(attempts, 1);
   } finally {
     axios.post = originalPost;
   }
