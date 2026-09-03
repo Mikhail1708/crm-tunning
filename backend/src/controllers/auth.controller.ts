@@ -4,6 +4,7 @@ import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { RequestWithUser } from '../types';
+import { CRM_AUTH_COOKIE, CRM_JWT_AUDIENCE, CRM_JWT_ISSUER } from '../utils/authCookie';
 
 const prisma = new PrismaClient();
 
@@ -79,12 +80,12 @@ export const login = async (req: RequestWithUser, res: Response): Promise<void> 
         role: user.role 
       },
       process.env.JWT_SECRET!,
-      { expiresIn: '24h' }
+      { expiresIn: '24h', issuer: CRM_JWT_ISSUER, audience: CRM_JWT_AUDIENCE }
     );
     
     console.log('Token generated, setting cookie...');
     
-    res.cookie('token', token, {
+    res.cookie(CRM_AUTH_COOKIE, token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
@@ -110,7 +111,7 @@ export const login = async (req: RequestWithUser, res: Response): Promise<void> 
 
 export const logout = async (req: RequestWithUser, res: Response): Promise<void> => {
   try {
-    res.clearCookie('token', {
+    res.clearCookie(CRM_AUTH_COOKIE, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',

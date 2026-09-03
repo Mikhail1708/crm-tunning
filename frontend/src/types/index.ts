@@ -293,10 +293,15 @@ export interface ProductImage {
   productId: number;
   url: string;
   filename: string;
+  originalName?: string;
+  mimeType?: 'image/jpeg' | 'image/png' | 'image/webp' | null;
   size: number;
+  width?: number | null;
+  height?: number | null;
   isMain: boolean;
   sortOrder: number;
   createdAt: string;
+  updatedAt?: string;
 }
 
 export interface PriceHistoryEntry {

@@ -3,6 +3,7 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { RequestWithUser } from '../types';
+import { CRM_AUTH_COOKIE, CRM_JWT_AUDIENCE, CRM_JWT_ISSUER } from '../utils/authCookie';
 
 interface JwtPayload {
   id: number | string;
@@ -44,7 +45,7 @@ export const authMiddleware = async (
   }
 
   try {
-    let token = req.cookies?.token;
+    let token = req.cookies?.[CRM_AUTH_COOKIE];
     
     if (!token && req.headers.authorization) {
       const authHeader = req.headers.authorization;
@@ -63,7 +64,10 @@ export const authMiddleware = async (
     }
     
     try {
-      const decoded = jwt.verify(token, process.env.JWT_SECRET!) as JwtPayload;
+      const decoded = jwt.verify(token, process.env.JWT_SECRET!, {
+        issuer: CRM_JWT_ISSUER,
+        audience: CRM_JWT_AUDIENCE,
+      }) as JwtPayload;
       
       console.log('Token verified for user:', decoded.email || decoded.id);
       

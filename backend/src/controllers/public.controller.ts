@@ -1,6 +1,12 @@
 // crm-project/backend/src/controllers/public/products.controller.ts
 import { Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
+import {
+  absolutePublicUrl,
+  buildProductImageHttpResponse,
+  productImageMetadataSelect,
+  productImageUrl,
+} from '../services/productImages.service';
 
 const prisma = new PrismaClient();
 
@@ -54,7 +60,8 @@ export const getPublicProducts = async (req: Request, res: Response): Promise<vo
             },
           },
           images: {
-            orderBy: { sortOrder: 'asc' },
+            orderBy: [{ isMain: 'desc' }, { sortOrder: 'asc' }],
+            select: productImageMetadataSelect,
           },
           characteristics: {
             include: {
@@ -90,19 +97,11 @@ export const getPublicProducts = async (req: Request, res: Response): Promise<vo
       });
 
       // Формируем URL изображений из таблицы ProductImage
-      const baseUrl = process.env.BASE_URL || 'https://swapcrm38.ru';
-      const images = product.images.map((img: any) => {
-        if (img.url.startsWith('http')) {
-          return img.url;
-        }
-        return `${baseUrl}${img.url}`;
-      });
+      const images = product.images.map((img) => productImageUrl(req, img));
 
       // Если есть image_url, добавляем его в начало (для обратной совместимости)
       if (product.image_url && images.length === 0) {
-        const mainImage = product.image_url.startsWith('http') 
-          ? product.image_url 
-          : `${baseUrl}${product.image_url}`;
+        const mainImage = absolutePublicUrl(req, product.image_url);
         images.unshift(mainImage);
       }
 
@@ -170,7 +169,8 @@ export const getPublicProductById = async (req: Request, res: Response): Promise
           },
         },
         images: {
-          orderBy: { sortOrder: 'asc' },
+          orderBy: [{ isMain: 'desc' }, { sortOrder: 'asc' }],
+          select: productImageMetadataSelect,
         },
         characteristics: {
           include: {
@@ -197,16 +197,10 @@ export const getPublicProductById = async (req: Request, res: Response): Promise
       }
     });
 
-    const baseUrl = process.env.BASE_URL || 'https://swapcrm38.ru';
-    const images = product.images.map((img: any) => {
-      if (img.url.startsWith('http')) return img.url;
-      return `${baseUrl}${img.url}`;
-    });
+    const images = product.images.map((img) => productImageUrl(req, img));
 
     if (product.image_url && images.length === 0) {
-      const mainImage = product.image_url.startsWith('http') 
-        ? product.image_url 
-        : `${baseUrl}${product.image_url}`;
+      const mainImage = absolutePublicUrl(req, product.image_url);
       images.unshift(mainImage);
     }
 
@@ -239,6 +233,45 @@ export const getPublicProductById = async (req: Request, res: Response): Promise
   } catch (error) {
     console.error('Error in getPublicProductById:', error);
     res.status(500).json({ error: 'Ошибка получения товара' });
+  }
+};
+
+export const getPublicProductImage = async (req: Request, res: Response): Promise<void> => {
+  const productId = Number.parseInt(req.params.productId, 10);
+  const imageId = Number.parseInt(req.params.imageId, 10);
+  if (!Number.isInteger(productId) || !Number.isInteger(imageId)) {
+    res.status(400).json({ error: 'Неверный ID изображения' });
+    return;
+  }
+
+  try {
+    const image = await prisma.productImage.findFirst({
+      where: { id: imageId, productId },
+      select: {
+        data: true,
+        mimeType: true,
+        size: true,
+        contentHash: true,
+        updatedAt: true,
+      },
+    });
+
+    const response = buildProductImageHttpResponse(image, req.headers['if-none-match']);
+    if (!response) {
+      res.status(404).json({ error: 'Изображение не найдено' });
+      return;
+    }
+
+    if (response.status === 304) {
+      res.status(304).end();
+      return;
+    }
+
+    res.set(response.headers);
+    res.send(response.body);
+  } catch (error) {
+    console.error('Error getting public product image:', error);
+    res.status(500).json({ error: 'Ошибка получения изображения' });
   }
 };
 

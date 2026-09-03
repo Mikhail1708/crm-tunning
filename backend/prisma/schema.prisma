@@ -239,15 +239,24 @@ model Expense {
 }
 
 model ProductImage {
-  id         Int      @id @default(autoincrement())
-  productId  Int
-  product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
-  url        String
-  filename   String
-  size       Int
-  isMain     Boolean  @default(false)
-  sortOrder  Int      @default(0)
-  createdAt  DateTime @default(now())
+  id           Int      @id @default(autoincrement())
+  productId    Int
+  product      Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  data         Bytes?   @db.ByteA
+  mimeType     String?
+  size         Int
+  width        Int?
+  height       Int?
+  originalName String?
+  contentHash  String?
+  isMain       Boolean  @default(false)
+  sortOrder    Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @default(now()) @updatedAt
+
+  // Temporary compatibility fields for rows awaiting the explicit filesystem import.
+  url          String?
+  filename     String?
 
   @@index([productId])
 }

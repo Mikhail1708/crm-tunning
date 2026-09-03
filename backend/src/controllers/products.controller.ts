@@ -2,8 +2,16 @@
 import { Response } from 'express';
 import { PrismaClient, Prisma } from '@prisma/client';
 import { RequestWithUser, CreateProductDTO, UpdateProductDTO } from '../types';
-import path from 'path';
-import fs from 'fs';
+import { RequestWithProcessedImage } from '../middleware/upload.middleware';
+import {
+  deleteProductImageRecord,
+  productImageBinaryPath,
+  productImageCreateData,
+  productImageMetadataDto,
+  productImageMetadataSelect,
+  ProductImageNotFoundError,
+  setMainProductImageRecord,
+} from '../services/productImages.service';
 
 const prisma = new PrismaClient();
 
@@ -91,9 +99,6 @@ export const getProducts = async (req: RequestWithUser, res: Response): Promise<
           include: {
             field: true
           }
-        },
-        images: {
-          orderBy: { sortOrder: 'asc' }
         }
       },
       orderBy: { createdAt: 'desc' }
@@ -133,9 +138,6 @@ export const getProductById = async (req: RequestWithUser, res: Response): Promi
           include: {
             field: true
           }
-        },
-        images: {
-          orderBy: { sortOrder: 'asc' }
         }
       }
     });
@@ -380,19 +382,12 @@ export const deleteProduct = async (req: RequestWithUser, res: Response): Promis
     
     const existingProduct = await prisma.product.findUnique({
       where: { id: productId },
-      include: { images: true }
+      select: { id: true }
     });
     
     if (!existingProduct) {
       res.status(404).json({ message: 'Товар не найден' });
       return;
-    }
-    
-    for (const image of existingProduct.images) {
-      const filePath = path.join(__dirname, '../../uploads/products', image.filename);
-      if (fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath);
-      }
     }
     
     await prisma.product.delete({
@@ -574,13 +569,14 @@ export const getProductImages = async (req: RequestWithUser, res: Response): Pro
     
     const images = await prisma.productImage.findMany({
       where: { productId },
+      select: productImageMetadataSelect,
       orderBy: [
         { isMain: 'desc' },
         { sortOrder: 'asc' }
       ]
     });
     
-    res.json(images);
+    res.json(images.map((image) => productImageMetadataDto(req, image)));
   } catch (error) {
     console.error('Error getting product images:', error);
     res.status(500).json({ message: 'Ошибка загрузки фото' });
@@ -590,99 +586,57 @@ export const getProductImages = async (req: RequestWithUser, res: Response): Pro
 // ============================================================
 // ✅ ИСПРАВЛЕННАЯ ФУНКЦИЯ ЗАГРУЗКИ ФОТО
 // ============================================================
-export const uploadProductImage = async (req: RequestWithUser, res: Response): Promise<void> => {
+export const uploadProductImage = async (req: RequestWithUser & RequestWithProcessedImage, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
     const productId = parseInt(id);
     
-    console.log('=== uploadProductImage START ===');
-    console.log('Product ID:', productId);
-    console.log('File:', req.file ? req.file.filename : 'NO FILE');
-    console.log('NODE_ENV:', process.env.NODE_ENV);
-    
     if (isNaN(productId)) {
-      if (req.file && fs.existsSync(req.file.path)) {
-        fs.unlinkSync(req.file.path);
-      }
       res.status(400).json({ message: 'Неверный ID товара' });
       return;
     }
     
-    const file = req.file;
-    if (!file) {
+    const processedImage = req.processedImage;
+    if (!processedImage) {
       res.status(400).json({ message: 'Файл не загружен' });
       return;
     }
     
     const product = await prisma.product.findUnique({
       where: { id: productId },
-      include: { images: true }
+      select: { id: true, _count: { select: { images: true } } }
     });
     
     if (!product) {
-      if (fs.existsSync(file.path)) {
-        fs.unlinkSync(file.path);
-      }
       res.status(404).json({ message: 'Товар не найден' });
       return;
     }
     
-    if (product.images.length >= MAX_PRODUCT_IMAGES) {
-      if (fs.existsSync(file.path)) {
-        fs.unlinkSync(file.path);
-      }
+    if (product._count.images >= MAX_PRODUCT_IMAGES) {
       res.status(400).json({ message: `Максимум ${MAX_PRODUCT_IMAGES} фото на товар` });
       return;
     }
     
-    // 🔥 ИСПРАВЛЕНО: правильно определяем базовый URL
-    const isProduction = process.env.NODE_ENV === 'production';
-    const port = process.env.PORT || 5000;
-    
-    // Если продакшен — используем домен, иначе localhost
-    let baseUrl: string;
-    if (isProduction) {
-      baseUrl = process.env.BASE_URL || 'https://swapcrm.ru';
-    } else {
-      baseUrl = `http://localhost:${port}`;
-    }
-    
-    const imageUrl = `${baseUrl}/uploads/products/${file.filename}`;
-    
-    console.log('📍 Image URL:', imageUrl);
-    console.log('📍 Environment:', isProduction ? 'PRODUCTION' : 'DEVELOPMENT');
-    
-    const existingImagesCount = product.images.length;
+    const existingImagesCount = product._count.images;
     
     const productImage = await prisma.productImage.create({
       data: {
-        productId,
-        url: imageUrl,
-        filename: file.filename,
-        size: file.size,
-        isMain: existingImagesCount === 0,
-        sortOrder: existingImagesCount
-      }
+        ...productImageCreateData(productId, processedImage, existingImagesCount),
+      },
+      select: productImageMetadataSelect,
     });
     
     if (existingImagesCount === 0) {
       await prisma.product.update({
         where: { id: productId },
-        data: { image_url: imageUrl }
+        data: { image_url: productImageBinaryPath(productId, productImage.id) }
       });
     }
     
-    console.log('✅ Image uploaded successfully:', productImage.id);
-    res.status(201).json(productImage);
+    res.status(201).json(productImageMetadataDto(req, productImage));
   } catch (error) {
     console.error('❌ Error uploading image:', error);
-    if (req.file && fs.existsSync(req.file.path)) {
-      fs.unlinkSync(req.file.path);
-    }
-    res.status(500).json({ 
-      message: 'Ошибка загрузки фото',
-      error: error instanceof Error ? error.message : 'Unknown error'
-    });
+    res.status(500).json({ message: 'Ошибка загрузки фото' });
   }
 };
 
@@ -692,91 +646,21 @@ export const deleteProductImage = async (req: RequestWithUser, res: Response): P
     const productId = parseInt(id);
     const imageIdNum = parseInt(imageId);
     
-    console.log('=== deleteProductImage START ===');
-    console.log('Product ID:', productId);
-    console.log('Image ID:', imageIdNum);
-    
     if (isNaN(productId) || isNaN(imageIdNum)) {
       res.status(400).json({ message: 'Неверные ID' });
       return;
     }
     
-    await prisma.$transaction(async (tx) => {
-      // Находим изображение
-      const image = await tx.productImage.findFirst({
-        where: { id: imageIdNum, productId }
-      });
-      
-      if (!image) {
-        throw new Error('Фото не найдено');
-      }
-      
-      console.log('Found image:', image.filename);
-      
-      // Пытаемся удалить файл с диска
-      const filePath = path.join(__dirname, '../../uploads/products', image.filename);
-      console.log('File path:', filePath);
-      
-      try {
-        if (fs.existsSync(filePath)) {
-          fs.unlinkSync(filePath);
-          console.log('✅ File deleted successfully');
-        } else {
-          console.log('⚠️ File not found on disk, continuing with DB deletion');
-        }
-      } catch (fileError) {
-        console.error('⚠️ Error deleting file, continuing:', fileError);
-        // Продолжаем даже если файл не удалился
-      }
-      
-      // Удаляем запись из БД
-      await tx.productImage.delete({
-        where: { id: imageIdNum }
-      });
-      console.log('✅ DB record deleted');
-      
-      // Если удалили главное фото, назначаем новое
-      if (image.isMain) {
-        console.log('Deleted main image, looking for replacement...');
-        const nextImage = await tx.productImage.findFirst({
-          where: { productId },
-          orderBy: { sortOrder: 'asc' }
-        });
-        
-        if (nextImage) {
-          console.log('Found replacement image:', nextImage.id);
-          await tx.productImage.update({
-            where: { id: nextImage.id },
-            data: { isMain: true }
-          });
-          
-          await tx.product.update({
-            where: { id: productId },
-            data: { image_url: nextImage.url }
-          });
-          console.log('✅ New main image set');
-        } else {
-          await tx.product.update({
-            where: { id: productId },
-            data: { image_url: null }
-          });
-          console.log('✅ No more images, product image_url set to null');
-        }
-      }
-    });
+    await prisma.$transaction((tx) => deleteProductImageRecord(tx, productId, imageIdNum));
     
-    console.log('=== deleteProductImage SUCCESS ===');
     res.json({ message: 'Фото удалено' });
   } catch (error) {
     console.error('❌ Error deleting image:', error);
-    if (error instanceof Error && error.message === 'Фото не найдено') {
+    if (error instanceof ProductImageNotFoundError) {
       res.status(404).json({ message: error.message });
       return;
     }
-    res.status(500).json({ 
-      message: 'Ошибка удаления фото',
-      error: error instanceof Error ? error.message : 'Unknown error'
-    });
+    res.status(500).json({ message: 'Ошибка удаления фото' });
   }
 };
 
@@ -791,28 +675,17 @@ export const setMainProductImage = async (req: RequestWithUser, res: Response): 
       return;
     }
     
-    const result = await prisma.$transaction(async (tx) => {
-      await tx.productImage.updateMany({
-        where: { productId },
-        data: { isMain: false }
-      });
-      
-      const image = await tx.productImage.update({
-        where: { id: imageIdNum },
-        data: { isMain: true }
-      });
-      
-      await tx.product.update({
-        where: { id: productId },
-        data: { image_url: image.url }
-      });
-      
-      return image;
-    });
+    const result = await prisma.$transaction((tx) => (
+      setMainProductImageRecord(tx, productId, imageIdNum)
+    ));
     
-    res.json(result);
+    res.json(productImageMetadataDto(req, result));
   } catch (error) {
     console.error('Error setting main image:', error);
+    if (error instanceof ProductImageNotFoundError) {
+      res.status(404).json({ message: error.message });
+      return;
+    }
     res.status(500).json({ message: 'Ошибка установки главного фото' });
   }
 };

@@ -1,73 +1,118 @@
-import sharp from 'sharp';
 import crypto from 'crypto';
 import path from 'path';
-import fs from 'fs';
+import sharp from 'sharp';
+
+export const MAX_PRODUCT_IMAGE_BYTES = 10 * 1024 * 1024;
+export const MAX_PRODUCT_IMAGE_PIXELS = 40_000_000;
+
+const MIME_BY_FORMAT: Record<string, string> = {
+  jpeg: 'image/jpeg',
+  png: 'image/png',
+  webp: 'image/webp',
+};
+
+export class InvalidProductImageError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'InvalidProductImageError';
+  }
+}
 
 export interface ProcessedImage {
-  filename: string;
-  path: string;
+  data: Buffer;
+  sourceMimeType: string;
+  mimeType: string;
   size: number;
   width: number;
   height: number;
+  originalName: string;
+  contentHash: string;
+  sourceSize: number;
+  optimized: boolean;
 }
 
-function generateHash(filename: string): string {
-  const timestamp = Date.now();
-  const random = Math.random().toString(36).substring(2, 10);
-  const hash = crypto.createHash('sha256');
-  hash.update(`${filename}-${timestamp}-${random}`);
-  return hash.digest('hex').substring(0, 32);
-}
+const createSharp = (buffer: Buffer) => sharp(buffer, {
+  animated: false,
+  failOn: 'error',
+  limitInputPixels: MAX_PRODUCT_IMAGE_PIXELS,
+  sequentialRead: true,
+});
 
-export async function processImage(
-  inputPath: string,
-  outputDir: string,
-  originalName: string
+const safeOriginalName = (name: string): string => {
+  const basename = path.basename(name || 'image').replace(/[\u0000-\u001f\u007f]/g, '').trim();
+  return (basename || 'image').slice(0, 255);
+};
+
+export async function processImageBuffer(
+  input: Buffer,
+  originalName: string,
 ): Promise<ProcessedImage> {
+  if (!Buffer.isBuffer(input) || input.length === 0) {
+    throw new InvalidProductImageError('Файл изображения пуст');
+  }
+  if (input.length > MAX_PRODUCT_IMAGE_BYTES) {
+    throw new InvalidProductImageError('Размер изображения превышает 10 МБ');
+  }
+
   try {
-    const hash = generateHash(originalName);
-    const outputFilename = `${hash}.webp`;
-    const outputPath = path.join(outputDir, outputFilename);
-    
-    console.log(`Processing: ${inputPath} -> ${outputPath}`);
-    
-    const metadata = await sharp(inputPath).metadata();
-    console.log(`Original: ${metadata.width}x${metadata.height}, ${metadata.size} bytes`);
-    
-    let sharpInstance = sharp(inputPath);
-    
-    // Уменьшаем если слишком большое
-    if (metadata.width && metadata.width > 1200) {
-      sharpInstance = sharpInstance.resize(1200, null, {
-        withoutEnlargement: true,
-        fit: 'inside'
-      });
-      console.log('Resizing to max 1200px');
+    const metadata = await createSharp(input).metadata();
+    const format = metadata.format || '';
+    const mimeType = MIME_BY_FORMAT[format];
+
+    if (!mimeType || !metadata.width || !metadata.height) {
+      throw new InvalidProductImageError('Разрешены только JPEG, PNG и WebP изображения');
     }
-    
-    // Конвертируем в webp с сжатием
-    await sharpInstance
-      .webp({
-        quality: 80,
-        effort: 6,
-        lossless: false
-      })
-      .toFile(outputPath);
-    
-    const stats = fs.statSync(outputPath);
-    const processedMetadata = await sharp(outputPath).metadata();
-    
-    console.log(`Processed: ${processedMetadata.width}x${processedMetadata.height}, ${stats.size} bytes`);
-    
+    if ((metadata.pages || 1) > 1) {
+      throw new InvalidProductImageError('Анимированные изображения не поддерживаются');
+    }
+
+    const candidates: Array<{ data: Buffer; mimeType: string }> = [
+      { data: input, mimeType },
+    ];
+
+    // Every candidate is lossless. The original remains the fallback whenever
+    // re-encoding does not reduce the payload.
+    if (format === 'png') {
+      candidates.push({
+        data: await createSharp(input)
+          .keepMetadata()
+          .png({ compressionLevel: 9, adaptiveFiltering: true, palette: false })
+          .toBuffer(),
+        mimeType: 'image/png',
+      });
+    }
+
+    candidates.push({
+      data: await createSharp(input)
+        .keepMetadata()
+        .webp({ lossless: true, effort: 6 })
+        .toBuffer(),
+      mimeType: 'image/webp',
+    });
+
+    const stored = candidates.reduce((smallest, candidate) => (
+      candidate.data.length < smallest.data.length ? candidate : smallest
+    ));
+    const storedMetadata = await createSharp(stored.data).metadata();
+
+    if (storedMetadata.width !== metadata.width || storedMetadata.height !== metadata.height) {
+      throw new InvalidProductImageError('Не удалось сохранить размеры изображения');
+    }
+
     return {
-      filename: outputFilename,
-      path: outputPath,
-      size: stats.size,
-      width: processedMetadata.width || 0,
-      height: processedMetadata.height || 0
+      data: stored.data,
+      sourceMimeType: mimeType,
+      mimeType: stored.mimeType,
+      size: stored.data.length,
+      width: metadata.width,
+      height: metadata.height,
+      originalName: safeOriginalName(originalName),
+      contentHash: crypto.createHash('sha256').update(stored.data).digest('hex'),
+      sourceSize: input.length,
+      optimized: stored.data !== input,
     };
   } catch (error) {
-    console.error('Error in processImage:', error);
-    throw error;
+    if (error instanceof InvalidProductImageError) throw error;
+    throw new InvalidProductImageError('Файл повреждён или не является поддерживаемым изображением');
   }
 }

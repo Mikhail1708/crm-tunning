@@ -35,8 +35,31 @@ import {
   ChevronRight
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { isAxiosError } from 'axios';
 
 const MAX_IMAGES = 5;
+const MAX_IMAGE_SIZE_BYTES = 10 * 1024 * 1024;
+
+const getImageUploadErrorMessage = (error: unknown): string => {
+  if (!isAxiosError(error)) {
+    return 'Не удалось загрузить изображение. Попробуйте ещё раз';
+  }
+
+  switch (error.response?.status) {
+    case 400:
+      return 'Файл не прошёл проверку. Выберите корректное изображение JPEG, PNG или WebP';
+    case 401:
+      return 'Сессия истекла. Войдите в CRM снова';
+    case 403:
+      return 'Недостаточно прав для изменения изображений товара';
+    case 413:
+      return 'Файл слишком большой. Максимальный размер — 10 МБ';
+    case 500:
+      return 'Не удалось обработать изображение. Попробуйте ещё раз';
+    default:
+      return 'Не удалось загрузить изображение. Проверьте соединение и повторите попытку';
+  }
+};
 
 // Компонент полноэкранного просмотра фото с каруселью
 const FullscreenImageViewer: React.FC<{
@@ -233,13 +256,13 @@ const ProductGallery: React.FC<{
     const file = e.target.files?.[0];
     if (!file) return;
     
-    if (!file.type.startsWith('image/')) {
-      toast.error('Можно загружать только изображения');
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+      toast.error('Можно загружать только изображения JPEG, PNG или WebP');
       return;
     }
     
-    if (file.size > 5 * 1024 * 1024) {
-      toast.error('Максимальный размер фото 5MB');
+    if (file.size > MAX_IMAGE_SIZE_BYTES) {
+      toast.error('Максимальный размер изображения — 10 МБ');
       return;
     }
     
@@ -247,9 +270,9 @@ const ProductGallery: React.FC<{
     try {
       await onUpload(file);
       toast.success('Фото загружено');
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('Upload error:', error);
-      toast.error('Ошибка загрузки фото');
+      toast.error(getImageUploadErrorMessage(error));
     } finally {
       setUploading(false);
       if (fileInputRef.current) {
@@ -272,7 +295,7 @@ const ProductGallery: React.FC<{
       <input
         ref={fileInputRef}
         type="file"
-        accept="image/jpeg,image/png,image/gif,image/webp"
+        accept="image/jpeg,image/png,image/webp"
         onChange={handleFileChange}
         className="hidden"
       />

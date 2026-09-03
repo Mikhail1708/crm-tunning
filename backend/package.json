@@ -5,7 +5,8 @@
     "build": "tsc",
     "test": "node --test -r ts-node/register tests/*.test.ts",
     "start": "node dist/server.js",
-    "migrate": "npx ts-node scripts/migrate-data.ts"
+    "migrate": "npx ts-node scripts/migrate-data.ts",
+    "images:import": "ts-node scripts/import-product-images.ts"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",

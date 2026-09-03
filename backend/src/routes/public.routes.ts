@@ -3,6 +3,7 @@ import { Router } from 'express';
 import { 
   getPublicProducts, 
   getPublicProductById,
+  getPublicProductImage,
   getPublicCategories 
 } from '../controllers/public.controller';
 import { rateLimit } from 'express-rate-limit';
@@ -22,6 +23,7 @@ router.use(publicLimiter);
 
 // Публичные эндпоинты (без JWT)
 router.get('/products', getPublicProducts);
+router.get('/products/:productId/images/:imageId', getPublicProductImage);
 router.get('/products/:id', getPublicProductById);
 router.get('/categories', getPublicCategories);
 

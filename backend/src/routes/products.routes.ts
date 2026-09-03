@@ -15,7 +15,7 @@ import {
   getProductImages
 } from '../controllers/products.controller';
 import { authMiddleware, managerAccess } from '../middleware/auth.middleware';
-import { upload, processUploadedImage } from '../middleware/upload.middleware';
+import { processUploadedImage, uploadProductImageFile } from '../middleware/upload.middleware';
 
 const router = Router();
 
@@ -33,7 +33,7 @@ router.delete('/:id', managerAccess as any, deleteProduct as any);
 router.put('/:id/price', managerAccess as any, updateProductPrice as any);
 
 // ВАЖНО: добавляем processUploadedImage после upload
-router.post('/:id/images', managerAccess as any, upload.single('image'), processUploadedImage, uploadProductImage as any);
+router.post('/:id/images', managerAccess as any, uploadProductImageFile, processUploadedImage, uploadProductImage as any);
 router.delete('/:id/images/:imageId', managerAccess as any, deleteProductImage as any);
 router.put('/:id/images/:imageId/main', managerAccess as any, setMainProductImage as any);
 

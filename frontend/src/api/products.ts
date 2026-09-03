@@ -57,9 +57,7 @@ export const productsApi = {
   uploadImage: (id: number, file: File): Promise<ApiResponse<ProductImage>> => {
     const formData = new FormData();
     formData.append('image', file);
-    return api.post(`/products/${id}/images`, formData, {
-      headers: { 'Content-Type': 'multipart/form-data' }
-    });
+    return api.post(`/products/${id}/images`, formData);
   },
   
   deleteImage: (productId: number, imageId: number): Promise<ApiResponse<{ message: string }>> =>
