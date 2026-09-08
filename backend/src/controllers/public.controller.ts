@@ -1,6 +1,7 @@
 // crm-project/backend/src/controllers/public/products.controller.ts
 import { Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
+import { productAvailability } from '../domain/productAvailability';
 import {
   absolutePublicUrl,
   buildProductImageHttpResponse,
@@ -15,6 +16,7 @@ const prisma = new PrismaClient();
  * Публичный эндпоинт для получения товаров (без JWT)
  */
 export const getPublicProducts = async (req: Request, res: Response): Promise<void> => {
+  res.setHeader('Cache-Control', 'no-store');
   try {
     const { category, carModel, search, page = '1', limit = '12' } = req.query;
     
@@ -23,10 +25,8 @@ export const getPublicProducts = async (req: Request, res: Response): Promise<vo
     const skip = (pageNum - 1) * limitNum;
 
     // Строим фильтры
-    const where: any = {
-      // Показываем только товары с остатком > 0
-      stock: { gt: 0 },
-    };
+    // Product has no separate publication flag. Zero free stock does not unpublish it.
+    const where: any = {};
 
     // Фильтр по поиску
     if (search) {
@@ -39,14 +39,12 @@ export const getPublicProducts = async (req: Request, res: Response): Promise<vo
 
     // Фильтр по категории (через связи)
     if (category) {
-      const categoryId = parseInt(category as string);
-      if (!isNaN(categoryId)) {
-        where.categories = {
-          some: {
-            categoryId: categoryId,
-          },
-        };
-      }
+      const categoryValue = String(category).trim();
+      where.categories = {
+        some: /^\d+$/.test(categoryValue)
+          ? { categoryId: Number(categoryValue) }
+          : { category: { name: { equals: categoryValue, mode: 'insensitive' } } },
+      };
     }
 
     // Получаем товары с изображениями
@@ -117,8 +115,7 @@ export const getPublicProducts = async (req: Request, res: Response): Promise<vo
         category: categories.length > 0 ? categories[0].name : '',
         categories: categories,
         carModel: 'Универсальный',
-        inStock: product.stock > 0,
-        stock: product.stock,
+        ...productAvailability(product.stock),
         images: finalImages,
         sku: product.article || '',
         rating: null,
@@ -147,6 +144,7 @@ export const getPublicProducts = async (req: Request, res: Response): Promise<vo
  * Публичный эндпоинт для получения товара по ID
  */
 export const getPublicProductById = async (req: Request, res: Response): Promise<void> => {
+  res.setHeader('Cache-Control', 'no-store');
   try {
     const { id } = req.params;
     const productId = parseInt(id);
@@ -218,8 +216,7 @@ export const getPublicProductById = async (req: Request, res: Response): Promise
         name: pc.category.name,
       })),
       carModel: 'Универсальный',
-      inStock: product.stock > 0,
-      stock: product.stock,
+      ...productAvailability(product.stock),
       images: finalImages,
       sku: product.article || '',
       rating: null,
@@ -290,13 +287,7 @@ export const getPublicCategories = async (req: Request, res: Response): Promise<
         icon: true,
         _count: {
           select: {
-            products: {
-              where: {
-                product: {
-                  stock: { gt: 0 },
-                },
-              },
-            },
+            products: true,
           },
         },
       },
