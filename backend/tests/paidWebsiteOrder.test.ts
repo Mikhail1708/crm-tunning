@@ -69,10 +69,12 @@ function store(document = paid()) {
       delete: async () => { calls.push('delete'); },
     },
     product: {
+      update: async ({ data }: any) => { state.stock += data.stock.increment; },
       findMany: async () => [{ id: 1, stock: state.stock, name: 'Product', article: 'A', cost_price: 50 }],
       updateMany: async ({ data }: any) => { calls.push('stock'); state.stock -= data.stock.decrement; return { count: 1 }; },
     },
-    saleDocumentItem: { deleteMany: async () => { calls.push('items'); state.items = []; }, createMany: async ({ data }: any) => { state.items = data; } },
+    saleDocumentItem: { findMany: async () => state.items, deleteMany: async () => { calls.push('items'); state.items = []; }, createMany: async ({ data }: any) => { state.items = data; } },
+    inventoryReservation: { findUnique: async () => null },
     sale: { deleteMany: async () => { calls.push('sales'); state.sales = []; }, createMany: async ({ data }: any) => { state.sales = data; } },
     crmStatusOutboxEvent: { upsert: async ({ create }: any) => { state.events.push(create); } },
   };

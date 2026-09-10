@@ -2,6 +2,7 @@ import { Prisma, PrismaClient } from '@prisma/client';
 import { canTransitionOrderStatus, isOrderStatus } from '../domain/orderStateMachine';
 import { decideOrderCancellation } from '../domain/orderCancellation';
 import { enqueueOrderStatusProjection } from './statusOutbox.service';
+import { assertPositiveQuantity, lockSaleDocument, lockStockProducts } from './saleStock.service';
 
 export class OrderLifecycleError extends Error {
   constructor(public statusCode: number, public code: string, message: string) {
@@ -62,6 +63,7 @@ const lockAndRead = async (
   await tx.$queryRaw`
     SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 2))::text AS "lockResult"
   `;
+  await lockSaleDocument(tx, saleDocumentId);
   const document = await (tx.saleDocument as any).findUnique({
     where: { id: saleDocumentId },
     select: lifecycleSelect,
@@ -77,6 +79,30 @@ const projectionDocument = (document: LifecycleDocument) => ({
   orderStatus: document.orderStatus,
   statusVersion: document.statusVersion,
 });
+
+// The irreversible transition to cancelled is the existing compensation key.
+// Keep consumed reservations consumed: a release/consume replay must never
+// allocate or return stock again. Refund processing does not own stock.
+const restoreCancelledWebsiteStock = async (
+  tx: Prisma.TransactionClient, current: LifecycleDocument,
+): Promise<void> => {
+  if (current.source !== 'website' || current.orderStatus === 'cancelled') return;
+  const reservation = await tx.inventoryReservation.findUnique({
+    where: { saleDocumentId: current.id }, include: { items: true },
+  });
+  if (reservation && (reservation.status !== 'consumed' || reservation.externalOrderId !== current.externalOrderId)) {
+    throw new OrderLifecycleError(409, 'RESERVATION_STATE_CONFLICT', 'Order reservation is not a matching consumed reservation');
+  }
+  // Legacy paid website documents predate reservations, but also deducted stock.
+  const items = reservation?.items ?? await tx.saleDocumentItem.findMany({
+    where: { documentId: current.id }, select: { productId: true, quantity: true },
+  });
+  for (const item of items) assertPositiveQuantity(item.quantity);
+  await lockStockProducts(tx, items.map(item => item.productId));
+  for (const item of [...items].sort((a, b) => a.productId - b.productId)) {
+    await tx.product.update({ where: { id: item.productId }, data: { stock: { increment: item.quantity } } });
+  }
+};
 
 export const updateAuthoritativeOrderStatus = async (
   prisma: PrismaClient,
@@ -97,6 +123,8 @@ export const updateAuthoritativeOrderStatus = async (
       );
     }
     if (current.orderStatus === nextStatus) return current;
+
+    if (nextStatus === 'cancelled') await restoreCancelledWebsiteStock(tx, current);
 
     const updated = await (tx.saleDocument as any).update({
       where: { id: saleDocumentId },
@@ -156,6 +184,8 @@ export const decideWebsiteCancellation = async (
   const requestedAt = new Date();
   const { decision, reasonCode } = decideOrderCancellation(current.orderStatus);
   const accepted = decision === 'accepted';
+
+  if (accepted) await restoreCancelledWebsiteStock(tx, current);
 
   const updated = await (tx.saleDocument as any).update({
     where: { id: current.id },
