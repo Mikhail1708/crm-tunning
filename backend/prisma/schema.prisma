@@ -200,7 +200,7 @@ model SaleDocumentItem {
   documentId     Int
   document       SaleDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
   productId      Int
-  product        Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  product        Product      @relation(fields: [productId], references: [id], onDelete: Restrict)
   productName    String
   productArticle String
   quantity       Int
@@ -224,7 +224,7 @@ model Sale {
   createdAt      DateTime     @default(now())
   documentId     Int?
   
-  product        Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  product        Product      @relation(fields: [productId], references: [id], onDelete: Restrict)
   document       SaleDocument? @relation(fields: [documentId], references: [id], onDelete: SetNull)
 }
 
@@ -264,7 +264,7 @@ model ProductImage {
 model PriceHistory {
   id         Int      @id @default(autoincrement())
   productId  Int
-  product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  product    Product  @relation(fields: [productId], references: [id], onDelete: Restrict)
   oldPrice   Float
   newPrice   Float
   changeType String

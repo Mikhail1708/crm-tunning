@@ -13,7 +13,16 @@ import {
   setMainProductImageRecord,
 } from '../services/productImages.service';
 
+import { deleteProductPreservingHistory } from '../services/productDeletion.service';
+import { lockStockProducts, SaleStockError } from '../services/saleStock.service';
+
 const prisma = new PrismaClient();
+
+function validateStock(stock: unknown): void {
+  if (!Number.isInteger(stock) || (stock as number) < 0 || (stock as number) > 2_147_483_647) {
+    throw new SaleStockError(400, 'INVALID_STOCK', 'Остаток должен быть неотрицательным целым числом');
+  }
+}
 
 const MAX_PRODUCT_IMAGES = 5;
 
@@ -157,6 +166,7 @@ export const getProductById = async (req: RequestWithUser, res: Response): Promi
 export const createProduct = async (req: RequestWithUser, res: Response): Promise<void> => {
   try {
     const data: CreateProductDTO = req.body;
+    validateStock(data.stock);
     
     if (!data.name || data.cost_price === undefined || data.retail_price === undefined || data.stock === undefined) {
       res.status(400).json({ message: 'Заполните все обязательные поля' });
@@ -225,6 +235,10 @@ export const createProduct = async (req: RequestWithUser, res: Response): Promis
     
     res.status(201).json(result);
   } catch (error) {
+    if (error instanceof SaleStockError) {
+      res.status(error.status).json({ code: error.code, message: error.message });
+      return;
+    }
     console.error('Error creating product:', error);
     res.status(500).json({ message: `Ошибка создания товара: ${error instanceof Error ? error.message : 'Unknown error'}` });
   }
@@ -235,6 +249,7 @@ export const updateProduct = async (req: RequestWithUser, res: Response): Promis
     const { id } = req.params;
     const productId = parseInt(id);
     const data: UpdateProductDTO = req.body;
+    if (data.stock !== undefined) validateStock(data.stock);
     const userId = req.user?.id;
     
     console.log('=== updateProduct called ===');
@@ -247,6 +262,7 @@ export const updateProduct = async (req: RequestWithUser, res: Response): Promis
     }
     
     const result = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      await lockStockProducts(tx, [productId]);
       const existingProduct = await tx.product.findUnique({
         where: { id: productId }
       });
@@ -281,7 +297,7 @@ export const updateProduct = async (req: RequestWithUser, res: Response): Promis
           article: data.article !== undefined ? data.article : existingProduct.article,
           cost_price: data.cost_price !== undefined ? data.cost_price : existingProduct.cost_price,
           retail_price: newPrice,
-          stock: data.stock !== undefined ? data.stock : existingProduct.stock,
+          stock: data.stock,
           min_stock: data.min_stock !== undefined ? data.min_stock : existingProduct.min_stock,
           description: data.description !== undefined ? data.description : existingProduct.description,
           image_url: data.image_url !== undefined ? data.image_url : existingProduct.image_url,
@@ -355,6 +371,10 @@ export const updateProduct = async (req: RequestWithUser, res: Response): Promis
     console.log('=== updateProduct SUCCESS ===');
     res.json(result);
   } catch (error) {
+    if (error instanceof SaleStockError) {
+      res.status(error.status).json({ code: error.code, message: error.message });
+      return;
+    }
     console.error('=== updateProduct ERROR ===', error);
     if (error instanceof Error) {
       if (error.message === 'Артикул уже существует') {
@@ -380,22 +400,18 @@ export const deleteProduct = async (req: RequestWithUser, res: Response): Promis
       return;
     }
     
-    const existingProduct = await prisma.product.findUnique({
-      where: { id: productId },
-      select: { id: true }
-    });
-    
-    if (!existingProduct) {
-      res.status(404).json({ message: 'Товар не найден' });
-      return;
-    }
-    
-    await prisma.product.delete({
-      where: { id: productId }
-    });
-    
+    await deleteProductPreservingHistory(prisma, productId);
+
     res.json({ message: 'Товар удален' });
   } catch (error) {
+    if (error instanceof SaleStockError) {
+      res.status(error.status).json({ code: error.code, message: error.message });
+      return;
+    }
+    if ((error as any)?.code === 'P2003') {
+      res.status(409).json({ code: 'PRODUCT_HAS_HISTORY', message: 'Товар связан с историческими данными и не может быть удалён' });
+      return;
+    }
     console.error('Error deleting product:', error);
     res.status(500).json({ message: 'Ошибка удаления товара' });
   }

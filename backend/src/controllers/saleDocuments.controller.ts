@@ -15,6 +15,8 @@ import {
   isValidExternalOrderId,
 } from '../domain/publicOrderIdempotency';
 
+import { assertSaleItems, SaleStockError, deductSaleStock, replaceSaleStock, lockSaleDocument, lockStockProducts, assertPositiveQuantity } from '../services/saleStock.service';
+
 const prisma = new PrismaClient();
 
 // Кэш для товаров
@@ -327,6 +329,7 @@ export const createPublicOrder = async (req: Request, res: Response): Promise<vo
       return;
     }
 
+    assertSaleItems(items);
     requestPayloadHash = buildExternalPayloadHash(data);
     const existingOrder = await (prisma.saleDocument as any).findUnique({
       where: { externalOrderId: requestExternalOrderId },
@@ -402,25 +405,8 @@ export const createPublicOrder = async (req: Request, res: Response): Promise<vo
         return { document: orderAfterLock, idempotent: true };
       }
 
+      await deductSaleStock(tx, itemsWithDetails);
       const dbClient = await findOrCreateWebsiteClient(tx, client);
-
-      // Условное списание внутри транзакции не позволяет параллельным заказам
-      // одновременно пройти проверку и увести остаток ниже нуля.
-      for (const item of itemsWithDetails) {
-        const updated = await tx.product.updateMany({
-          where: {
-            id: item.productId,
-            stock: { gte: item.quantity },
-          },
-          data: { stock: { decrement: item.quantity } },
-        });
-
-        if (updated.count !== 1) {
-          const stockError = new Error(`Недостаточно товара "${item.product.name}" на складе`);
-          stockError.name = 'InsufficientStockError';
-          throw stockError;
-        }
-      }
 
       let documentNumber: string | null = null;
       let attempts = 0;
@@ -540,6 +526,10 @@ export const createPublicOrder = async (req: Request, res: Response): Promise<vo
     );
 
   } catch (error) {
+    if (error instanceof SaleStockError) {
+      res.status(error.status).json({ code: error.code, message: error.message });
+      return;
+    }
     const duration = Date.now() - startTime;
     if (error instanceof Error && error.name === 'InsufficientStockError') {
       res.status(409).json({ success: false, message: error.message });
@@ -612,6 +602,7 @@ export const createSaleDocument = async (req: RequestWithUser, res: Response): P
       paymentStatus = 'unpaid'
     } = data;
     
+    assertSaleItems(items);
     if (!items || items.length === 0) {
       res.status(400).json({ message: 'Корзина не может быть пустой' });
       return;
@@ -656,12 +647,6 @@ export const createSaleDocument = async (req: RequestWithUser, res: Response): P
       const product = productMap.get(item.productId);
       if (!product) continue;
       
-      if (product.stock < item.quantity) {
-        res.status(400).json({ 
-          message: `Недостаточно товара "${product.name}" на складе. Доступно: ${product.stock}` 
-        });
-        return;
-      }
       
       const itemTotal = item.price * item.quantity;
       subtotal += itemTotal;
@@ -721,6 +706,7 @@ export const createSaleDocument = async (req: RequestWithUser, res: Response): P
     }
     
     const result = await prisma.$transaction(async (tx) => {
+      await deductSaleStock(tx, itemsWithDetails);
       let documentNumber: string | null = null;
       let attempts = 0;
       const maxAttempts = 10;
@@ -811,18 +797,6 @@ export const createSaleDocument = async (req: RequestWithUser, res: Response): P
         })
       });
       
-      const updateCases = itemsWithDetails
-        .map(item => `WHEN ${item.productId} THEN stock - ${item.quantity}`)
-        .join(' ');
-      
-      await tx.$executeRaw`
-        UPDATE "Product" 
-        SET stock = CASE id 
-          ${Prisma.raw(updateCases)}
-          ELSE stock 
-        END
-        WHERE id IN (${Prisma.join(productIds)})
-      `;
       
       if (client?.id) {
         await tx.client.update({
@@ -904,6 +878,10 @@ export const createSaleDocument = async (req: RequestWithUser, res: Response): P
     });
     
   } catch (error) {
+    if (error instanceof SaleStockError) {
+      res.status(error.status).json({ code: error.code, message: error.message });
+      return;
+    }
     const duration = Date.now() - startTime;
     console.error(`❌ Error creating order (${duration}ms):`, error);
     res.status(500).json({ message: error instanceof Error ? error.message : 'Ошибка создания документа' });
@@ -915,6 +893,7 @@ export const createSaleDocument = async (req: RequestWithUser, res: Response): P
  */
 export const updateSaleDocument = async (req: RequestWithUser, res: Response): Promise<void> => {
   try {
+    if (req.body?.items !== undefined) assertSaleItems(req.body.items);
     const { id } = req.params;
     const documentId = parseInt(id);
     
@@ -1012,6 +991,10 @@ export const updateSaleDocument = async (req: RequestWithUser, res: Response): P
     
     res.json(document);
   } catch (error) {
+    if (error instanceof SaleStockError) {
+      res.status(error.status).json({ code: error.code, message: error.message });
+      return;
+    }
     console.error('Error updating document:', error);
     res.status(500).json({ message: 'Ошибка обновления документа' });
   }
@@ -1049,23 +1032,21 @@ export const updateFullOrder = async (req: RequestWithUser, res: Response): Prom
       contactMethod,
     } = req.body;
     
-    const existingDocument = await prisma.saleDocument.findUnique({
+    assertSaleItems(items);
+    await prisma.$transaction(async (tx) => {
+    await lockSaleDocument(tx, documentId);
+    const existingDocument = await tx.saleDocument.findUnique({
       where: { id: documentId },
       include: { items: true }
     });
     
     if (!existingDocument) {
-      res.status(404).json({ message: 'Заказ не найден' });
-      return;
+      throw new SaleStockError(404, 'DOCUMENT_NOT_FOUND', 'Заказ не найден');
     }
     
-    if (!items || items.length === 0) {
-      res.status(400).json({ message: 'Заказ не может быть пустым' });
-      return;
-    }
     
     const productIds = items.map((item: any) => item.productId);
-    const products = await prisma.product.findMany({
+    const products = await tx.product.findMany({
       where: { id: { in: productIds } },
       select: { id: true, name: true, article: true, cost_price: true, stock: true }
     });
@@ -1073,30 +1054,16 @@ export const updateFullOrder = async (req: RequestWithUser, res: Response): Prom
     const productMap = new Map(products.map(p => [p.id, p]));
     const missingIds = productIds.filter(id => !productMap.has(id));
     if (missingIds.length > 0) {
-      res.status(404).json({ message: `Товары не найдены: ${missingIds.join(', ')}` });
-      return;
+      throw new SaleStockError(404, 'PRODUCT_NOT_FOUND', `Товары не найдены: ${missingIds.join(', ')}`);
     }
     
     let subtotal = 0;
     const itemsWithDetails = [];
-    const oldQuantities = new Map<number, number>();
-    for (const oldItem of existingDocument.items) {
-      oldQuantities.set(oldItem.productId, oldItem.quantity);
-    }
     
     for (const item of items) {
       const product = productMap.get(item.productId);
       if (!product) continue;
       
-      const oldQuantity = oldQuantities.get(item.productId) || 0;
-      const quantityDelta = item.quantity - oldQuantity;
-      
-      if (quantityDelta > 0 && product.stock < quantityDelta) {
-        res.status(400).json({
-          message: `Недостаточно товара "${product.name}" на складе. Доступно: ${product.stock}, требуется еще: ${quantityDelta}`
-        });
-        return;
-      }
       
       const itemTotal = item.price * item.quantity;
       subtotal += itemTotal;
@@ -1111,6 +1078,8 @@ export const updateFullOrder = async (req: RequestWithUser, res: Response): Prom
       });
     }
     
+    await replaceSaleStock(tx, existingDocument.items, itemsWithDetails);
+
     const totalDiscount = discount || 0;
     const total = Math.max(0, subtotal - totalDiscount);
     
@@ -1118,14 +1087,14 @@ export const updateFullOrder = async (req: RequestWithUser, res: Response): Prom
     if (clientData && (clientData.name || clientData.phone)) {
       let client = null;
       if (clientData.phone) {
-        client = await prisma.client.findFirst({
+        client = await tx.client.findFirst({
           where: { phone: clientData.phone }
         });
       }
       
       if (client) {
         clientId = client.id;
-        await prisma.client.update({
+        await tx.client.update({
           where: { id: client.id },
           data: {
             firstName: clientData.name.split(' ')[1] || clientData.name,
@@ -1140,7 +1109,7 @@ export const updateFullOrder = async (req: RequestWithUser, res: Response): Prom
         });
       } else if (clientData.name || clientData.phone) {
         const nameParts = clientData.name.split(' ');
-        const newClient = await prisma.client.create({
+        const newClient = await tx.client.create({
           data: {
             firstName: nameParts[1] || clientData.name,
             lastName: nameParts[0] || '',
@@ -1159,14 +1128,7 @@ export const updateFullOrder = async (req: RequestWithUser, res: Response): Prom
     const oldTotal = existingDocument.total;
     const totalDelta = total - oldTotal;
     
-    await prisma.$transaction(async (tx) => {
-      for (const oldItem of existingDocument.items) {
-        await tx.$executeRaw`
-          UPDATE "Product" 
-          SET stock = stock + ${oldItem.quantity}
-          WHERE id = ${oldItem.productId}
-        `;
-      }
+
       
       await tx.saleDocument.update({
         where: { id: documentId },
@@ -1205,17 +1167,6 @@ export const updateFullOrder = async (req: RequestWithUser, res: Response): Prom
         }))
       });
       
-      const updateCases = itemsWithDetails
-        .map(item => `WHEN ${item.productId} THEN stock - ${item.quantity}`)
-        .join(' ');
-      await tx.$executeRaw`
-        UPDATE "Product" 
-        SET stock = CASE id 
-          ${Prisma.raw(updateCases)}
-          ELSE stock 
-        END
-        WHERE id IN (${Prisma.join(productIds)})
-      `;
       
       if (clientId) {
         await tx.client.update({
@@ -1320,6 +1271,10 @@ export const updateFullOrder = async (req: RequestWithUser, res: Response): Prom
     
     res.json(updatedDocument);
   } catch (error) {
+    if (error instanceof SaleStockError) {
+      res.status(error.status).json({ code: error.code, message: error.message });
+      return;
+    }
     const duration = Date.now() - startTime;
     console.error(`❌ Error updating order (${duration}ms):`, error);
     res.status(500).json({ message: error instanceof Error ? error.message : 'Ошибка обновления заказа' });
@@ -1504,6 +1459,7 @@ export const deleteSaleDocument = async (req: RequestWithUser, res: Response): P
     }
     
     await prisma.$transaction(async (tx) => {
+      await lockSaleDocument(tx, documentId);
       const document = await tx.saleDocument.findUnique({
         where: { id: documentId },
         select: {
@@ -1523,6 +1479,8 @@ export const deleteSaleDocument = async (req: RequestWithUser, res: Response): P
         throw new Error('Документ не найден');
       }
       
+      for (const item of document.items) assertPositiveQuantity(item.quantity);
+      await lockStockProducts(tx, document.items.map(item => item.productId));
       if (document.items.length > 0) {
         const updateCases = document.items
           .map(item => `WHEN ${item.productId} THEN stock + ${item.quantity}`)
