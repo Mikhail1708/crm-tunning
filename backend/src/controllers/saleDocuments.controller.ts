@@ -1,3 +1,4 @@
+import { assertPaidWebsiteOrderEditable, paidWebsiteOrderSelect } from '../services/paidWebsiteOrder.service';
 // crm-project/backend/src/controllers/saleDocuments.controller.ts
 import { Response, Request } from 'express';
 import { PrismaClient, Prisma } from '@prisma/client';
@@ -913,24 +914,23 @@ export const updateSaleDocument = async (req: RequestWithUser, res: Response): P
       description
     } = req.body;
 
-    const existingDocument = await prisma.saleDocument.findUnique({
+    const document = await prisma.$transaction(async tx => {
+    await lockSaleDocument(tx, documentId);
+    const existingDocument = await tx.saleDocument.findUnique({
       where: { id: documentId },
-      select: { paymentStatus: true },
+      select: paidWebsiteOrderSelect,
     });
     if (!existingDocument) {
-      res.status(404).json({ message: 'Document not found' });
-      return;
+      throw new SaleStockError(404, 'DOCUMENT_NOT_FOUND', 'Document not found');
     }
+    assertPaidWebsiteOrderEditable(existingDocument, req.body);
     if (paymentStatus !== undefined) {
       if (!isPaymentStatus(paymentStatus)) {
-        res.status(400).json({ message: 'Invalid paymentStatus' });
-        return;
+        throw new SaleStockError(400, 'INVALID_PAYMENT_STATUS', 'Invalid paymentStatus');
       }
       if (!canTransitionPaymentStatus(existingDocument.paymentStatus, paymentStatus)) {
-        res.status(409).json({
-          message: `Invalid payment status transition: ${existingDocument.paymentStatus} -> ${paymentStatus}`,
-        });
-        return;
+        throw new SaleStockError(409, 'INVALID_PAYMENT_STATUS_TRANSITION',
+          `Invalid payment status transition: ${existingDocument.paymentStatus} -> ${paymentStatus}`);
       }
     }
     
@@ -950,7 +950,7 @@ export const updateSaleDocument = async (req: RequestWithUser, res: Response): P
         updateData.clientName = null;
         updateData.clientPhone = null;
       } else {
-        const client = await prisma.client.findUnique({
+        const client = await tx.client.findUnique({
           where: { id: clientId },
           select: { id: true, firstName: true, lastName: true, middleName: true, phone: true, city: true }
         });
@@ -966,7 +966,7 @@ export const updateSaleDocument = async (req: RequestWithUser, res: Response): P
       }
     }
     
-    const document = await prisma.saleDocument.update({
+    const document = await tx.saleDocument.update({
       where: { id: documentId },
       data: updateData,
       select: {
@@ -989,6 +989,8 @@ export const updateSaleDocument = async (req: RequestWithUser, res: Response): P
       }
     });
     
+    return document;
+    });
     res.json(document);
   } catch (error) {
     if (error instanceof SaleStockError) {
@@ -1037,7 +1039,7 @@ export const updateFullOrder = async (req: RequestWithUser, res: Response): Prom
     await lockSaleDocument(tx, documentId);
     const existingDocument = await tx.saleDocument.findUnique({
       where: { id: documentId },
-      include: { items: true }
+      include: { items: true, inventoryReservation: { select: { status: true, paymentId: true, paidAmountMinor: true } } }
     });
     
     if (!existingDocument) {
@@ -1045,6 +1047,8 @@ export const updateFullOrder = async (req: RequestWithUser, res: Response): Prom
     }
     
     
+    assertPaidWebsiteOrderEditable(existingDocument);
+
     const productIds = items.map((item: any) => item.productId);
     const products = await tx.product.findMany({
       where: { id: { in: productIds } },
@@ -1463,6 +1467,7 @@ export const deleteSaleDocument = async (req: RequestWithUser, res: Response): P
       const document = await tx.saleDocument.findUnique({
         where: { id: documentId },
         select: {
+          ...paidWebsiteOrderSelect,
           id: true,
           total: true,
           clientId: true,
@@ -1479,6 +1484,7 @@ export const deleteSaleDocument = async (req: RequestWithUser, res: Response): P
         throw new Error('Документ не найден');
       }
       
+      assertPaidWebsiteOrderEditable(document);
       for (const item of document.items) assertPositiveQuantity(item.quantity);
       await lockStockProducts(tx, document.items.map(item => item.productId));
       if (document.items.length > 0) {
@@ -1515,6 +1521,10 @@ export const deleteSaleDocument = async (req: RequestWithUser, res: Response): P
     
     res.json({ message: 'Документ удален, товары возвращены на склад' });
   } catch (error) {
+    if (error instanceof SaleStockError) {
+      res.status(error.status).json({ code: error.code, message: error.message });
+      return;
+    }
     console.error('Error deleting document:', error);
     res.status(500).json({ message: error instanceof Error ? error.message : 'Ошибка удаления документа' });
   }
