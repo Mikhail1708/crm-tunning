@@ -230,15 +230,27 @@ export const updateClient = async (req: RequestWithUser, res: Response): Promise
     
     if (updateData.discountPercent !== undefined && oldDiscount !== newDiscount) {
       discountChanged = true;
-      updateData.discountPercent = newDiscount;
-      updateData.discountUpdatedAt = new Date();
-      updateData.discountUpdatedBy = req.user?.id;
     }
     
     const client = await prisma.client.update({
       where: { id: clientId },
       data: {
-        ...updateData,
+        firstName: updateData.firstName,
+        lastName: updateData.lastName,
+        phone: updateData.phone,
+        email: updateData.email,
+        preferredContact: updateData.preferredContact,
+        address: updateData.address,
+        city: updateData.city,
+        passport: updateData.passport,
+        driverLicense: updateData.driverLicense,
+        carModel: updateData.carModel,
+        carVin: updateData.carVin,
+        carNumber: updateData.carNumber,
+        notes: updateData.notes,
+        discountPercent: updateData.discountPercent !== undefined ? newDiscount : undefined,
+        discountUpdatedAt: discountChanged ? new Date() : undefined,
+        discountUpdatedBy: discountChanged ? req.user?.id : undefined,
         // ✅ Убедимся, что middleName обновляется
         middleName: updateData.middleName !== undefined ? updateData.middleName : oldClient?.middleName,
         birthDate: updateData.birthDate ? new Date(updateData.birthDate) : undefined,

@@ -62,6 +62,70 @@ test('public order rejects zero/negative quantities without creating a sale', as
   }
 });
 
+test('F25 public order ignores internal fields and nested client writes at the Prisma boundary', async () => {
+  let documentData: any;
+  let clientData: any;
+  let itemData: any;
+  let saleData: any;
+  const tx = {
+    $queryRaw: async () => [{ id: 1 }],
+    product: { updateMany: async () => ({ count: 1 }) },
+    saleDocument: {
+      findUnique: async () => null,
+      create: async ({ data }: any) => { documentData = data; return { id: 11, ...data }; },
+    },
+    client: {
+      findMany: async () => [],
+      upsert: async ({ create }: any) => { clientData = create; return { id: 22, ...create }; },
+      update: async () => ({}),
+    },
+    saleDocumentItem: {
+      deleteMany: async () => ({ count: 0 }),
+      createMany: async ({ data }: any) => { itemData = data; return { count: data.length }; },
+    },
+    sale: { createMany: async ({ data }: any) => { saleData = data; return { count: data.length }; } },
+  };
+  db = {
+    saleDocument: { findUnique: async () => null },
+    product: { findMany: async () => [{ id: 1, stock: 2, cost_price: 50, retail_price: 100, name: 'Product', article: 'A' }] },
+    $transaction: (run: Function) => run(tx),
+  };
+  const response = await invoke(documents.createPublicOrder, {
+    externalOrderId: 'f25-website-order',
+    items: [{ productId: 1, quantity: 1, price: 999, id: 999, documentId: 999, cost_price: 0, total: 0 }],
+    client: {
+      firstName: 'Customer', phone: '123', email: 'customer@example.test',
+      id: 999, discountPercent: 100, totalSpent: 999, orders: { deleteMany: {} },
+    },
+    id: 999, createdBy: 999, source: 'instore', paymentStatus: 'refunded',
+    orderStatus: 'cancelled', statusVersion: 999, total: 0, discount: 100,
+    externalPaymentId: 'injected-payment', paidAmountMinor: 0,
+    createdAt: '2000-01-01T00:00:00Z', sales: { deleteMany: {} },
+  });
+  assert.equal(response.statusCode, 201);
+  assert.equal(documentData.source, 'website');
+  assert.equal(documentData.createdBy, null);
+  assert.equal(documentData.paymentStatus, 'paid');
+  assert.equal(documentData.orderStatus, 'confirmed');
+  assert.equal(documentData.statusVersion, 0);
+  assert.equal(documentData.total, 100);
+  assert.equal(documentData.discount, 0);
+  for (const field of ['id', 'createdAt', 'externalPaymentId', 'paidAmountMinor', 'sales']) {
+    assert.equal(Object.prototype.hasOwnProperty.call(documentData, field), false, field);
+  }
+  assert.equal(clientData.firstName, 'Customer');
+  assert.equal(clientData.phone, '123');
+  assert.equal(clientData.email, 'customer@example.test');
+  assert.equal(clientData.discountPercent, 0);
+  for (const field of ['id', 'totalSpent', 'orders']) assert.equal(Object.prototype.hasOwnProperty.call(clientData, field), false, field);
+  assert.equal(itemData[0].documentId, 11);
+  assert.equal(itemData[0].price, 100);
+  assert.equal(itemData[0].cost_price, 50);
+  assert.equal(Object.prototype.hasOwnProperty.call(itemData[0], 'id'), false);
+  assert.equal(saleData[0].documentId, 11);
+  assert.equal(saleData[0].total_revenue, 100);
+});
+
 test('createSaleDocument maps a lost stock race to 409 before inserting financial rows', async () => {
   let stock = 1;
   let financialWrites = 0;
