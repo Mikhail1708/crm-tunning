@@ -9,13 +9,6 @@ export const globalLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   skipSuccessfulRequests: false,
-  // Используем ipKeyGenerator для корректной работы с IPv6
-  keyGenerator: (req) => {
-    // Просто возвращаем IP без дополнительных проверок
-    return (req.headers['x-forwarded-for'] as string)?.split(',')[0] || 
-           req.socket.remoteAddress || 
-           'unknown';
-  }
 });
 
 // Строгий лимит для авторизации (защита от брутфорса)
@@ -26,11 +19,6 @@ export const authLimiter = rateLimit({
   message: { error: 'Слишком много попыток входа. Попробуйте через 15 минут' },
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => {
-    return (req.headers['x-forwarded-for'] as string)?.split(',')[0] || 
-           req.socket.remoteAddress || 
-           'unknown';
-  }
 });
 
 // Лимит для API запросов
@@ -40,11 +28,6 @@ export const apiLimiter = rateLimit({
   message: { error: 'Слишком много запросов, подождите немного' },
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => {
-    return (req.headers['x-forwarded-for'] as string)?.split(',')[0] || 
-           req.socket.remoteAddress || 
-           'unknown';
-  }
 });
 
 // Супер строгий лимит для создания заказов
@@ -54,11 +37,6 @@ export const orderLimiter = rateLimit({
   message: { error: 'Слишком много заказов. Подождите немного' },
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => {
-    return (req.headers['x-forwarded-for'] as string)?.split(',')[0] || 
-           req.socket.remoteAddress || 
-           'unknown';
-  }
 });
 
 export const logRateLimitStatus = () => {

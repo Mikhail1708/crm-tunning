@@ -1,5 +1,6 @@
 // crm-project/backend/src/server.ts
 import express from 'express';
+import { configureTrustProxy } from './config/trustProxy';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import crypto from 'crypto';
@@ -28,6 +29,7 @@ if (process.env.NODE_ENV === 'production') {
 }
 
 const app = express();
+configureTrustProxy(app);
 
 // ============================================================
 // 1. CORS
@@ -79,11 +81,6 @@ const publicLimiter = rateLimit({
   message: { error: 'Слишком много запросов, попробуйте позже' },
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => {
-    return (req.headers['x-forwarded-for'] as string)?.split(',')[0] || 
-           req.socket.remoteAddress || 
-           'unknown';
-  }
 });
 
 // ============================================================
