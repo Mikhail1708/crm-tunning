@@ -1,4 +1,5 @@
 import { Request } from 'express';
+import type { Prisma } from '@prisma/client';
 import { ProcessedImage } from '../middleware/imageProcessor';
 
 export const productImageMetadataSelect = {
@@ -157,11 +158,79 @@ const persistedMainImageUrl = (image: ProductImageMetadata): string | null => (
   image.mimeType ? productImageBinaryPath(image.productId, image.id) : image.url
 );
 
+// Call only inside the interactive transaction used for the following writes.
+// Lock the parent first: image-row locks cannot protect an empty image set.
+export const lockProductForImages = async (
+  transaction: Prisma.TransactionClient,
+  productId: number,
+): Promise<boolean> => {
+  const rows = await transaction.$queryRaw<Array<{ id: number }>>`
+    SELECT "id" FROM "Product" WHERE "id" = ${productId} FOR UPDATE
+  `;
+  return rows.length === 1;
+};
+
+export class ProductImageUploadError extends Error {
+  constructor(public readonly status: number, message: string) {
+    super(message);
+    this.name = 'ProductImageUploadError';
+  }
+}
+
+// Requires the parent lock. Keep the existing main unless explicitly replaced;
+// repair absent/duplicate main flags deterministically without removing images.
+export const syncProductMainImage = async (
+  transaction: Prisma.TransactionClient,
+  productId: number,
+  preferredImageId?: number,
+): Promise<number | null> => {
+  const images = await transaction.productImage.findMany({
+    where: { productId },
+    orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
+    select: productImageMetadataSelect,
+  });
+  const main = images.find(image => image.id === preferredImageId)
+    || images.find(image => image.isMain) || images[0];
+  if (main) {
+    await transaction.productImage.updateMany({
+      where: { productId, isMain: true, id: { not: main.id } },
+      data: { isMain: false },
+    });
+    if (!main.isMain) {
+      await transaction.productImage.update({ where: { id: main.id }, data: { isMain: true } });
+    }
+  }
+  await transaction.product.update({
+    where: { id: productId },
+    data: { image_url: main ? persistedMainImageUrl(main) : null },
+  });
+  return main?.id ?? null;
+};
+
+export const createProductImageRecord = async (
+  transaction: Prisma.TransactionClient,
+  productId: number,
+  processedImage: ProcessedImage,
+): Promise<ProductImageMetadata> => {
+  if (!(await lockProductForImages(transaction, productId))) {
+    throw new ProductImageUploadError(404, 'Товар не найден');
+  }
+  const count = await transaction.productImage.count({ where: { productId } });
+  if (count >= 5) throw new ProductImageUploadError(400, 'Максимум 5 фото на товар');
+  const image = await transaction.productImage.create({
+    data: productImageCreateData(productId, processedImage, count),
+    select: productImageMetadataSelect,
+  });
+  const mainId = await syncProductMainImage(transaction, productId);
+  return { ...image, isMain: image.id === mainId };
+};
+
 export const deleteProductImageRecord = async (
-  store: any,
+  store: Prisma.TransactionClient,
   productId: number,
   imageId: number,
 ): Promise<void> => {
+  if (!(await lockProductForImages(store, productId))) throw new ProductImageNotFoundError();
   const image = await store.productImage.findFirst({
     where: { id: imageId, productId },
     select: productImageMetadataSelect,
@@ -169,34 +238,20 @@ export const deleteProductImageRecord = async (
   if (!image) throw new ProductImageNotFoundError();
 
   await store.productImage.delete({ where: { id: imageId }, select: { id: true } });
-  if (!image.isMain) return;
-
-  const nextImage = await store.productImage.findFirst({
+  const nextImage = image.isMain ? await store.productImage.findFirst({
     where: { productId },
-    orderBy: { sortOrder: 'asc' },
+    orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
     select: productImageMetadataSelect,
-  });
-  if (!nextImage) {
-    await store.product.update({ where: { id: productId }, data: { image_url: null } });
-    return;
-  }
-
-  await store.productImage.update({
-    where: { id: nextImage.id },
-    data: { isMain: true },
-    select: { id: true },
-  });
-  await store.product.update({
-    where: { id: productId },
-    data: { image_url: persistedMainImageUrl(nextImage) },
-  });
+  }) : null;
+  await syncProductMainImage(store, productId, nextImage?.id);
 };
 
 export const setMainProductImageRecord = async (
-  store: any,
+  store: Prisma.TransactionClient,
   productId: number,
   imageId: number,
 ): Promise<ProductImageMetadata> => {
+  if (!(await lockProductForImages(store, productId))) throw new ProductImageNotFoundError();
   const target = await store.productImage.findFirst({
     where: { id: imageId, productId },
     select: productImageMetadataSelect,

@@ -5,8 +5,8 @@ import { RequestWithUser, CreateProductDTO, UpdateProductDTO } from '../types';
 import { RequestWithProcessedImage } from '../middleware/upload.middleware';
 import {
   deleteProductImageRecord,
-  productImageBinaryPath,
-  productImageCreateData,
+  createProductImageRecord,
+  ProductImageUploadError,
   productImageMetadataDto,
   productImageMetadataSelect,
   ProductImageNotFoundError,
@@ -23,9 +23,6 @@ function validateStock(stock: unknown): void {
     throw new SaleStockError(400, 'INVALID_STOCK', 'Остаток должен быть неотрицательным целым числом');
   }
 }
-
-const MAX_PRODUCT_IMAGES = 5;
-
 interface FormattedProduct {
   id: number;
   name: string;
@@ -618,39 +615,17 @@ export const uploadProductImage = async (req: RequestWithUser & RequestWithProce
       return;
     }
     
-    const product = await prisma.product.findUnique({
-      where: { id: productId },
-      select: { id: true, _count: { select: { images: true } } }
-    });
-    
-    if (!product) {
-      res.status(404).json({ message: 'Товар не найден' });
-      return;
-    }
-    
-    if (product._count.images >= MAX_PRODUCT_IMAGES) {
-      res.status(400).json({ message: `Максимум ${MAX_PRODUCT_IMAGES} фото на товар` });
-      return;
-    }
-    
-    const existingImagesCount = product._count.images;
-    
-    const productImage = await prisma.productImage.create({
-      data: {
-        ...productImageCreateData(productId, processedImage, existingImagesCount),
-      },
-      select: productImageMetadataSelect,
-    });
-    
-    if (existingImagesCount === 0) {
-      await prisma.product.update({
-        where: { id: productId },
-        data: { image_url: productImageBinaryPath(productId, productImage.id) }
-      });
-    }
+    const productImage = await prisma.$transaction(
+      tx => createProductImageRecord(tx, productId, processedImage),
+      { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted },
+    );
     
     res.status(201).json(productImageMetadataDto(req, productImage));
   } catch (error) {
+    if (error instanceof ProductImageUploadError) {
+      res.status(error.status).json({ message: error.message });
+      return;
+    }
     console.error('❌ Error uploading image:', error);
     res.status(500).json({ message: 'Ошибка загрузки фото' });
   }
@@ -667,7 +642,8 @@ export const deleteProductImage = async (req: RequestWithUser, res: Response): P
       return;
     }
     
-    await prisma.$transaction((tx) => deleteProductImageRecord(tx, productId, imageIdNum));
+    await prisma.$transaction((tx) => deleteProductImageRecord(tx, productId, imageIdNum),
+      { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
     
     res.json({ message: 'Фото удалено' });
   } catch (error) {
@@ -693,7 +669,7 @@ export const setMainProductImage = async (req: RequestWithUser, res: Response): 
     
     const result = await prisma.$transaction((tx) => (
       setMainProductImageRecord(tx, productId, imageIdNum)
-    ));
+    ), { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
     
     res.json(productImageMetadataDto(req, result));
   } catch (error) {

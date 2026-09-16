@@ -187,7 +187,7 @@ model CrmStatusOutboxEvent {
   lastError      String?      @db.Text
   deliveredAt    DateTime?
   createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
+  updatedAt      DateTime     @default(now()) @updatedAt
 
   saleDocument SaleDocument @relation(fields: [saleDocumentId], references: [id], onDelete: Cascade)
 

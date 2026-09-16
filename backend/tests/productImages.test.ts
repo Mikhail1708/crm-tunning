@@ -187,7 +187,14 @@ describe('product image processing and storage contract', () => {
     ];
     let productImageUrl: string | null = null;
     const store = {
+      $queryRaw: async () => [{ id: 134 }],
       productImage: {
+        findMany: async () => rows,
+        updateMany: async ({ where, data }: any) => {
+          rows.filter((row) => where.id?.not === undefined || row.id !== where.id.not)
+            .forEach((row) => Object.assign(row, data));
+          return { count: rows.length };
+        },
         findFirst: async ({ where }: any) => rows.find((row) => (
           row.productId === where.productId && (where.id === undefined || row.id === where.id)
         )) || null,
@@ -199,7 +206,7 @@ describe('product image processing and storage contract', () => {
       },
     };
 
-    await deleteProductImageRecord(store, 134, 1);
+    await deleteProductImageRecord(store as any, 134, 1);
     assert.deepEqual(rows.map((row) => row.id), [2]);
     assert.equal(rows[0].isMain, true);
     assert.equal(productImageUrl, '/uploads/products/legacy.webp');
@@ -207,6 +214,7 @@ describe('product image processing and storage contract', () => {
 
   it('does not allow setting an image from another product as main', async () => {
     const store = {
+      $queryRaw: async () => [{ id: 134 }],
       productImage: {
         findFirst: async () => null,
         updateMany: async () => assert.fail('must not update images'),
@@ -215,7 +223,7 @@ describe('product image processing and storage contract', () => {
       product: { update: async () => assert.fail('must not update a product') },
     };
     await assert.rejects(
-      setMainProductImageRecord(store, 134, 999),
+      setMainProductImageRecord(store as any, 134, 999),
       ProductImageNotFoundError,
     );
   });
@@ -242,12 +250,15 @@ describe('product image processing and storage contract', () => {
     };
     let updates = 0;
     const store = {
+      $queryRaw: async () => [{ id: 134 }],
+      $transaction: async (callback: (transaction: any) => Promise<any>) => callback(store),
       productImage: {
         findMany: async () => [row],
+        findFirst: async () => row,
+        updateMany: async () => ({ count: 0 }),
         update: async (args: any) => {
-          updates += 1;
-          row.data = args.data.data;
-          row.filename = args.data.filename;
+          if (args.data.data) updates += 1;
+          Object.assign(row, args.data);
           return row;
         },
       },
@@ -256,15 +267,80 @@ describe('product image processing and storage contract', () => {
       },
     };
 
-    const dryRun = await importLegacyProductImages({ store, uploadRoot, apply: false });
+    const dryRun = await importLegacyProductImages({ store: store as any, uploadRoot, apply: false });
     assert.deepEqual(dryRun, { imported: 1, skipped: 0, failed: 0 });
     assert.equal(updates, 0);
 
-    const first = await importLegacyProductImages({ store, uploadRoot, apply: true });
-    const repeated = await importLegacyProductImages({ store, uploadRoot, apply: true });
+    const first = await importLegacyProductImages({ store: store as any, uploadRoot, apply: true });
+    const repeated = await importLegacyProductImages({ store: store as any, uploadRoot, apply: true });
     assert.deepEqual(first, { imported: 1, skipped: 0, failed: 0 });
     assert.deepEqual(repeated, { imported: 0, skipped: 1, failed: 0 });
     assert.equal(updates, 1);
     assert.ok((await fs.stat(path.join(uploadRoot, filename))).isFile());
   });
+
+  for (const concurrentChange of ['main-changed', 'deleted', 'moved', 'already-imported', 'filename-changed'] as const) {
+    it(`legacy import rechecks current state after lock: ${concurrentChange}`, async () => {
+      const uploadRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'crm-product-images-'));
+      temporaryDirectories.push(uploadRoot);
+      const filename = 'legacy.webp';
+      await fs.writeFile(path.join(uploadRoot, filename), await sharp(pixels).webp({ lossless: true }).toBuffer());
+      const row: any = {
+        id: 10, productId: 134, isMain: true, data: null, filename,
+        mimeType: null, url: '/uploads/products/legacy.webp', sortOrder: 0,
+      };
+      const other: any = {
+        id: 11, productId: 134, isMain: false, data: Buffer.from('existing'), filename: null,
+        mimeType: 'image/webp', url: null, sortOrder: 1,
+      };
+      let rows = [row, other];
+      let locked = false;
+      let writes = 0;
+      let pointer = '/api/public/products/134/images/11';
+      const tx: any = {
+        $queryRaw: async () => { locked = true; return [{ id: 134 }]; },
+        productImage: {
+          findFirst: async ({ where }: any) => {
+            assert.ok(locked);
+            return rows.find((image) => image.id === where.id && image.productId === where.productId) || null;
+          },
+          findMany: async () => { assert.ok(locked); return rows; },
+          update: async ({ where, data }: any) => {
+            assert.ok(locked); writes += 1;
+            return Object.assign(rows.find((image) => image.id === where.id)!, data);
+          },
+          updateMany: async () => { assert.ok(locked); return { count: 0 }; },
+        },
+        product: { update: async ({ data }: any) => { assert.ok(locked); pointer = data.image_url; } },
+      };
+      const store: any = {
+        productImage: { findMany: async () => [{ ...row }] },
+        $transaction: async (callback: (transaction: any) => Promise<unknown>, options: any) => {
+          assert.equal(options.isolationLevel, 'ReadCommitted');
+          if (concurrentChange === 'main-changed') { row.isMain = false; other.isMain = true; }
+          if (concurrentChange === 'deleted') rows = [other];
+          if (concurrentChange === 'moved') row.productId = 999;
+          if (concurrentChange === 'already-imported') row.data = Buffer.from('concurrently imported');
+          if (concurrentChange === 'filename-changed') row.filename = 'replacement.webp';
+          return callback(tx);
+        },
+      };
+      const summary = await importLegacyProductImages({ store, uploadRoot, apply: true });
+      assert.ok(locked);
+      const invalidated = ['filename-changed', 'deleted', 'moved'].includes(concurrentChange);
+      assert.equal(summary.failed, invalidated ? 1 : 0);
+      if (concurrentChange === 'main-changed') {
+        assert.equal(summary.imported, 1);
+        assert.equal(row.isMain, false);
+        assert.equal(other.isMain, true);
+        assert.equal(pointer, '/api/public/products/134/images/11');
+      } else if (invalidated) {
+        assert.equal(summary.imported, 0);
+        assert.equal(writes, 0);
+      } else {
+        assert.equal(summary.skipped, 1);
+        assert.equal(writes, 0);
+      }
+    });
+  }
 });

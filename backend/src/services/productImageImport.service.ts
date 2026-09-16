@@ -1,7 +1,8 @@
 import fs from 'fs/promises';
 import path from 'path';
+import { Prisma, PrismaClient } from '@prisma/client';
 import { processImageBuffer } from '../middleware/imageProcessor';
-import { productImageBinaryPath } from './productImages.service';
+import { lockProductForImages, ProductImageNotFoundError, syncProductMainImage } from './productImages.service';
 
 export type ProductImageImportSummary = {
   imported: number;
@@ -9,24 +10,7 @@ export type ProductImageImportSummary = {
   failed: number;
 };
 
-type LegacyImageRow = {
-  id: number;
-  productId: number;
-  isMain: boolean;
-  data: Buffer | null;
-  filename: string | null;
-};
-
-type ProductImageImportStore = {
-  productImage: {
-    findMany: (args: unknown) => Promise<LegacyImageRow[]>;
-    update: (args: unknown) => Promise<unknown>;
-  };
-  product: {
-    update: (args: unknown) => Promise<unknown>;
-  };
-  $transaction?: (callback: (transaction: ProductImageImportStore) => Promise<void>) => Promise<void>;
-};
+type ProductImageImportStore = Pick<PrismaClient, 'productImage' | '$transaction'>;
 
 const resolveLegacyFile = (uploadRoot: string, filename: string): string | null => {
   if (filename.includes('/') || filename.includes('\\') || filename !== path.basename(filename)) return null;
@@ -45,7 +29,7 @@ export async function importLegacyProductImages(options: {
   const { store, uploadRoot, apply, report = () => undefined } = options;
   const summary: ProductImageImportSummary = { imported: 0, skipped: 0, failed: 0 };
   const rows = await store.productImage.findMany({
-    select: { id: true, productId: true, isMain: true, data: true, filename: true },
+    select: { id: true, productId: true, data: true, filename: true },
     orderBy: { id: 'asc' },
   });
 
@@ -71,7 +55,20 @@ export async function importLegacyProductImages(options: {
       const original = await fs.readFile(filePath);
       const processed = await processImageBuffer(original, row.filename);
       if (apply) {
-        const persist = async (transaction: ProductImageImportStore) => {
+        // File IO/decoding is complete before acquiring the parent lock.
+        const imported = await store.$transaction(async transaction => {
+          if (!(await lockProductForImages(transaction, row.productId))) {
+            throw new ProductImageNotFoundError();
+          }
+          const current = await transaction.productImage.findFirst({
+            where: { id: row.id, productId: row.productId },
+            select: { id: true, data: true, filename: true },
+          });
+          if (!current) throw new ProductImageNotFoundError();
+          if (current.data) return false; // Another importer completed while we decoded.
+          if (current.filename !== row.filename) {
+            throw new Error('Legacy image changed during processing');
+          }
           await transaction.productImage.update({
             where: { id: row.id },
             data: {
@@ -86,15 +83,13 @@ export async function importLegacyProductImages(options: {
               filename: null,
             },
           });
-          if (row.isMain) {
-            await transaction.product.update({
-              where: { id: row.productId },
-              data: { image_url: productImageBinaryPath(row.productId, row.id) },
-            });
-          }
-        };
-        if (store.$transaction) await store.$transaction(persist);
-        else await persist(store);
+          await syncProductMainImage(transaction, row.productId);
+          return true;
+        }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
+        if (!imported) {
+          summary.skipped += 1;
+          continue;
+        }
       }
       summary.imported += 1;
     } catch {
