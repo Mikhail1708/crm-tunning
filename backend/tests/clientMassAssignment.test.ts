@@ -9,8 +9,10 @@ const Module = require('node:module');
 const originalLoad = Module._load;
 let saved: any;
 let row: any;
+let currentUser: any;
+const authGeneration = '11111111-1111-4111-8111-111111111111';
 const audit: any[] = [];
-const db = { client: {
+const db = { user: { findUnique: async () => currentUser }, client: {
   findUnique: async () => row,
   findFirst: async () => null,
   update: async ({ data }: any) => {
@@ -31,6 +33,7 @@ finally { Module._load = originalLoad; }
 async function request(body: any, role: string | null = 'manager') {
   const previous = process.env.JWT_SECRET;
   process.env.JWT_SECRET = 'f25-fictional-test-signing-key';
+  currentUser = role ? { id: 7, email: 'editor@example.test', name: 'Editor', role, authGeneration } : null;
   row = { id: 1, firstName: 'Old', middleName: 'Middle', phone: '123', discountPercent: 10,
     totalOrders: 4, totalSpent: 800, discountUpdatedBy: 3, createdAt: new Date('2020-01-01') };
   saved = undefined;
@@ -42,7 +45,7 @@ async function request(body: any, role: string | null = 'manager') {
   const server = app.listen(0, '127.0.0.1');
   await new Promise<void>(resolve => server.once('listening', resolve));
   try {
-    const token = role ? jwt.sign({ id: 7, name: 'Editor', role }, process.env.JWT_SECRET!, { issuer: CRM_JWT_ISSUER, audience: CRM_JWT_AUDIENCE }) : '';
+    const token = role ? jwt.sign({ id: 7, name: 'Editor', role, authGeneration }, process.env.JWT_SECRET!, { expiresIn: '24h', issuer: CRM_JWT_ISSUER, audience: CRM_JWT_AUDIENCE }) : '';
     return await fetch(`http://127.0.0.1:${(server.address() as AddressInfo).port}/api/clients/1`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json', Cookie: `${CRM_AUTH_COOKIE}=${token}` }, body: JSON.stringify(body),
     }).then(async res => ({ status: res.status, body: await res.json() }));

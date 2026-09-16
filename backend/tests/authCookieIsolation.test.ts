@@ -1,11 +1,23 @@
 import assert from 'node:assert/strict';
 import { after, before, describe, it } from 'node:test';
 import jwt from 'jsonwebtoken';
-import { authMiddleware, managerAccess } from '../src/middleware/auth.middleware';
 import { CRM_AUTH_COOKIE, CRM_JWT_AUDIENCE, CRM_JWT_ISSUER } from '../src/utils/authCookie';
 
+const authGeneration = '11111111-1111-4111-8111-111111111111';
 const previousJwtSecret = process.env.JWT_SECRET;
 const testJwtSecret = 'crm-auth-cookie-isolation-test-secret';
+let currentRole = 'manager';
+const Module = require('node:module');
+const originalLoad = Module._load;
+Module._load = function(id: string, ...args: any[]) {
+  if (id === '@prisma/client') return { PrismaClient: function() { return { user: {
+    findUnique: async () => ({ id: 7, email: `${currentRole}@example.test`, name: currentRole, role: currentRole, authGeneration }),
+  } }; } };
+  return originalLoad.call(this, id, ...args);
+};
+let authMiddleware: any, managerAccess: any;
+try { ({ authMiddleware, managerAccess } = require('../src/middleware/auth.middleware')); }
+finally { Module._load = originalLoad; }
 
 before(() => {
   process.env.JWT_SECRET = testJwtSecret;
@@ -81,10 +93,11 @@ describe('CRM auth cookie isolation', () => {
 
   for (const role of ['admin', 'manager']) {
     it(`allows an authenticated ${role} through product edit authorization`, async () => {
+      currentRole = role;
       const token = jwt.sign(
-        { id: 7, email: `${role}@example.test`, name: role, role },
+        { id: 7, email: `${role}@example.test`, name: role, role, authGeneration },
         testJwtSecret,
-        { issuer: CRM_JWT_ISSUER, audience: CRM_JWT_AUDIENCE },
+        { expiresIn: '24h', issuer: CRM_JWT_ISSUER, audience: CRM_JWT_AUDIENCE },
       );
       const req = {
         cookies: { [CRM_AUTH_COOKIE]: token },

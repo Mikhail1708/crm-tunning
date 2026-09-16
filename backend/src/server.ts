@@ -17,9 +17,11 @@ import auditRoutes from './routes/audit.routes';
 import reportsRoutes from './routes/reports.routes';
 import publicRoutes from './routes/public.routes';
 import dotenv from 'dotenv';
+import { getJwtSecret } from './config/jwt';
 import path from 'path';
 
 dotenv.config();
+getJwtSecret();
 
 if (process.env.NODE_ENV === 'production') {
   const missingWebhookConfig = ['SITE_WEBHOOK_URL', 'WEBHOOK_SECRET']

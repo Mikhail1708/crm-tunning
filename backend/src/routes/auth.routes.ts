@@ -7,7 +7,7 @@ import { authLimiter } from '../middleware/rateLimit.middleware';
 const router = Router();
 
 router.post('/login', authLimiter, login as any);
-router.post('/logout', logout as any);
+router.post('/logout', authMiddleware as any, logout as any);
 router.get('/me', authMiddleware as any, getMe as any);
 
 // ✅ Добавляем эндпоинт для получения CSRF токена

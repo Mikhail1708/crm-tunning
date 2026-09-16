@@ -1,5 +1,6 @@
 // backend/src/controllers/reports.controller.ts
 import { Response } from 'express';
+import { newAuthGeneration } from '../services/authRevocation.service';
 import { PrismaClient, Prisma } from '@prisma/client';
 import { RequestWithUser, CreateExpenseDTO, SalesStats, ProductProfitReport } from '../types';
 import fs from 'fs';
@@ -819,7 +820,8 @@ export const restoreDatabase = async (req: RequestWithUser, res: Response): Prom
             const existingAdmin = await tx.user.findFirst({ where: { role: 'admin' } });
             if (existingAdmin) continue;
           }
-          await tx.user.create({ data: user });
+          // Never restore revocation state from a dump, even when reusing its ID.
+          await tx.user.create({ data: { ...user, authGeneration: newAuthGeneration() } });
         }
         console.log(`  ✅ Восстановлено ${dump.data.users.length} пользователей`);
         

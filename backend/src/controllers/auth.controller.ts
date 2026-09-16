@@ -3,6 +3,8 @@ import { Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import { CRM_JWT_ALGORITHM, getJwtSecret } from '../config/jwt';
+import { isAuthGeneration, revokeUserTokens } from '../services/authRevocation.service';
 import { RequestWithUser } from '../types';
 import { CRM_AUTH_COOKIE, CRM_JWT_AUDIENCE, CRM_JWT_ISSUER } from '../utils/authCookie';
 
@@ -72,15 +74,20 @@ export const login = async (req: RequestWithUser, res: Response): Promise<void> 
       return;
     }
     
+    if (!isAuthGeneration(user.authGeneration)) {
+      res.status(500).json({ error: 'Ошибка при входе' });
+      return;
+    }
     const token = jwt.sign(
       { 
         id: user.id, 
         email: user.email, 
         name: user.name, 
-        role: user.role 
+        role: user.role,
+        authGeneration: user.authGeneration,
       },
-      process.env.JWT_SECRET!,
-      { expiresIn: '24h', issuer: CRM_JWT_ISSUER, audience: CRM_JWT_AUDIENCE }
+      getJwtSecret(),
+      { algorithm: CRM_JWT_ALGORITHM, expiresIn: '24h', issuer: CRM_JWT_ISSUER, audience: CRM_JWT_AUDIENCE }
     );
     
     console.log('Token generated, setting cookie...');
@@ -111,6 +118,11 @@ export const login = async (req: RequestWithUser, res: Response): Promise<void> 
 
 export const logout = async (req: RequestWithUser, res: Response): Promise<void> => {
   try {
+    if (!req.user) {
+      res.status(401).json({ error: 'Не авторизован' });
+      return;
+    }
+    await revokeUserTokens(prisma, req.user.id);
     res.clearCookie(CRM_AUTH_COOKIE, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
@@ -119,7 +131,7 @@ export const logout = async (req: RequestWithUser, res: Response): Promise<void>
     });
     res.json({ message: 'Выход выполнен успешно' });
   } catch (error) {
-    console.error('Logout error:', error);
+    console.error('Logout failed');
     res.status(500).json({ error: 'Ошибка при выходе' });
   }
 };

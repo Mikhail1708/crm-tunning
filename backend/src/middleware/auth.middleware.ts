@@ -1,16 +1,14 @@
 // backend/src/middleware/auth.middleware.ts
 
-import { Request, Response, NextFunction } from 'express';
+import { Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
+import { PrismaClient } from '@prisma/client';
+import { CRM_JWT_ALGORITHM, getJwtSecret } from '../config/jwt';
+import { isAuthGeneration } from '../services/authRevocation.service';
 import { RequestWithUser } from '../types';
 import { CRM_AUTH_COOKIE, CRM_JWT_AUDIENCE, CRM_JWT_ISSUER } from '../utils/authCookie';
 
-interface JwtPayload {
-  id: number | string;
-  email: string;
-  name: string;
-  role: string;
-}
+const prisma = new PrismaClient();
 
 // ============================================================
 // ПУБЛИЧНЫЕ ПУТИ (НЕ ТРЕБУЮТ JWT)
@@ -44,6 +42,7 @@ export const authMiddleware = async (
     return next();
   }
 
+  delete req.user;
   try {
     let token = req.cookies?.[CRM_AUTH_COOKIE];
     
@@ -64,32 +63,41 @@ export const authMiddleware = async (
     }
     
     try {
-      const decoded = jwt.verify(token, process.env.JWT_SECRET!, {
+      const decoded = jwt.verify(token, getJwtSecret(), {
+        algorithms: [CRM_JWT_ALGORITHM],
         issuer: CRM_JWT_ISSUER,
         audience: CRM_JWT_AUDIENCE,
-      }) as JwtPayload;
-      
-      console.log('Token verified for user:', decoded.email || decoded.id);
-      
-      // ✅ ПРИВОДИМ id К number (ЕСЛИ СТРОКА — ПАРСИМ)
-      const userId = typeof decoded.id === 'string' ? parseInt(decoded.id) : decoded.id;
-      
-      req.user = {
-        id: userId,
-        email: decoded.email || '',
-        name: decoded.name || '',
-        role: decoded.role || 'user'
-      };
+      });
+      // JWT proves identity only. Never authorize using cached role/name/email claims.
+      const id = typeof decoded === 'object' ? decoded.id : undefined;
+      const userId = typeof id === 'string' && /^[1-9]\d*$/.test(id) ? Number(id) : id;
+      if (!Number.isSafeInteger(userId) || userId <= 0 || typeof decoded !== 'object'
+          || !Number.isSafeInteger(decoded.exp) || !isAuthGeneration(decoded.authGeneration)) {
+        res.status(401).json({ error: 'Недействительный токен' });
+        return;
+      }
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { id: true, email: true, name: true, role: true, authGeneration: true },
+      });
+      if (!user || user.authGeneration !== decoded.authGeneration) {
+        res.status(401).json({ error: 'Недействительный токен' });
+        return;
+      }
+      req.user = { id: user.id, email: user.email, name: user.name, role: user.role };
       
       console.log('User set, proceeding to next middleware');
       next();
     } catch (jwtError) {
-      console.error('JWT verification failed:', jwtError);
+      // Fail closed, including DB/config errors; do not log raw errors or credentials.
+      delete req.user;
+      console.error('Authentication failed');
       res.status(401).json({ error: 'Недействительный токен' });
       return;
     }
   } catch (error) {
-    console.error('Auth middleware error:', error);
+    delete req.user;
+    console.error('Authentication failed');
     res.status(401).json({ error: 'Недействительный токен' });
   }
 };
