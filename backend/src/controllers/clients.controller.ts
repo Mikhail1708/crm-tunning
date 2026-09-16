@@ -59,7 +59,7 @@ export const getAllClients = async (req: RequestWithUser, res: Response): Promis
     });
   } catch (error) {
     console.error('Error in getAllClients:', error);
-    res.status(500).json({ error: error instanceof Error ? error.message : 'Ошибка получения клиентов' });
+    res.status(500).json({ error: 'Ошибка получения клиентов' });
   }
 };
 
@@ -98,7 +98,7 @@ export const getClientById = async (req: RequestWithUser, res: Response): Promis
     res.json(client);
   } catch (error) {
     console.error('Error in getClientById:', error);
-    res.status(500).json({ error: error instanceof Error ? error.message : 'Ошибка получения клиента' });
+    res.status(500).json({ error: 'Ошибка получения клиента' });
   }
 };
 
@@ -185,7 +185,7 @@ export const createClient = async (req: RequestWithUser, res: Response): Promise
     res.status(201).json(client);
   } catch (error) {
     console.error('Error in createClient:', error);
-    res.status(500).json({ error: error instanceof Error ? error.message : 'Ошибка создания клиента' });
+    res.status(500).json({ error: 'Ошибка создания клиента' });
   }
 };
 
@@ -270,7 +270,7 @@ export const updateClient = async (req: RequestWithUser, res: Response): Promise
     res.json(client);
   } catch (error) {
     console.error('Error in updateClient:', error);
-    res.status(500).json({ error: error instanceof Error ? error.message : 'Ошибка обновления клиента' });
+    res.status(500).json({ error: 'Ошибка обновления клиента' });
   }
 };
 
@@ -307,7 +307,7 @@ export const deleteClient = async (req: RequestWithUser, res: Response): Promise
     res.json({ message: 'Клиент удален' });
   } catch (error) {
     console.error('Error in deleteClient:', error);
-    res.status(500).json({ error: error instanceof Error ? error.message : 'Ошибка удаления клиента' });
+    res.status(500).json({ error: 'Ошибка удаления клиента' });
   }
 };
 
@@ -345,7 +345,7 @@ export const searchClients = async (req: RequestWithUser, res: Response): Promis
     res.json({ clients });
   } catch (error) {
     console.error('Error in searchClients:', error);
-    res.status(500).json({ error: error instanceof Error ? error.message : 'Ошибка поиска клиентов' });
+    res.status(500).json({ error: 'Ошибка поиска клиентов' });
   }
 };
 
@@ -392,7 +392,7 @@ export const getClientsStats = async (req: RequestWithUser, res: Response): Prom
     });
   } catch (error) {
     console.error('Error in getClientsStats:', error);
-    res.status(500).json({ error: error instanceof Error ? error.message : 'Ошибка получения статистики' });
+    res.status(500).json({ error: 'Ошибка получения статистики' });
   }
 };
 
@@ -456,6 +456,6 @@ export const updateClientDiscount = async (req: RequestWithUser, res: Response):
     });
   } catch (error) {
     console.error('Error in updateClientDiscount:', error);
-    res.status(500).json({ error: error instanceof Error ? error.message : 'Ошибка обновления скидки' });
+    res.status(500).json({ error: 'Ошибка обновления скидки' });
   }
 };

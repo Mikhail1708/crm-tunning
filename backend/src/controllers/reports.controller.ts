@@ -932,7 +932,7 @@ export const restoreDatabase = async (req: RequestWithUser, res: Response): Prom
   } catch (error) {
     console.error('❌ Ошибка восстановления базы данных:', error);
     res.status(500).json({ 
-      message: `Ошибка восстановления базы данных: ${error instanceof Error ? error.message : 'Unknown error'}` 
+      message: 'Ошибка восстановления базы данных'
     });
   }
 };

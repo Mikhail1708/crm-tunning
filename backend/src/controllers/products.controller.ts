@@ -240,7 +240,7 @@ export const createProduct = async (req: RequestWithUser, res: Response): Promis
       return;
     }
     console.error('Error creating product:', error);
-    res.status(500).json({ message: `Ошибка создания товара: ${error instanceof Error ? error.message : 'Unknown error'}` });
+    res.status(500).json({ message: 'Ошибка создания товара' });
   }
 };
 
@@ -386,7 +386,7 @@ export const updateProduct = async (req: RequestWithUser, res: Response): Promis
         return;
       }
     }
-    res.status(500).json({ message: `Ошибка обновления товара: ${error instanceof Error ? error.message : 'Unknown error'}` });
+    res.status(500).json({ message: 'Ошибка обновления товара' });
   }
 };
 

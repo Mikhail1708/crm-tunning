@@ -212,7 +212,7 @@ export const createInventoryReservation = async (req: Request, res: Response): P
     const status = error instanceof ReservationHttpError ? error.status : 500;
     res.status(status).json({
       success: false,
-      message: error instanceof Error ? error.message : 'Failed to reserve inventory',
+      message: error instanceof ReservationHttpError ? error.message : 'Failed to reserve inventory',
     });
   }
 };
@@ -223,7 +223,7 @@ export const releaseInventoryReservation = async (req: Request, res: Response): 
     res.json({ success: true, ...reservationJson(reservation) });
   } catch (error) {
     const status = error instanceof ReservationHttpError ? error.status : 500;
-    res.status(status).json({ success: false, message: error instanceof Error ? error.message : 'Failed to release reservation' });
+    res.status(status).json({ success: false, message: error instanceof ReservationHttpError ? error.message : 'Failed to release reservation' });
   }
 };
 
@@ -234,7 +234,7 @@ export const expireInventoryReservations = async (req: Request, res: Response): 
     const result = await expireStaleInventoryReservations(limit);
     res.json({ success: true, ...result });
   } catch (error) {
-    res.status(500).json({ success: false, message: error instanceof Error ? error.message : 'Failed to expire reservations' });
+    res.status(500).json({ success: false, message: 'Failed to expire reservations' });
   }
 };
 
@@ -465,7 +465,7 @@ export const consumeInventoryReservation = async (req: Request, res: Response): 
     const status = error instanceof ReservationHttpError ? error.status : isUniqueConflict ? 409 : 500;
     res.status(status).json({
       success: false,
-      message: isUniqueConflict ? 'Payment or order is already bound to another document' : error instanceof Error ? error.message : 'Failed to consume reservation',
+      message: isUniqueConflict ? 'Payment or order is already bound to another document' : error instanceof ReservationHttpError ? error.message : 'Failed to consume reservation',
     });
   }
 };

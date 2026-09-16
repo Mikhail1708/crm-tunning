@@ -533,7 +533,7 @@ export const createPublicOrder = async (req: Request, res: Response): Promise<vo
     }
     const duration = Date.now() - startTime;
     if (error instanceof Error && error.name === 'InsufficientStockError') {
-      res.status(409).json({ success: false, message: error.message });
+      res.status(409).json({ success: false, message: 'Недостаточно товара на складе' });
       return;
     }
     if (error instanceof Error && error.name === 'IdempotencyConflictError') {
@@ -551,7 +551,7 @@ export const createPublicOrder = async (req: Request, res: Response): Promise<vo
     ) {
       const existingOrder = await (prisma.saleDocument as any).findUnique({
         where: { externalOrderId: requestExternalOrderId },
-      });
+      }).catch(() => null); // Failed recovery lookup falls through to the safe 500 response.
       if (existingOrder?.externalPayloadHash === requestPayloadHash) {
         sendPublicOrderResponse(res, existingOrder, 200, true);
         return;
@@ -885,7 +885,7 @@ export const createSaleDocument = async (req: RequestWithUser, res: Response): P
     }
     const duration = Date.now() - startTime;
     console.error(`❌ Error creating order (${duration}ms):`, error);
-    res.status(500).json({ message: error instanceof Error ? error.message : 'Ошибка создания документа' });
+    res.status(500).json({ message: 'Ошибка создания документа' });
   }
 };
 
@@ -1281,7 +1281,7 @@ export const updateFullOrder = async (req: RequestWithUser, res: Response): Prom
     }
     const duration = Date.now() - startTime;
     console.error(`❌ Error updating order (${duration}ms):`, error);
-    res.status(500).json({ message: error instanceof Error ? error.message : 'Ошибка обновления заказа' });
+    res.status(500).json({ message: 'Ошибка обновления заказа' });
   }
 };
 
@@ -1526,7 +1526,7 @@ export const deleteSaleDocument = async (req: RequestWithUser, res: Response): P
       return;
     }
     console.error('Error deleting document:', error);
-    res.status(500).json({ message: error instanceof Error ? error.message : 'Ошибка удаления документа' });
+    res.status(500).json({ message: 'Ошибка удаления документа' });
   }
 };
 

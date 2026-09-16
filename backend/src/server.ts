@@ -1,5 +1,6 @@
 // crm-project/backend/src/server.ts
 import express from 'express';
+import { errorHandler } from './middleware/error.middleware';
 import { configureTrustProxy } from './config/trustProxy';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
@@ -175,6 +176,7 @@ app.get('/api/health', (req, res) => {
 // 7. ЗАПУСК
 // ============================================================
 const PORT = parseInt(process.env.PORT || '5000', 10);
+app.use(errorHandler);
 
 app.listen(PORT, '0.0.0.0', () => {
   startInventoryReservationExpiryWorker();
