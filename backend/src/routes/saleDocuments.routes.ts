@@ -2,6 +2,7 @@
 import { Router } from 'express';
 import {
   getSaleDocuments,
+  getSaleDocumentSummary,
   getSaleDocumentById,
   createSaleDocument,
   updateSaleDocument,
@@ -43,6 +44,7 @@ router.post('/internal/v1/orders/:crmOrderId/cancellation', orderLimiter, requir
 router.use(authMiddleware as any);
 
 router.get('/', getSaleDocuments as any);
+router.get('/summary', getSaleDocumentSummary as any);
 router.get('/stats/clients', getClientStatistics as any);
 router.get('/client/:clientId', getDocumentsByClient as any);
 router.get('/:id', getSaleDocumentById as any);

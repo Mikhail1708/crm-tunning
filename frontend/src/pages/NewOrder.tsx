@@ -1,3 +1,5 @@
+import { useProductPage } from '../hooks/useProductPage';
+import { ProductPagination } from '../components/ui/ProductPagination';
 // frontend/src/pages/NewOrder.tsx
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
@@ -636,9 +638,7 @@ export const NewOrder: React.FC = () => {
   const clientIdFromState = (location.state as { clientId?: number })?.clientId;
   const clientId = clientIdFromUrl ? parseInt(clientIdFromUrl) : clientIdFromState;
   
-  const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
   const [showFilters, setShowFilters] = useState<boolean>(false);
   
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
@@ -683,13 +683,19 @@ export const NewOrder: React.FC = () => {
     return Array.from(fieldsMap.values());
   }, [categories, filters.categoryIds]);
 
+  const { products, total: productTotal, loading, page: productPage, setPage: setProductPage } = useProductPage({
+    search: filters.search, searchScope: 'basic', categoryIds: filters.categoryIds.join(','),
+    priceMin: filters.priceMin, priceMax: filters.priceMax, stockStatus: filters.stockStatus, inStockOnly: true,
+    characteristicMode: 'joined', characteristics: JSON.stringify(Object.fromEntries(Object.entries(filters.characteristics)
+      .filter(([key]) => availableCharacteristicFields.some(field => String(field.id) === key)))),
+  });
+
   const cartProductIds = useMemo(() => {
     return new Set(cartItems.map(item => item.id));
   }, [cartItems]);
 
   // Загрузка данных
   useEffect(() => {
-    loadProducts();
     loadCategories();
   }, []);
 
@@ -699,18 +705,6 @@ export const NewOrder: React.FC = () => {
       loadClientById(clientId);
     }
   }, [clientId]);
-
-  const loadProducts = async (): Promise<void> => {
-    try {
-      setLoading(true);
-      const { data } = await productsApi.getAll();
-      setProducts(data);
-    } catch (error) {
-      toast.error('Ошибка загрузки товаров');
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const loadCategories = async (): Promise<void> => {
     try {
@@ -800,63 +794,7 @@ export const NewOrder: React.FC = () => {
   }, []);
 
   // Фильтрация товаров
-  const filteredProducts = useMemo(() => {
-    let filtered = products.filter(p => p.stock > 0);
-    
-    if (filters.search) {
-      const searchLower = filters.search.toLowerCase();
-      filtered = filtered.filter(p => 
-        p.name?.toLowerCase().includes(searchLower) ||
-        p.article?.toLowerCase().includes(searchLower)
-      );
-    }
-    
-    if (filters.categoryIds.length > 0) {
-      filtered = filtered.filter(p => {
-        const productCategoryIds = p.categories?.map(c => c.id) || p.categoryIds || [];
-        return filters.categoryIds.some(catId => productCategoryIds.includes(catId));
-      });
-    }
-    
-    if (filters.priceMin !== '') {
-      filtered = filtered.filter(p => p.retail_price >= filters.priceMin);
-    }
-    if (filters.priceMax !== '') {
-      filtered = filtered.filter(p => p.retail_price <= filters.priceMax);
-    }
-    
-    if (filters.stockStatus !== 'all') {
-      filtered = filtered.filter(p => {
-        if (filters.stockStatus === 'low') return p.stock <= (p.min_stock || 5);
-        if (filters.stockStatus === 'out') return p.stock === 0;
-        if (filters.stockStatus === 'in') return p.stock > 0;
-        return true;
-      });
-    }
-    
-    if (Object.keys(filters.characteristics).length > 0) {
-      filtered = filtered.filter(p => {
-        const productChars = p.characteristics || {};
-        for (const [fieldId, filterValue] of Object.entries(filters.characteristics)) {
-          if (!filterValue) continue;
-          
-          const field = availableCharacteristicFields.find(f => f.id.toString() === fieldId);
-          if (!field) continue;
-          
-          const productValue = productChars[field.name];
-          if (!productValue) return false;
-          
-          const productValueStr = Array.isArray(productValue) ? productValue.join(', ') : String(productValue);
-          const filterValueStr = Array.isArray(filterValue) ? filterValue.join(', ') : String(filterValue);
-          
-          if (!productValueStr.toLowerCase().includes(filterValueStr.toLowerCase())) return false;
-        }
-        return true;
-      });
-    }
-    
-    return filtered;
-  }, [products, filters, availableCharacteristicFields]);
+  const filteredProducts = products;
 
   const autoCreateClient = async (): Promise<Client | null> => {
     if (!customerName || !customerPhone) return null;
@@ -1324,9 +1262,10 @@ export const NewOrder: React.FC = () => {
             </div>
             
             {/* Счетчик результатов */}
+            <ProductPagination page={productPage} total={productTotal} loading={loading} onPage={setProductPage} />
             {!loading && filteredProducts.length > 0 && (
               <div className="p-3 border-t border-gray-100 text-center text-xs text-gray-400">
-                Найдено товаров: {filteredProducts.length}
+                Найдено товаров: {productTotal}
               </div>
             )}
           </div>

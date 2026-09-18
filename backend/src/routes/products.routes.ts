@@ -2,6 +2,7 @@
 import { Router } from 'express';
 import {
   getProducts,
+  getProductsSummary,
   getProductById,
   createProduct,
   updateProduct,
@@ -22,6 +23,7 @@ const router = Router();
 router.use(authMiddleware as any);
 
 router.get('/', getProducts as any);
+router.get('/summary', getProductsSummary as any);
 router.get('/low-stock', getLowStockProducts as any);
 router.get('/:id', getProductById as any);
 router.get('/:id/price-history', getPriceHistory as any);

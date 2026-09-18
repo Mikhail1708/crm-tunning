@@ -137,13 +137,17 @@ interface RestoreResponse {
 }
 
 export const reportsApi = {
+  getAnalytics: async (params: Record<string, unknown>): Promise<{ rows: any[]; total: number; page: number; limit: number; stats: ReportSummary; chart: any[] }> => {
+    const response = await api.get('/reports/analytics', { params });
+    return response.data;
+  },
   getSummary: async (): Promise<SummaryResponse> => {
     const response = await api.get<SummaryResponse>('/reports/summary');
     return response.data;
   },
 
-  getProfitByProduct: async (): Promise<ProfitByProductResponse[]> => {
-    const response = await api.get<ProfitByProductResponse[]>('/reports/profit-by-product');
+  getProfitByProduct: async (page = 1, limit = 50): Promise<ProfitByProductResponse[]> => {
+    const response = await api.get<ProfitByProductResponse[]>('/reports/profit-by-product', { params: { page, limit } });
     return response.data;
   },
 
@@ -152,8 +156,8 @@ export const reportsApi = {
     return response.data;
   },
 
-  getOrdersByPeriod: async (startDate?: string, endDate?: string): Promise<OrdersByPeriodResponse> => {
-    const response = await api.get<OrdersByPeriodResponse>('/reports/orders', { params: { startDate, endDate } });
+  getOrdersByPeriod: async (startDate?: string, endDate?: string, page = 1, limit = 50): Promise<OrdersByPeriodResponse> => {
+    const response = await api.get<OrdersByPeriodResponse>('/reports/orders', { params: { startDate, endDate, page, limit } });
     return response.data;
   },
 
@@ -162,8 +166,8 @@ export const reportsApi = {
     return response.data;
   },
 
-  getExpenses: async (startDate?: string, endDate?: string): Promise<ExpensesResponse> => {
-    const response = await api.get<ExpensesResponse>('/reports/expenses', { params: { startDate, endDate } });
+  getExpenses: async (startDate?: string, endDate?: string, page = 1, limit = 50): Promise<ExpensesResponse> => {
+    const response = await api.get<ExpensesResponse>('/reports/expenses', { params: { startDate, endDate, page, limit } });
     return response.data;
   },
 

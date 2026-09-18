@@ -1,14 +1,13 @@
 // frontend/src/pages/Reports.tsx
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { reportsApi } from '../api/reports';
-import { saleDocumentsApi } from '../api/saleDocuments';
 import { productsApi } from '../api/products';
 import { clientsApi } from '../api/clients';
 import { Button } from '../components/ui/Button';
 import { Card, CardBody } from '../components/ui/Card';
 import { Modal } from '../components/ui/Modal';
 import { formatPrice, formatDate } from '../utils/formatters';
-import { SaleDocument, Product, Client, ReportSummary, ProductStat, ClientStat, CityStat } from '../types';
+import { SaleDocument, Product, Client, ReportSummary } from '../types';
 import * as XLSX from 'xlsx';
 import {
   LineChart,
@@ -198,7 +197,7 @@ const CostChart: React.FC<{ productsCostData: ProductCostData[] }> = ({ products
   return (
     <div className="space-y-4">
       <div className="flex justify-between items-center">
-        <h3 className="font-medium text-gray-900 dark:text-white">Общая себестоимость проданных товаров</h3>
+        <h3 className="font-medium text-gray-900 dark:text-white">Себестоимость товаров текущей страницы</h3>
         <div className="flex gap-2">
           <Button
             variant={chartType === 'bar' ? 'primary' : 'secondary'}
@@ -283,7 +282,7 @@ const WorkTypeCostChart: React.FC<{ workTypeData: CostBreakdownItem[] }> = ({ wo
     <div className="space-y-4">
       <h3 className="font-medium text-gray-900 dark:text-white flex items-center gap-2">
         <Wrench size={16} className="text-primary-600" />
-        Затраты по видам работ (все товары)
+        Затраты по видам работ (текущая страница)
       </h3>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="h-96">
@@ -336,12 +335,10 @@ interface AnalyticsFiltersProps {
   filters: AnalyticsFilters;
   onFilterChange: (key: keyof AnalyticsFilters, value: Product | Client | string | null) => void;
   onReset: () => void;
-  products: Product[];
-  clients: Client[];
 }
 
 const AnalyticsFiltersComponent: React.FC<AnalyticsFiltersProps> = ({ 
-  filters, onFilterChange, onReset, products, clients 
+  filters, onFilterChange, onReset
 }) => {
   const [productSearch, setProductSearch] = useState<string>(filters.product?.name || '');
   const [clientSearch, setClientSearch] = useState<string>(() => {
@@ -375,26 +372,21 @@ const AnalyticsFiltersComponent: React.FC<AnalyticsFiltersProps> = ({
   }, []);
 
   // Фильтрация продуктов
-  const filteredProducts = useMemo(() => {
-    if (!productSearch.trim()) return products;
-    const searchLower = productSearch.toLowerCase();
-    return products.filter(p => 
-      p.name.toLowerCase().includes(searchLower) ||
-      p.article?.toLowerCase().includes(searchLower)
-    );
-  }, [products, productSearch]);
-
-  // Фильтрация клиентов
-  const filteredClients = useMemo(() => {
-    if (!clientSearch.trim()) return clients;
-    const searchLower = clientSearch.toLowerCase();
-    return clients.filter(c => {
-      const fullName = [c.lastName, c.firstName, c.middleName].filter(Boolean).join(' ').toLowerCase();
-      return fullName.includes(searchLower) ||
-             c.phone.includes(clientSearch) ||
-             (c.city && c.city.toLowerCase().includes(searchLower));
-    });
-  }, [clients, clientSearch]);
+  const [filteredProducts, setFilteredProducts] = useState<Product[]>([]);
+  const [filteredClients, setFilteredClients] = useState<Client[]>([]);
+  useEffect(() => {
+    let active = true;
+    const timer = setTimeout(() => { productsApi.getAll({ search: productSearch, page: 1, limit: 20 })
+      .then(result => { if (active) setFilteredProducts(result.data); }).catch(() => { if (active) setFilteredProducts([]); }); }, 200);
+    return () => { active = false; clearTimeout(timer); };
+  }, [productSearch]);
+  useEffect(() => {
+    let active = true;
+    const timer = setTimeout(() => { clientsApi.getAll({ search: clientSearch, page: 1, limit: 20 })
+      .then(result => { if (active) { const data: any = result.data; setFilteredClients(Array.isArray(data) ? data : data?.data || data?.clients || []); } })
+      .catch(() => { if (active) setFilteredClients([]); }); }, 200);
+    return () => { active = false; clearTimeout(timer); };
+  }, [clientSearch]);
 
   const handleProductSelect = (product: Product): void => {
     onFilterChange('product', product);
@@ -583,10 +575,13 @@ interface FormattedSale extends SaleDocument {
 
 export const Reports: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(true);
-  const [orders, setOrders] = useState<FormattedSale[]>([]);
-  const [products, setProducts] = useState<Product[]>([]);
-  const [clients, setClients] = useState<Client[]>([]);
-  const [allProducts, setAllProducts] = useState<Product[]>([]);
+  const [loadError, setLoadError] = useState(false);
+  const [rows, setRows] = useState<any[]>([]);
+  const [page, setPage] = useState(1);
+  const [revision, setRevision] = useState(0);
+  const [rowCount, setRowCount] = useState(0);
+  const [chartData, setChartData] = useState<any[]>([]);
+  const requestVersion = useRef(0);
   const [stats, setStats] = useState<ReportSummary>({
     totalOrders: 0,
     totalRevenue: 0,
@@ -615,257 +610,46 @@ export const Reports: React.FC = () => {
   const [selectedProductCost, setSelectedProductCost] = useState<ProductCostData | null>(null);
   const [isCostModalOpen, setIsCostModalOpen] = useState<boolean>(false);
 
-  useEffect(() => {
-    loadInitialData();
-  }, []);
-
-  useEffect(() => {
-    loadOrders();
+  const queryParams = useMemo(() => {
+    let from: Date | undefined;
+    let to: Date | undefined;
+    if (period === 'custom' && startDate && endDate) {
+      from = new Date(startDate); to = new Date(endDate); to.setHours(23, 59, 59, 999);
+    } else if (period !== 'custom' && period !== 'all') {
+      from = new Date();
+      if (period === 'day') from.setHours(0, 0, 0, 0);
+      if (period === 'week') from.setDate(from.getDate() - 7);
+      if (period === 'month') from.setMonth(from.getMonth() - 1);
+      if (period === 'year') from.setFullYear(from.getFullYear() - 1);
+    }
+    return { startDate: from?.toISOString(), endDate: to?.toISOString(), productId: filters.product?.id,
+      clientId: filters.client?.id, city: filters.city || undefined };
   }, [period, startDate, endDate, filters]);
-
-  const loadInitialData = async (): Promise<void> => {
-    try {
-      const [productsRes, clientsRes, allProductsRes] = await Promise.all([
-        productsApi.getAll(),
-        clientsApi.getAll({ limit: 1000 }),
-        productsApi.getAll()
-      ]);
-      
-      // Исправление: правильно извлекаем данные клиентов
-      let clientsData: Client[] = [];
-      if (clientsRes.data) {
-        if (Array.isArray(clientsRes.data)) {
-          clientsData = clientsRes.data;
-        } else if (clientsRes.data.data && Array.isArray(clientsRes.data.data)) {
-          clientsData = clientsRes.data.data;
-        } else if (clientsRes.data.clients && Array.isArray(clientsRes.data.clients)) {
-          clientsData = clientsRes.data.clients;
-        } else if (Array.isArray(clientsRes)) {
-          clientsData = clientsRes;
-        }
-      }
-      
-      console.log('📋 Загружено клиентов:', clientsData.length);
-      
-      setProducts(productsRes.data || []);
-      setClients(clientsData);
-      setAllProducts(allProductsRes.data || []);
-    } catch (error) {
-      console.error('Error loading initial data:', error);
-      toast.error('Ошибка загрузки данных для фильтров');
-    }
-  };
-
-  const loadOrders = async (): Promise<void> => {
+  useEffect(() => { setPage(1); }, [queryParams, activeTab]);
+  useEffect(() => {
+    const version = ++requestVersion.current;
     setLoading(true);
-    try {
-      const response = await saleDocumentsApi.getAll();
-      let allDocuments = response.data || [];
-      
-      let paidDocuments = allDocuments.filter(doc => doc.paymentStatus === 'paid');
-      
-      let filteredSales = [...paidDocuments];
-      
-      if (period === 'custom' && startDate && endDate) {
-        const start = new Date(startDate);
-        const end = new Date(endDate);
-        end.setHours(23, 59, 59, 999);
-        filteredSales = paidDocuments.filter(sale => {
-          const saleDate = new Date(sale.saleDate);
-          return saleDate >= start && saleDate <= end;
-        });
-      } else if (period !== 'custom') {
-        let startDateFilter: Date | null = null;
-        switch (period) {
-          case 'day':
-            startDateFilter = new Date();
-            startDateFilter.setHours(0, 0, 0, 0);
-            break;
-          case 'week':
-            startDateFilter = new Date();
-            startDateFilter.setDate(startDateFilter.getDate() - 7);
-            break;
-          case 'month':
-            startDateFilter = new Date();
-            startDateFilter.setMonth(startDateFilter.getMonth() - 1);
-            break;
-          case 'year':
-            startDateFilter = new Date();
-            startDateFilter.setFullYear(startDateFilter.getFullYear() - 1);
-            break;
-        }
-        if (startDateFilter) {
-          filteredSales = paidDocuments.filter(sale => new Date(sale.saleDate) >= startDateFilter!);
-        }
-      }
-      
-      if (filters.product) {
-        filteredSales = filteredSales.filter(sale => 
-          sale.items?.some(item => item.productId === filters.product!.id)
-        );
-      }
-      
-      if (filters.client) {
-        filteredSales = filteredSales.filter(sale => 
-          sale.clientId === filters.client!.id
-        );
-      }
-      
-      if (filters.city) {
-        filteredSales = filteredSales.filter(sale => {
-          const clientCity = sale.client?.city || '';
-          return clientCity.toLowerCase().includes(filters.city!.toLowerCase());
-        });
-      }
-      
-      const unpaidDocuments = allDocuments.filter(doc => doc.paymentStatus !== 'paid');
-      const unpaidAmount = unpaidDocuments.reduce((sum, d) => sum + (d.total || 0), 0);
-      
-      // ✅ ИСПРАВЛЕНО: правильное получение города из клиента
-      const formattedSales: FormattedSale[] = filteredSales.map(sale => {
-        const itemsWithCost = (sale.items || []).map(item => {
-          const costPrice = item.cost_price || (item as { product?: { cost_price: number } }).product?.cost_price || 0;
-          return {
-            name: item.productName || (item as { product?: { name: string } }).product?.name || 'Товар',
-            article: item.productArticle || (item as { product?: { article: string } }).product?.article || '-',
-            quantity: item.quantity,
-            price: item.price,
-            total: item.total,
-            cost_price: costPrice,
-            cost_total: costPrice * item.quantity,
-            productId: item.productId
-          };
-        });
-        
-        const totalCost = itemsWithCost.reduce((sum, item) => sum + item.cost_total, 0);
-        const totalProfit = sale.total - totalCost;
-        
-        const docType = sale.documentType === 'receipt' ? 'Чек' : sale.documentType === 'invoice' ? 'Счет' : 'Заказ';
-        
-        // ✅ КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: правильно получаем город из клиента
-        let city = '-';
-        if (sale.client?.city && sale.client.city.trim() !== '') {
-          city = sale.client.city;
-        } else if ((sale as any).client?.city && (sale as any).client.city.trim() !== '') {
-          city = (sale as any).client.city;
-        } else if (sale.customerCity && sale.customerCity.trim() !== '') {
-          city = sale.customerCity;
-        } else if ((sale as any).city) {
-          city = (sale as any).city;
-        }
-        
-        // Для отладки - выводим в консоль
-        if (city !== '-') {
-          console.log(`🏙️ Заказ ${sale.documentNumber}: город = ${city}, клиент = ${sale.client?.firstName} ${sale.client?.lastName}`);
-        }
-        
-        return {
-          ...sale,
-          documentType: docType,
-          totalProfit,
-          totalCost,
-          customerCity: city
-        };
-      });
-      
-      setOrders(formattedSales);
-      
-      const totalOrders = formattedSales.length;
-      const totalRevenue = formattedSales.reduce((sum, o) => sum + o.total, 0);
-      const totalCost = formattedSales.reduce((sum, o) => sum + o.totalCost, 0);
-      const totalProfit = totalRevenue - totalCost;
-      const averageCheck = totalOrders > 0 ? totalRevenue / totalOrders : 0;
-      const margin = totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0;
-      
-      setStats({
-        totalOrders,
-        totalRevenue,
-        totalProfit,
-        totalCost,
-        averageCheck,
-        margin,
-        unpaidCount: unpaidDocuments.length,
-        unpaidAmount: unpaidAmount
-      });
-      
-    } catch (error) {
-      console.error('Error loading orders:', error);
-      toast.error('Ошибка загрузки отчетов');
-    } finally {
-      setLoading(false);
-    }
-  };
+    setLoadError(false);
+    reportsApi.getAnalytics({ ...queryParams, tab: activeTab, page, limit: 50 }).then(result => {
+      if (version !== requestVersion.current) return;
+      setRows(result.rows); setRowCount(result.total); setStats(result.stats);
+      setChartData(result.chart.map(row => ({ ...row, date: new Date(row.day).toLocaleDateString('ru-RU') })));
+    }).catch(() => { if (version === requestVersion.current) { setLoadError(true); toast.error('Ошибка загрузки аналитики'); } })
+      .finally(() => { if (version === requestVersion.current) setLoading(false); });
+    return () => { requestVersion.current++; };
+  }, [queryParams, activeTab, page, revision]);
 
-  // Данные о себестоимости товаров на основе проданных товаров и их costBreakdown
-  const productsCostData = useMemo((): ProductCostData[] => {
-    const productMap = new Map<number, ProductCostData>();
-    
-    // Сначала собираем данные по продажам
-    orders.forEach(order => {
-      order.items?.forEach(item => {
-        const productId = item.productId;
-        const product = allProducts.find(p => p.id === productId);
-        
-        if (!productMap.has(productId)) {
-          productMap.set(productId, {
-            productId,
-            productName: item.productName || product?.name || 'Неизвестный товар',
-            totalCost: 0,
-            totalRevenue: 0,
-            totalProfit: 0,
-            breakdown: [],
-            salesCount: 0,
-            quantitySold: 0
-          });
-        }
-        
-        const data = productMap.get(productId)!;
-        const itemCost = (item.cost_price || 0) * item.quantity;
-        const itemRevenue = item.total || 0;
-        
-        data.totalCost += itemCost;
-        data.totalRevenue += itemRevenue;
-        data.totalProfit += itemRevenue - itemCost;
-        data.salesCount += 1;
-        data.quantitySold += item.quantity;
-        
-        // Добавляем breakdown из структуры товара
-        if (product?.costBreakdown && product.costBreakdown.length > 0) {
-          product.costBreakdown.forEach((breakItem: CostBreakdownItem) => {
-            const existingBreak = data.breakdown.find(b => b.name === breakItem.name);
-            const scaledAmount = (breakItem.amount / product.cost_price) * itemCost;
-            
-            if (existingBreak) {
-              existingBreak.amount += scaledAmount;
-            } else {
-              data.breakdown.push({
-                name: breakItem.name,
-                amount: scaledAmount
-              });
-            }
-          });
-        }
-      });
-    });
-    
-    return Array.from(productMap.values());
-  }, [orders, allProducts]);
-
-  // Агрегированные данные по видам работ (для всех товаров)
-  const workTypeData = useMemo((): CostBreakdownItem[] => {
-    const workMap = new Map<string, number>();
-    
-    productsCostData.forEach(product => {
-      product.breakdown.forEach(breakItem => {
-        const current = workMap.get(breakItem.name) || 0;
-        workMap.set(breakItem.name, current + breakItem.amount);
-      });
-    });
-    
-    return Array.from(workMap.entries())
-      .map(([name, amount]) => ({ name, amount }))
-      .sort((a, b) => b.amount - a.amount);
-  }, [productsCostData]);
+  const orders: FormattedSale[] = activeTab === 'overview' ? rows.map(row => ({ ...row,
+    documentType: row.documentType === 'receipt' ? 'Чек' : row.documentType === 'invoice' ? 'Счёт' : 'Заказ' })) : [];
+  const productsCostData: ProductCostData[] = activeTab === 'cost' ? rows : [];
+  const productStats: any[] = activeTab === 'products' ? rows : [];
+  const clientStats: any[] = activeTab === 'clients' ? rows : [];
+  const cityStats: any[] = activeTab === 'cities' ? rows : [];
+  const workTypeData = useMemo(() => {
+    const totals = new Map<string, number>();
+    productsCostData.forEach(product => product.breakdown.forEach(item => totals.set(item.name, (totals.get(item.name) || 0) + item.amount)));
+    return [...totals].map(([name, amount]) => ({ name, amount })).sort((a, b) => b.amount - a.amount);
+  }, [rows, activeTab]);
 
   const handleFilterChange = (key: keyof AnalyticsFilters, value: Product | Client | string | null): void => {
     setFilters(prev => ({ ...prev, [key]: value }));
@@ -879,135 +663,6 @@ export const Reports: React.FC = () => {
     setSelectedProductCost(product);
     setIsCostModalOpen(true);
   };
-
-  const chartData = useMemo(() => {
-    const grouped: Record<string, { date: string; dateObj: Date; revenue: number; profit: number; cost: number; orders: number }> = {};
-    orders.forEach(order => {
-      const date = new Date(order.saleDate);
-      const formattedDate = date.toLocaleDateString('ru-RU');
-      if (!grouped[formattedDate]) {
-        grouped[formattedDate] = { 
-          date: formattedDate, 
-          dateObj: date,
-          revenue: 0, 
-          profit: 0, 
-          cost: 0, 
-          orders: 0 
-        };
-      }
-      grouped[formattedDate].revenue += order.total || 0;
-      grouped[formattedDate].profit += order.totalProfit || 0;
-      grouped[formattedDate].cost += order.totalCost || 0;
-      grouped[formattedDate].orders += 1;
-    });
-    
-    return Object.values(grouped).sort((a, b) => a.dateObj.getTime() - b.dateObj.getTime());
-  }, [orders]);
-
-  const productStats = useMemo(() => {
-    const productMap = new Map<string, { name: string; revenue: number; profit: number; quantity: number; cost: number; productId?: number }>();
-    orders.forEach(order => {
-      order.items?.forEach(item => {
-        if (!productMap.has(item.productName)) {
-          productMap.set(item.productName, { 
-            name: item.productName, 
-            revenue: 0, 
-            profit: 0, 
-            quantity: 0,
-            cost: 0,
-            productId: item.productId
-          });
-        }
-        const p = productMap.get(item.productName)!;
-        p.revenue += item.total;
-        p.profit += (item.price - item.cost_price) * item.quantity;
-        p.quantity += item.quantity;
-        p.cost += (item.cost_price || 0) * item.quantity;
-      });
-    });
-    return Array.from(productMap.values()).sort((a, b) => b.revenue - a.revenue);
-  }, [orders]);
-
-  // ✅ ИСПРАВЛЕНО: статистика по клиентам с городом
-  const clientStats = useMemo(() => {
-    const clientMap = new Map<number, { name: string; phone?: string; city?: string; revenue: number; profit: number; orders: number; clientId: number }>();
-    
-    orders.forEach(order => {
-      // Получаем ID клиента
-      const clientId = order.clientId;
-      if (!clientId) return;
-      
-      // Находим клиента в загруженном списке
-      const client = clients.find(c => c.id === clientId);
-      if (!client) return;
-      
-      const fullName = [client.lastName, client.firstName, client.middleName].filter(Boolean).join(' ').trim() || client.firstName || 'Клиент';
-      
-      if (!clientMap.has(clientId)) {
-        // ✅ Берем город из объекта клиента
-        let clientCity = client.city || '-';
-        if (!clientCity || clientCity === '') clientCity = '-';
-        
-        clientMap.set(clientId, {
-          name: fullName,
-          phone: client.phone,
-          city: clientCity,
-          revenue: 0,
-          profit: 0,
-          orders: 0,
-          clientId: clientId
-        });
-      }
-      
-      const c = clientMap.get(clientId)!;
-      c.revenue += order.total;
-      c.profit += order.totalProfit;
-      c.orders += 1;
-    });
-    
-    return Array.from(clientMap.values()).sort((a, b) => b.revenue - a.revenue);
-  }, [orders, clients]);
-
-  // ✅ ИСПРАВЛЕНО: улучшенная статистика по городам
-  const cityStats = useMemo(() => {
-    const cityMap = new Map<string, { name: string; revenue: number; profit: number; orders: number }>();
-    
-    orders.forEach(order => {
-      // Пытаемся получить город из разных источников
-      let city = order.customerCity;
-      
-      // Если город не определен через customerCity, пробуем получить из клиента
-      if ((!city || city === '-') && order.clientId) {
-        const client = clients.find(c => c.id === order.clientId);
-        if (client && client.city && client.city.trim() !== '') {
-          city = client.city;
-        }
-      }
-      
-      // Если все еще нет города, пробуем через order.client
-      if ((!city || city === '-') && order.client?.city && order.client.city.trim() !== '') {
-        city = order.client.city;
-      }
-      
-      if (!city || city === '-') {
-        city = 'Не указан';
-      }
-      
-      if (!cityMap.has(city)) {
-        cityMap.set(city, { name: city, revenue: 0, profit: 0, orders: 0 });
-      }
-      const c = cityMap.get(city)!;
-      c.revenue += order.total;
-      c.profit += order.totalProfit;
-      c.orders += 1;
-    });
-    
-    // Логируем результат для отладки
-    console.log('📊 Статистика по городам:', Array.from(cityMap.entries()));
-    
-    // Сортируем по выручке и возвращаем
-    return Array.from(cityMap.values()).sort((a, b) => b.revenue - a.revenue);
-  }, [orders, clients]);
 
   const exportToExcel = (): void => {
     let exportData: Record<string, unknown>[] = [];
@@ -1070,7 +725,7 @@ export const Reports: React.FC = () => {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, `Отчет_${activeTab}`);
     XLSX.writeFile(wb, `analytics_${activeTab}_${new Date().toISOString().split('T')[0]}.xlsx`);
-    toast.success('Отчет экспортирован в Excel');
+    toast.success('Текущая страница экспортирована в Excel');
   };
 
   const metrics = [
@@ -1090,17 +745,19 @@ export const Reports: React.FC = () => {
     );
   }
 
+  if (loadError) return <div role="alert">Не удалось загрузить аналитику. Обновите страницу, чтобы повторить запрос.</div>;
+
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Аналитика</h1>
-          <p className="text-gray-500 dark:text-gray-400 mt-1">Анализ продаж и прибыли</p>
+          <p className="text-gray-500 dark:text-gray-400 mt-1">Итоги по всему фильтру; таблицы, групповые диаграммы и Excel по текущей странице. График по датам: последние 120 дней с продажами.</p>
         </div>
         <div className="flex gap-2">
           <Button onClick={exportToExcel} icon={FileSpreadsheet} variant="success">
-            Excel
+            Excel: текущая страница
           </Button>
         </div>
       </div>
@@ -1162,7 +819,7 @@ export const Reports: React.FC = () => {
                   onChange={(e) => setEndDate(e.target.value)}
                   className="px-3 py-1.5 border rounded-lg text-sm dark:bg-dark-800 dark:border-dark-700 dark:text-white"
                 />
-                <Button size="sm" onClick={loadOrders}>Применить</Button>
+                <Button size="sm" onClick={() => { setPage(1); setRevision(value => value + 1); }}>Применить</Button>
               </div>
             )}
           </div>
@@ -1174,8 +831,6 @@ export const Reports: React.FC = () => {
         filters={filters}
         onFilterChange={handleFilterChange}
         onReset={resetFilters}
-        products={products}
-        clients={clients}
       />
 
       {/* Метрики */}
@@ -1342,7 +997,7 @@ export const Reports: React.FC = () => {
                           )}
                         </td>
                         <td className="px-4 py-3 text-sm text-gray-500 dark:text-gray-400 max-w-md truncate">
-                          {order.items?.map(i => `${i.productName} x${i.quantity}`).join(', ') || '-'}
+                          {order.items?.map(i => `${i.productName} x${i.quantity}`).join(', ') || '-'}{(order as any).itemCount > 200 ? ' (первые 200 позиций)' : ''}
                         </td>
                         <td className="px-4 py-3 text-sm text-right font-semibold text-gray-900 dark:text-white">{formatPrice(order.total)}</td>
                         <td className="px-4 py-3 text-sm text-right text-green-600 dark:text-green-400">{formatPrice(order.totalProfit)}</td>
@@ -1617,6 +1272,13 @@ export const Reports: React.FC = () => {
       )}
 
       {/* Модалка с детальной себестоимостью товара */}
+      <div className="flex items-center justify-between gap-3">
+        <span>Всего: {rowCount}. Страница {page} из {Math.max(1, Math.ceil(rowCount / 50))}</span>
+        <div className="flex gap-2">
+          <Button disabled={page <= 1} onClick={() => setPage(value => value - 1)}>Назад</Button>
+          <Button disabled={page * 50 >= rowCount} onClick={() => setPage(value => value + 1)}>Далее</Button>
+        </div>
+      </div>
       <ProductCostModal
         isOpen={isCostModalOpen}
         onClose={() => setIsCostModalOpen(false)}
@@ -1625,5 +1287,4 @@ export const Reports: React.FC = () => {
     </div>
   );
 };
-
 export default Reports;

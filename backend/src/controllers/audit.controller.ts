@@ -2,6 +2,7 @@
 import { Response } from 'express';
 import { RequestWithUser } from '../types';
 import auditService from '../services/audit.service';
+import { parsePagination } from '../utils/pagination';
 
 /**
  * GET /api/audit
@@ -14,8 +15,7 @@ export const getLogs = async (req: RequestWithUser, res: Response): Promise<void
       action: req.query.action as string,
       fromDate: req.query.fromDate as string,
       toDate: req.query.toDate as string,
-      page: parseInt(req.query.page as string) || 1,
-      limit: Math.min(parseInt(req.query.limit as string) || 100, 500)
+      ...parsePagination(req.query.page, req.query.limit, 100, 500)
     };
     
     const result = auditService.getLogs(filters);
@@ -118,7 +118,7 @@ export const cleanLogs = async (req: RequestWithUser, res: Response): Promise<vo
  */
 export const getRecentLogs = async (req: RequestWithUser, res: Response): Promise<void> => {
   try {
-    const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
+    const { limit } = parsePagination(1, req.query.limit, 20, 100);
     const logs = auditService.getRecent(limit);
     res.json(logs);
   } catch (error) {

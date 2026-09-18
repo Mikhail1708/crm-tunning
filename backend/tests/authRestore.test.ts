@@ -13,7 +13,7 @@ const previousSecret = process.env.JWT_SECRET;
 let users: any[] = [];
 let created: any[] = [];
 let deleted: any[] = [];
-const emptyDelegate = { deleteMany: async () => ({ count: 0 }), create: async () => ({}) };
+const emptyDelegate = { deleteMany: async () => ({ count: 0 }), create: async () => ({}), count: async () => 0 };
 const tx: any = {
   user: {
     deleteMany: async (args: any) => {
@@ -22,12 +22,14 @@ const tx: any = {
       return { count: 1 };
     },
     findFirst: async () => users.find(user => user.role === 'admin') || null,
+    findMany: async () => users.filter(user => user.role === 'admin'),
     findUnique: async ({ where }: any) => users.find(user => user.id === where.id) || null,
     create: async ({ data }: any) => { created.push(data); users.push({ ...data }); return data; },
   },
   $executeRaw: async () => 0,
+  $queryRaw: async () => [{ next: 10 }],
 };
-for (const name of ['saleDocumentItem', 'sale', 'productCharacteristic', 'saleDocument', 'expense', 'client', 'product', 'categoryField', 'category']) tx[name] = emptyDelegate;
+for (const name of ['saleDocumentItem', 'sale', 'productCharacteristic', 'productCategory', 'saleDocument', 'expense', 'client', 'product', 'categoryField', 'category', 'inventoryReservation', 'inventoryReservationItem', 'crmStatusOutboxEvent', 'productImage', 'priceHistory']) tx[name] = emptyDelegate;
 const db = { ...tx, $transaction: async (callback: Function) => callback(tx) };
 Module._load = function(id: string, ...args: any[]) {
   if (id === '@prisma/client') return { Prisma, PrismaClient: function() { return db; } };
@@ -53,7 +55,7 @@ async function restore(dumpUsers: any[]) {
   const res = response();
   const originalLog = console.log;
   console.log = () => {};
-  try { await restoreDatabase({ user: { id: 1, role: 'admin' }, body: { version: '3.0', data } }, res); }
+  try { await restoreDatabase({ user: { id: 1, role: 'admin' }, body: { version: '3.0', legacyRuntimePolicy: 'require-empty', data } }, res); }
   finally { console.log = originalLog; }
   assert.equal(res.statusCode, 200);
   assert.equal(res.body.success, true);

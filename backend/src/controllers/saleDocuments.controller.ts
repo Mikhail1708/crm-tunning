@@ -1,3 +1,4 @@
+import { resolveSaleDocumentPage, saleDocumentListQuery, saleDocumentSummary } from '../services/saleDocumentList.service';
 import { assertPaidWebsiteOrderEditable, paidWebsiteOrderSelect } from '../services/paidWebsiteOrder.service';
 // crm-project/backend/src/controllers/saleDocuments.controller.ts
 import { Response, Request } from 'express';
@@ -119,7 +120,9 @@ const sendPublicOrderResponse = (
  */
 export const getSaleDocuments = async (req: RequestWithUser, res: Response): Promise<void> => {
   try {
+    const { where, limit, skip, orderBy, total } = await resolveSaleDocumentPage(prisma, req.query);
     const documents = await prisma.saleDocument.findMany({
+      where, take: limit, skip,
       select: {
         id: true,
         documentNumber: true,
@@ -173,9 +176,10 @@ export const getSaleDocuments = async (req: RequestWithUser, res: Response): Pro
           }
         }
       },
-      orderBy: { saleDate: 'desc' },
+      orderBy,
      
     });
+    res.setHeader('X-Total-Count', String(total ?? await prisma.saleDocument.count({ where })));
     res.json(documents);
   } catch (error) {
     console.error('Error getting documents:', error);
@@ -1544,8 +1548,9 @@ export const getDocumentsByClient = async (req: RequestWithUser, res: Response):
       return;
     }
     
+    const { where, limit, skip, orderBy, total } = await resolveSaleDocumentPage(prisma, req.query, clientIdNum);
     const documents = await prisma.saleDocument.findMany({
-      where: { clientId: clientIdNum },
+      where, take: limit, skip,
       select: {
         id: true,
         documentNumber: true,
@@ -1591,10 +1596,10 @@ export const getDocumentsByClient = async (req: RequestWithUser, res: Response):
           }
         }
       },
-      orderBy: { saleDate: 'desc' },
-      take: 9999
+      orderBy
     });
     
+    res.setHeader('X-Total-Count', String(total ?? await prisma.saleDocument.count({ where })));
     res.json(documents);
   } catch (error) {
     console.error('Error getting documents by client:', error);
@@ -1645,3 +1650,13 @@ setInterval(() => {
     }
   }
 }, 10000);
+
+export const getSaleDocumentSummary = async (req: RequestWithUser, res: Response): Promise<void> => {
+  try {
+    const { where } = saleDocumentListQuery(req.query);
+    res.json(await saleDocumentSummary(prisma, where, req.query));
+  } catch (error) {
+    console.error('Error getting document summary:', error);
+    res.status(500).json({ message: 'Error loading document summary' });
+  }
+};

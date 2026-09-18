@@ -1,10 +1,12 @@
 // backend/src/controllers/reports.controller.ts
 import { Response } from 'express';
-import { newAuthGeneration } from '../services/authRevocation.service';
+import { BackupError, exportDatabaseBackup, restoreDatabaseBackup, lockBackupTables, clearBackupTables, assertSalesHistoryCanBeCleared } from '../services/databaseBackup.service';
 import { PrismaClient, Prisma } from '@prisma/client';
 import { RequestWithUser, CreateExpenseDTO, SalesStats, ProductProfitReport } from '../types';
 import fs from 'fs';
 import path from 'path';
+import { parsePagination } from '../utils/pagination';
+import { paidOrderTotals } from '../services/reportAggregates.service';
 
 const prisma = new PrismaClient();
 
@@ -267,20 +269,9 @@ const convertDumpToV3 = (oldDump: OldDump): NewDump => {
 
 export const getSummary = async (req: RequestWithUser, res: Response): Promise<void> => {
   try {
-    const paidOrders = await prisma.saleDocument.findMany({
-      where: {
-        paymentStatus: 'paid',
-        documentType: 'order'
-      },
-      include: {
-        items: true
-      }
-    });
-    
-    const totalRevenue = paidOrders.reduce((sum, order) => sum + order.total, 0);
-    const totalCost = paidOrders.reduce((sum, order) => 
-      sum + order.items.reduce((itemSum, item) => itemSum + ((item.cost_price || 0) * item.quantity), 0), 0
-    );
+    const totals = await paidOrderTotals(prisma);
+    const totalRevenue = totals.revenue;
+    const totalCost = totals.cost;
     const totalProfit = totalRevenue - totalCost;
     
     const productsCount = await prisma.product.count();
@@ -292,16 +283,14 @@ export const getSummary = async (req: RequestWithUser, res: Response): Promise<v
     
     const clientsCount = await prisma.client.count();
     
-    const paidOrderIds = paidOrders.map(o => o.id);
-    
     let topProducts: any[] = [];
     
-    if (paidOrderIds.length > 0) {
+    if (totals.count > 0) {
       // ✅ ИСПРАВЛЕНО: добавлен cost_price в groupBy
       const itemsGrouped = await prisma.saleDocumentItem.groupBy({
         by: ['productId'],
         where: {
-          documentId: { in: paidOrderIds }
+          document: { paymentStatus: 'paid', documentType: 'order' }
         },
         _sum: {
           quantity: true,
@@ -359,22 +348,38 @@ export const getSummary = async (req: RequestWithUser, res: Response): Promise<v
 
 export const getProfitChart = async (req: RequestWithUser, res: Response): Promise<void> => {
   try {
-    const { period = 'month', limit = '12' } = req.query;
+    const requestedPeriod = req.query.period;
+    const period = typeof requestedPeriod === 'string' && ['day', 'week', 'month', 'year'].includes(requestedPeriod)
+      ? requestedPeriod : 'month';
+    const { limit } = parsePagination(1, req.query.limit, 12, 120);
     
+    // Last occupied periods preserve gaps and existing join-based financial semantics.
     const sales = await prisma.$queryRaw`
+      WITH RECURSIVE periods(period, n) AS (
+        SELECT DATE_TRUNC(${period}, MAX("saleDate")), 1
+        FROM "SaleDocument" WHERE "paymentStatus" = 'paid' AND "documentType" = 'order'
+        UNION ALL
+        SELECT next_period.period, p.n + 1 FROM periods p
+        CROSS JOIN LATERAL (
+          SELECT DATE_TRUNC(${period}, MAX("saleDate")) AS period FROM "SaleDocument"
+          WHERE "paymentStatus" = 'paid' AND "documentType" = 'order' AND "saleDate" < p.period
+        ) next_period
+        WHERE p.n < ${limit} AND next_period.period IS NOT NULL
+      )
       SELECT 
         DATE_TRUNC(${period}, sd."saleDate") as period,
         SUM(sd.total) as revenue,
         SUM(sdi."cost_price" * sdi.quantity) as cost,
         SUM(sd.total - (sdi."cost_price" * sdi.quantity)) as profit,
-        COUNT(DISTINCT sd.id) as sales_count
+        COUNT(DISTINCT sd.id)::double precision as sales_count
       FROM "SaleDocument" sd
+      JOIN periods p ON p.period = DATE_TRUNC(${period}, sd."saleDate")
       LEFT JOIN "SaleDocumentItem" sdi ON sd.id = sdi."documentId"
       WHERE sd."paymentStatus" = 'paid'
         AND sd."documentType" = 'order'
-      GROUP BY DATE_TRUNC(${period}, sd."saleDate")
+      GROUP BY 1
       ORDER BY period DESC
-      LIMIT ${parseInt(limit as string)}
+      LIMIT ${limit}
     `;
     res.json(sales);
   } catch (error) {
@@ -385,94 +390,31 @@ export const getProfitChart = async (req: RequestWithUser, res: Response): Promi
 
 export const getProfitByProduct = async (req: RequestWithUser, res: Response): Promise<void> => {
   try {
-    const paidOrders = await prisma.saleDocument.findMany({
-      where: {
-        paymentStatus: 'paid',
-        documentType: 'order'
-      },
-      select: { id: true }
-    });
-    
-    const paidOrderIds = paidOrders.map(o => o.id);
-    
-    const products = await prisma.product.findMany({
-      select: {
-        id: true,
-        name: true,
-        article: true,
-        cost_price: true,
-        retail_price: true,
-        stock: true,
-        min_stock: true,
-        categories: {
-          include: {
-            category: true
-          }
-        }
-      }
-    });
-    
-    if (paidOrderIds.length === 0) {
-      const emptyReport: any[] = products.map(p => ({
-        id: p.id,
-        name: p.name,
-        article: p.article,
-        cost_price: p.cost_price,
-        retail_price: p.retail_price,
-        stock: p.stock,
-        min_stock: p.min_stock,
-        total_sold: 0,
-        total_revenue: 0,
-        total_cost: 0,
-        total_profit: 0,
-        margin_percent: 0,
-        category: p.categories[0]?.category?.name || ''
-      }));
-      res.json(emptyReport);
-      return;
-    }
-    
-    // ✅ ИСПРАВЛЕНО: добавлен cost_price в groupBy
-    const items = await prisma.saleDocumentItem.groupBy({
-      by: ['productId'],
-      where: {
-        documentId: { in: paidOrderIds }
-      },
-      _sum: {
-        quantity: true,
-        total: true,
-        cost_price: true
-      }
-    });
-    
-    const report: any[] = products.map(product => {
-      const item = items.find(i => i.productId === product.id);
-      const total_sold = item?._sum.quantity || 0;
-      const total_revenue = item?._sum.total || 0;
-      // ✅ ИСПРАВЛЕНО: используем cost_price из groupBy, если есть
-      const total_cost = item?._sum.cost_price || (product.cost_price * total_sold);
-      const total_profit = total_revenue - total_cost;
-      const margin_percent = total_revenue > 0 ? (total_profit / total_revenue) * 100 : 0;
-      
-      return {
-        id: product.id,
-        name: product.name,
-        article: product.article,
-        cost_price: product.cost_price,
-        retail_price: product.retail_price,
-        stock: product.stock,
-        min_stock: product.min_stock,
-        category: product.categories[0]?.category?.name || '',
-        total_sold,
-        total_revenue,
-        total_cost,
-        total_profit,
-        margin_percent
-      };
-    });
-    
-    report.sort((a, b) => b.total_profit - a.total_profit);
-    res.json(report);
+    const { page, limit, skip } = parsePagination(req.query.page, req.query.limit, 50, 200);
+    const [result] = await prisma.$queryRaw<Array<{ rows: unknown[]; total: number }>>`
+      WITH grouped AS (
+        SELECT i."productId", SUM(i.quantity) AS sold, SUM(i.total) AS revenue, SUM(i.cost_price) AS cost
+        FROM "SaleDocumentItem" i JOIN "SaleDocument" d ON d.id = i."documentId"
+        WHERE d."paymentStatus" = 'paid' AND d."documentType" = 'order' GROUP BY i."productId"
+      ), report AS (
+        SELECT p.id, p.name, p.article, p.cost_price, p.retail_price, p.stock, p.min_stock,
+          COALESCE((SELECT c.name FROM "ProductCategory" pc JOIN "Category" c ON c.id = pc."categoryId"
+            WHERE pc."productId" = p.id ORDER BY pc."categoryId" LIMIT 1), '') AS category,
+          COALESCE(g.sold, 0)::double precision AS total_sold, COALESCE(g.revenue, 0) AS total_revenue,
+          COALESCE(NULLIF(g.cost, 0), p.cost_price * COALESCE(g.sold, 0)) AS total_cost
+        FROM "Product" p LEFT JOIN grouped g ON g."productId" = p.id
+      ), calculated AS (
+        SELECT *, total_revenue - total_cost AS total_profit,
+          CASE WHEN total_revenue > 0 THEN (total_revenue - total_cost) / total_revenue * 100 ELSE 0 END AS margin_percent FROM report
+      ), page_rows AS (
+        SELECT * FROM calculated ORDER BY total_profit DESC, id ASC LIMIT ${limit} OFFSET ${skip}
+      ) SELECT (SELECT COUNT(*)::double precision FROM calculated) AS total,
+        COALESCE((SELECT json_agg(page_rows) FROM page_rows), '[]'::json) AS rows
+    `;
+    res.setHeader('X-Total-Count', String(result.total));
+    res.setHeader('X-Page', String(page));
+    res.setHeader('X-Limit', String(limit));
+    res.json(result.rows);
   } catch (error) {
     console.error('Get profit by product error:', error);
     res.json([]);
@@ -490,12 +432,15 @@ export const getExpenses = async (req: RequestWithUser, res: Response): Promise<
       if (endDate) where.expense_date.lte = new Date(endDate as string);
     }
     
+    const { page, limit, skip } = parsePagination(req.query.page, req.query.limit, 50, 200);
     const expenses = await prisma.expense.findMany({
-      where,
-      orderBy: { expense_date: 'desc' }
+      where, take: limit, skip,
+      orderBy: [{ expense_date: 'desc' }, { id: 'desc' }]
     });
+    const aggregate = await prisma.expense.aggregate({ where, _sum: { amount: true }, _count: true });
     
     const totalByCategory = await prisma.expense.groupBy({
+      where,
       by: ['category'],
       _sum: {
         amount: true
@@ -503,9 +448,9 @@ export const getExpenses = async (req: RequestWithUser, res: Response): Promise<
     });
     
     res.json({
-      expenses,
+      expenses, page, limit, total: aggregate._count,
       summary: {
-        total: expenses.reduce((sum, e) => sum + e.amount, 0),
+        total: aggregate._sum.amount || 0,
         by_category: totalByCategory
       }
     });
@@ -552,14 +497,14 @@ export const getOrdersByPeriod = async (req: RequestWithUser, res: Response): Pr
       if (endDate) where.saleDate.lte = new Date(endDate as string);
     }
     
+    const { page, limit, skip } = parsePagination(req.query.page, req.query.limit, 50, 200);
+    const totals = await paidOrderTotals(prisma, where.saleDate?.gte, false, where.saleDate?.lte);
     const orders = await prisma.saleDocument.findMany({
-      where,
+      where, take: limit, skip,
       include: {
-        items: true,
-        sales: true,
-        client: true
+        items: true
       },
-      orderBy: { saleDate: 'desc' }
+      orderBy: [{ saleDate: 'desc' }, { id: 'desc' }]
     });
     
     const formattedOrders = orders.map(order => ({
@@ -587,13 +532,9 @@ export const getOrdersByPeriod = async (req: RequestWithUser, res: Response): Pr
     }));
     
     const stats: SalesStats = {
-      totalOrders: orders.length,
-      totalRevenue: orders.reduce((sum, o) => sum + o.total, 0),
-      totalProfit: orders.reduce((sum, o) => 
-        sum + (o.total - o.items.reduce((itemSum, item) => 
-          itemSum + ((item.cost_price || 0) * item.quantity), 0
-        )), 0
-      ),
+      totalOrders: totals.count,
+      totalRevenue: totals.revenue,
+      totalProfit: totals.revenue - totals.cost,
       averageCheck: 0,
       margin: 0
     };
@@ -601,7 +542,7 @@ export const getOrdersByPeriod = async (req: RequestWithUser, res: Response): Pr
     stats.averageCheck = stats.totalOrders > 0 ? stats.totalRevenue / stats.totalOrders : 0;
     stats.margin = stats.totalRevenue > 0 ? (stats.totalProfit / stats.totalRevenue) * 100 : 0;
     
-    res.json({ orders: formattedOrders, stats });
+    res.json({ orders: formattedOrders, stats, page, limit, total: totals.count });
   } catch (error) {
     console.error('Error getting orders by period:', error);
     res.status(500).json({ message: 'Ошибка загрузки заказов' });
@@ -616,6 +557,8 @@ export const deleteAllSales = async (req: RequestWithUser, res: Response): Promi
     }
     
     await prisma.$transaction(async (tx) => {
+      await lockBackupTables(tx);
+      await assertSalesHistoryCanBeCleared(tx);
       const sales = await tx.sale.findMany();
       
       for (const sale of sales) {
@@ -625,11 +568,13 @@ export const deleteAllSales = async (req: RequestWithUser, res: Response): Promi
         });
       }
       
+      await tx.sale.deleteMany();
       await tx.saleDocument.deleteMany();
     });
     
     res.json({ message: 'Вся история продаж очищена, товары возвращены на склад' });
   } catch (error) {
+    if (error instanceof BackupError) { res.status(error.status).json({ message: error.message }); return; }
     console.error('Error deleting all sales:', error);
     res.status(500).json({ message: 'Ошибка очистки истории' });
   }
@@ -661,32 +606,14 @@ export const getSalesStats = async (req: RequestWithUser, res: Response): Promis
         startDate = new Date(now.setHours(0, 0, 0, 0));
     }
     
-    const orders = await prisma.saleDocument.findMany({
-      where: {
-        saleDate: { gte: startDate },
-        documentType: 'order',
-        paymentStatus: 'paid'
-      },
-      include: {
-        items: {
-          include: { product: true }
-        }
-      }
-    });
-    
+    const totals = await paidOrderTotals(prisma, startDate, true);
     const stats = {
-      period,
-      startDate,
-      endDate: new Date(),
-      totalOrders: orders.length,
-      totalRevenue: orders.reduce((sum, o) => sum + o.total, 0),
-      totalProfit: orders.reduce((sum, o) => 
-        sum + (o.total - o.items.reduce((itemSum, item) => 
-          itemSum + ((item.product?.cost_price || 0) * item.quantity), 0
-        )), 0
-      )
+      period, startDate, endDate: new Date(),
+      totalOrders: totals.count,
+      totalRevenue: totals.revenue,
+      totalProfit: totals.revenue - totals.cost
     };
-    
+
     const avgCheck = stats.totalOrders > 0 ? stats.totalRevenue / stats.totalOrders : 0;
     const margin = stats.totalRevenue > 0 ? (stats.totalProfit / stats.totalRevenue) * 100 : 0;
     
@@ -706,42 +633,8 @@ export const getDatabaseDump = async (req: RequestWithUser, res: Response): Prom
     
     console.log('📦 Создание дампа базы данных...');
     
-    const [users, products, categories, categoryFields, productCharacteristics, sales, saleDocuments, saleDocumentItems, expenses, clients] = await Promise.all([
-      prisma.user.findMany(),
-      prisma.product.findMany(),
-      prisma.category.findMany(),
-      prisma.categoryField.findMany(),
-      prisma.productCharacteristic.findMany(),
-      prisma.sale.findMany(),
-      prisma.saleDocument.findMany(),
-      prisma.saleDocumentItem.findMany(),
-      prisma.expense.findMany(),
-      prisma.client.findMany()
-    ]);
+    const dump = await exportDatabaseBackup(prisma);
     
-    const productCategories = await prisma.$queryRaw<any[]>`
-      SELECT "productId", "categoryId" FROM "ProductCategory"
-    `;
-    
-    const dump = {
-      exportedAt: new Date().toISOString(),
-      version: '3.0',
-      data: {
-        users,
-        products,
-        categories,
-        categoryFields,
-        productCharacteristics,
-        sales,
-        saleDocuments,
-        saleDocumentItems,
-        expenses,
-        clients,
-        productCategories
-      }
-    };
-    
-    // Сохраняем на диск (опционально)
     const backupDir = path.join(process.cwd(), 'backups');
     if (!fs.existsSync(backupDir)) {
       fs.mkdirSync(backupDir, { recursive: true });
@@ -763,220 +656,30 @@ export const getDatabaseDump = async (req: RequestWithUser, res: Response): Prom
 
 export const restoreDatabase = async (req: RequestWithUser, res: Response): Promise<void> => {
   try {
-    if (req.user?.role !== 'admin') {
-      res.status(403).json({ message: 'Доступ запрещен. Требуются права администратора' });
-      return;
-    }
-    
+    if (req.user?.role !== 'admin') { res.status(403).json({ message: 'Доступ запрещен. Требуются права администратора' }); return; }
     let dump = req.body;
-    
-    console.log('📥 Получен запрос на восстановление');
-    console.log('  - Версия дампа:', dump?.version);
-    
-    if (!dump.version || dump.version === '1.0') {
-      console.log('⚠️ Обнаружена старая версия дампа, конвертируем...');
-      dump = convertDumpToV3(dump);
+    if (dump?.data && (!dump.version || dump.version === '1.0')) {
+      dump = { ...convertDumpToV3(dump), legacyRuntimePolicy: dump.legacyRuntimePolicy };
     }
-    
-    if (!dump || !dump.data) {
-      res.status(400).json({ message: 'Неверный формат дампа' });
-      return;
-    }
-    
-    if (dump.version !== '3.0') {
-      res.status(400).json({ 
-        message: `Неподдерживаемая версия дампа (${dump.version}). Ожидается версия 3.0.` 
-      });
-      return;
-    }
-    
-    console.log('🔄 Начинаем восстановление БД...');
-    
-    try {
-      await prisma.$transaction(async (tx) => {
-        console.log('🗑️ Очистка базы данных...');
-        
-        // Очищаем в правильном порядке
-        await tx.saleDocumentItem.deleteMany();
-        await tx.sale.deleteMany();
-        await tx.productCharacteristic.deleteMany();
-        await tx.$executeRaw`DELETE FROM "ProductCategory"`;
-        await tx.saleDocument.deleteMany();
-        await tx.expense.deleteMany();
-        await tx.client.deleteMany();
-        await tx.product.deleteMany();
-        await tx.categoryField.deleteMany();
-        await tx.category.deleteMany();
-        await tx.user.deleteMany({
-          where: { role: { not: 'admin' } }
-        });
-        
-        console.log('✅ Очистка завершена');
-        console.log('📥 Восстановление данных...');
-        
-        // Восстанавливаем пользователей
-        for (const user of dump.data.users) {
-          if (user.role === 'admin') {
-            const existingAdmin = await tx.user.findFirst({ where: { role: 'admin' } });
-            if (existingAdmin) continue;
-          }
-          // Never restore revocation state from a dump, even when reusing its ID.
-          await tx.user.create({ data: { ...user, authGeneration: newAuthGeneration() } });
-        }
-        console.log(`  ✅ Восстановлено ${dump.data.users.length} пользователей`);
-        
-        // Восстанавливаем категории
-        for (const cat of dump.data.categories) {
-          await tx.category.create({ data: cat });
-        }
-        console.log(`  ✅ Восстановлено ${dump.data.categories.length} категорий`);
-        
-        // Восстанавливаем поля категорий
-        for (const field of dump.data.categoryFields) {
-          await tx.categoryField.create({ data: field });
-        }
-        console.log(`  ✅ Восстановлено ${dump.data.categoryFields.length} полей категорий`);
-        
-        // Восстанавливаем товары
-        for (const prod of dump.data.products) {
-          await tx.product.create({ data: prod });
-        }
-        console.log(`  ✅ Восстановлено ${dump.data.products.length} товаров`);
-        
-        // Восстанавливаем связи товаров с категориями
-        for (const pc of dump.data.productCategories) {
-          try {
-            await tx.$executeRaw`
-              INSERT INTO "ProductCategory" ("productId", "categoryId")
-              VALUES (${pc.productId}, ${pc.categoryId})
-              ON CONFLICT ("productId", "categoryId") DO NOTHING
-            `;
-          } catch (err) {
-            // Игнорируем ошибки дублирования
-          }
-        }
-        console.log(`  ✅ Восстановлено ${dump.data.productCategories.length} связей`);
-        
-        // Восстанавливаем характеристики (с проверкой дубликатов)
-        let characteristicsRestored = 0;
-        for (const char of dump.data.productCharacteristics) {
-          try {
-            // Проверяем, существует ли уже такая комбинация
-            const existing = await tx.productCharacteristic.findFirst({
-              where: {
-                productId: char.productId,
-                fieldId: char.fieldId
-              }
-            });
-            
-            if (!existing) {
-              await tx.productCharacteristic.create({ 
-                data: {
-                  productId: char.productId,
-                  fieldId: char.fieldId,
-                  value: char.value,
-                  createdAt: char.createdAt || new Date().toISOString(),
-                  updatedAt: char.updatedAt || new Date().toISOString()
-                }
-              });
-              characteristicsRestored++;
-            }
-          } catch (err) {
-            // Пропускаем проблемные записи
-            console.log(`    ⚠️ Пропущена характеристика: продукт ${char.productId}, поле ${char.fieldId}`);
-          }
-        }
-        console.log(`  ✅ Восстановлено ${characteristicsRestored} из ${dump.data.productCharacteristics.length} характеристик`);
-        
-        // Восстанавливаем клиентов
-        for (const client of dump.data.clients) {
-          await tx.client.create({ data: client });
-        }
-        console.log(`  ✅ Восстановлено ${dump.data.clients.length} клиентов`);
-        
-        // Восстанавливаем документы
-        for (const doc of dump.data.saleDocuments) {
-          await tx.saleDocument.create({ data: doc });
-        }
-        console.log(`  ✅ Восстановлено ${dump.data.saleDocuments.length} документов`);
-        
-        // Восстанавливаем элементы документов
-        for (const item of dump.data.saleDocumentItems) {
-          await tx.saleDocumentItem.create({ data: item });
-        }
-        console.log(`  ✅ Восстановлено ${dump.data.saleDocumentItems.length} элементов`);
-        
-        // Восстанавливаем продажи
-        for (const sale of dump.data.sales) {
-          await tx.sale.create({ data: sale });
-        }
-        console.log(`  ✅ Восстановлено ${dump.data.sales.length} продаж`);
-        
-        // Восстанавливаем расходы
-        for (const exp of dump.data.expenses) {
-          await tx.expense.create({ data: exp });
-        }
-        console.log(`  ✅ Восстановлено ${dump.data.expenses.length} расходов`);
-      });
-      
-      console.log('✅ Восстановление базы данных успешно завершено!');
-      res.json({ 
-        success: true, 
-        message: 'База данных успешно восстановлена из дампа',
-        timestamp: new Date().toISOString()
-      });
-      
-    } catch (error) {
-      console.error('❌ Ошибка при восстановлении:', error);
-      throw error;
-    }
-    
+    await restoreDatabaseBackup(prisma, dump);
+    res.json({ success: true, message: 'База данных успешно восстановлена из дампа', timestamp: new Date().toISOString() });
   } catch (error) {
-    console.error('❌ Ошибка восстановления базы данных:', error);
-    res.status(500).json({ 
-      message: 'Ошибка восстановления базы данных'
-    });
+    if (error instanceof BackupError) { res.status(error.status).json({ message: error.message }); return; }
+    console.error('Database restore failed');
+    res.status(500).json({ message: 'Ошибка восстановления базы данных' });
   }
 };
 
 export const clearDatabase = async (req: RequestWithUser, res: Response): Promise<void> => {
   try {
-    if (req.user?.role !== 'admin') {
-      res.status(403).json({ message: 'Доступ запрещен. Требуются права администратора' });
-      return;
-    }
-    
-    console.log('🗑️ Полная очистка базы данных...');
-    
-    await prisma.$transaction(async (tx) => {
-      await tx.saleDocumentItem.deleteMany();
-      await tx.sale.deleteMany();
-      await tx.saleDocument.deleteMany();
-      await tx.productCharacteristic.deleteMany();
-      await tx.expense.deleteMany();
-      await tx.client.deleteMany();
-      
-      try {
-        await tx.$executeRaw`TRUNCATE TABLE "ProductCategory" RESTART IDENTITY CASCADE;`;
-      } catch (error) {
-        console.log('ProductCategory table may not exist, skipping...');
-      }
-      
-      await tx.product.deleteMany();
-      await tx.categoryField.deleteMany();
-      await tx.category.deleteMany();
-      
-      await tx.user.deleteMany({
-        where: {
-          role: { not: 'admin' }
-        }
-      });
-    });
-    
-    console.log('✅ База данных полностью очищена');
+    if (req.user?.role !== 'admin') { res.status(403).json({ message: 'Доступ запрещен. Требуются права администратора' }); return; }
+    await prisma.$transaction(async tx => {
+      await lockBackupTables(tx);
+      await clearBackupTables(tx);
+    }, { timeout: 120_000 });
     res.json({ message: 'База данных полностью очищена' });
   } catch (error) {
-    console.error('Error clearing database:', error);
+    console.error('Database clear failed');
     res.status(500).json({ message: 'Ошибка очистки базы данных' });
   }
 };

@@ -38,7 +38,7 @@ const body = { firstName: 'Client', phone: '123', discountPercent: 10, name: 'Pr
   cost_price: 10, retail_price: 20, items: [{ productId: 1, quantity: 1 }],
   externalOrderId: 'f27-order', currency: 'RUB', paymentId: 'payment', paidAmountMinor: 2000,
   client: { firstName: 'Client', phone: '123', email: 'client@example.test' },
-  version: '3.0', data: {} };
+  version: '4.0', data: Object.fromEntries(['users', 'categories', 'categoryFields', 'products', 'productCategories', 'productCharacteristics', 'clients', 'saleDocuments', 'saleDocumentItems', 'sales', 'expenses', 'productImages', 'priceHistory', 'inventoryReservations', 'inventoryReservationItems', 'crmStatusOutboxEvents'].map(key => [key, []])) };
 
 async function invoke(handler: Function, override: any = {}) {
   const response = { statusCode: 200, body: undefined as any,

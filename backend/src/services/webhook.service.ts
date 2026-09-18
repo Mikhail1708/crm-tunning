@@ -1,5 +1,6 @@
 import axios from 'axios';
 import crypto from 'crypto';
+import { webhookConfiguration } from '../config/webhook';
 
 export type OrderStatusWebhookPayload = {
   eventId: string;
@@ -25,10 +26,7 @@ const canonicalStringify = (obj: Record<string, unknown>): string => {
 export async function deliverOrderStatusWebhook(
   payload: OrderStatusWebhookPayload,
 ): Promise<void> {
-  const webhookUrl = process.env.SITE_WEBHOOK_URL || '';
-  const webhookSecret = process.env.WEBHOOK_SECRET || '';
-  if (!webhookUrl) throw new Error('SITE_WEBHOOK_URL is not configured');
-  if (!webhookSecret) throw new Error('WEBHOOK_SECRET is not configured');
+  const { url: webhookUrl, secret: webhookSecret } = webhookConfiguration();
 
   const payloadString = canonicalStringify(payload);
   const signature = crypto

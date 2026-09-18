@@ -14,6 +14,7 @@ import {
   clearDatabase
 } from '../controllers/reports.controller';
 import { authMiddleware, adminMiddleware } from '../middleware/auth.middleware';
+import { getReportAnalytics } from '../controllers/reportAnalytics.controller';
 
 const router = Router();
 
@@ -22,6 +23,7 @@ router.use(authMiddleware as any);
 
 // Публичные отчеты (для всех авторизованных)
 router.get('/summary', getSummary as any);
+router.get('/analytics', getReportAnalytics as any);
 router.get('/profit-chart', getProfitChart as any);
 router.get('/profit-by-product', getProfitByProduct as any);
 router.get('/expenses', getExpenses as any);

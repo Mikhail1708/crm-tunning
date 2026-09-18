@@ -1,5 +1,7 @@
 // backend/src/controllers/products.controller.ts
 import { Response } from 'express';
+import { parsePagination } from '../utils/pagination';
+import { productListFilter, productListOrder } from '../services/productList.service';
 import { PrismaClient, Prisma } from '@prisma/client';
 import { RequestWithUser, CreateProductDTO, UpdateProductDTO } from '../types';
 import { RequestWithProcessedImage } from '../middleware/upload.middleware';
@@ -90,7 +92,13 @@ const formatProduct = (product: any): FormattedProduct => {
 
 export const getProducts = async (req: RequestWithUser, res: Response): Promise<void> => {
   try {
+    const { limit, skip } = parsePagination(req.query.page, req.query.limit, 50, 200);
+    const where = productListFilter(req.query);
+    const ids = await prisma.$queryRaw<Array<{ id: number }>>`SELECT p.id FROM "Product" p
+      WHERE ${where} ORDER BY ${productListOrder(req.query)} LIMIT ${limit} OFFSET ${skip}`;
     const products = await prisma.product.findMany({
+      where: { id: { in: ids.map(row => row.id) } },
+      take: limit,
       include: {
         categories: {
           include: {
@@ -110,11 +118,29 @@ export const getProducts = async (req: RequestWithUser, res: Response): Promise<
       orderBy: { createdAt: 'desc' }
     });
     
-    const formattedProducts = products.map(formatProduct);
+    const byId = new Map(products.map(product => [product.id, product]));
+    const formattedProducts = ids.flatMap(({ id }) => byId.has(id) ? [formatProduct(byId.get(id))] : []);
+    const [count] = await prisma.$queryRaw<Array<{ total: bigint }>>`SELECT count(*) AS total FROM "Product" p WHERE ${where}`;
+    res.setHeader('X-Total-Count', String(count.total));
     res.json(formattedProducts);
   } catch (error) {
     console.error('Error getting products:', error);
     res.status(500).json({ message: 'Ошибка загрузки товаров' });
+  }
+};
+
+export const getProductsSummary = async (req: RequestWithUser, res: Response): Promise<void> => {
+  try {
+    const [summary] = await prisma.$queryRaw<Array<{ total: bigint; totalStock: bigint; totalValue: number; lowStock: bigint }>>`
+      SELECT count(*) AS total, COALESCE(sum(p.stock), 0) AS "totalStock",
+        COALESCE(sum(p.stock::double precision * p.cost_price), 0) AS "totalValue",
+        count(*) FILTER (WHERE p.stock <= p.min_stock) AS "lowStock"
+      FROM "Product" p WHERE ${productListFilter(req.query)}`;
+    res.json({ total: Number(summary.total), totalStock: Number(summary.totalStock),
+      totalValue: Number(summary.totalValue), lowStock: Number(summary.lowStock) });
+  } catch (error) {
+    console.error('Error getting products summary:', error);
+    res.status(500).json({ message: 'Ошибка загрузки статистики товаров' });
   }
 };
 
@@ -416,7 +442,10 @@ export const deleteProduct = async (req: RequestWithUser, res: Response): Promis
 
 export const getLowStockProducts = async (req: RequestWithUser, res: Response): Promise<void> => {
   try {
+    const { limit, skip } = parsePagination(req.query.page, req.query.limit, 10, 100);
     const products = await prisma.product.findMany({
+      take: limit,
+      skip,
       where: {
         stock: {
           lte: prisma.product.fields.min_stock
@@ -429,7 +458,7 @@ export const getLowStockProducts = async (req: RequestWithUser, res: Response): 
           }
         }
       },
-      orderBy: { stock: 'asc' }
+      orderBy: [{ stock: 'asc' }, { id: 'asc' }]
     });
     
     const formattedProducts = products.map((product: any) => ({
@@ -445,6 +474,7 @@ export const getLowStockProducts = async (req: RequestWithUser, res: Response): 
       costBreakdown: product.costBreakdown || []
     }));
     
+    res.setHeader('X-Total-Count', String(await prisma.product.count({ where: { stock: { lte: prisma.product.fields.min_stock } } })));
     res.json(formattedProducts);
   } catch (error) {
     console.error('Error getting low stock products:', error);
@@ -462,9 +492,12 @@ export const getPriceHistory = async (req: RequestWithUser, res: Response): Prom
       return;
     }
     
+    const { limit, skip } = parsePagination(req.query.page, req.query.limit, 50, 100);
     const history = await prisma.priceHistory.findMany({
+      take: limit,
+      skip,
       where: { productId },
-      orderBy: { changedAt: 'desc' }
+      orderBy: [{ changedAt: 'desc' }, { id: 'desc' }]
     });
     
     const userIds = [...new Set(history.map(h => h.changedBy))];
@@ -488,6 +521,7 @@ export const getPriceHistory = async (req: RequestWithUser, res: Response): Prom
       }
     }));
     
+    res.setHeader('X-Total-Count', String(await prisma.priceHistory.count({ where: { productId } })));
     res.json(formattedHistory);
   } catch (error) {
     console.error('Error getting price history:', error);

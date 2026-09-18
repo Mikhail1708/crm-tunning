@@ -1,6 +1,7 @@
 // backend/src/services/audit.service.ts
 import fs from 'fs';
 import path from 'path';
+import { parsePagination } from '../utils/pagination';
 
 export interface LogEntry {
   id: number;  // оставляем number
@@ -156,9 +157,7 @@ class AuditService {
     }
     
     const total = filtered.length;
-    const page = filters.page || 1;
-    const limit = Math.min(filters.limit || 100, 500);
-    const start = (page - 1) * limit;
+    const { limit, skip: start } = parsePagination(filters.page, filters.limit, 100, 500);
     const logs = filtered.slice(start, start + limit);
     
     return { logs, total };
@@ -219,7 +218,7 @@ class AuditService {
    * Получить последние логи
    */
   getRecent(limit: number = 20): LogEntry[] {
-    return this.logs.slice(0, limit);
+    return this.logs.slice(0, parsePagination(1, limit, 20, 100).limit);
   }
   
   /**

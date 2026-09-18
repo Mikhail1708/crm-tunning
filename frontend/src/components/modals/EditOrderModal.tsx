@@ -1,3 +1,5 @@
+import { useProductPage } from '../../hooks/useProductPage';
+import { ProductPagination } from '../ui/ProductPagination';
 // frontend/src/components/modals/EditOrderModal.tsx
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Modal } from '../ui/Modal';
@@ -55,8 +57,6 @@ export const EditOrderModal: React.FC<EditOrderModalProps> = ({
   const [searchResults, setSearchResults] = useState<Product[]>([]);
   const [searching, setSearching] = useState<boolean>(false);
   const [showProductSearch, setShowProductSearch] = useState<boolean>(false);
-  const [allProducts, setAllProducts] = useState<Product[]>([]);
-  const [loadingProducts, setLoadingProducts] = useState<boolean>(false);
 
   const [clientData, setClientData] = useState({
     name: '',
@@ -67,42 +67,11 @@ export const EditOrderModal: React.FC<EditOrderModalProps> = ({
   });
 
   // Загрузка всех товаров при открытии модалки поиска
-  useEffect(() => {
-    if (isOpen && showProductSearch && allProducts.length === 0) {
-      loadAllProducts();
-    }
-  }, [isOpen, showProductSearch]);
+  const { products: filteredProducts, total: productTotal, loading: loadingProducts,
+    page: productPage, setPage: setProductPage } = useProductPage({
+      search: searchQuery.trim(), searchScope: 'description',
+    }, isOpen && showProductSearch && !!searchQuery.trim(), false, 20);
 
-  const loadAllProducts = async () => {
-    setLoadingProducts(true);
-    try {
-      const response = await productsApi.getAll({ limit: 200 });
-      setAllProducts(response.data || []);
-    } catch (error) {
-      console.error('Error loading products:', error);
-      toast.error('Ошибка загрузки товаров');
-    } finally {
-      setLoadingProducts(false);
-    }
-  };
-
-  // Фильтрация товаров на фронтенде
-  const filteredProducts = useMemo(() => {
-    if (!searchQuery.trim()) {
-      return [];
-    }
-    
-    const query = searchQuery.toLowerCase().trim();
-    return allProducts.filter(product => {
-      return (
-        product.name.toLowerCase().includes(query) ||
-        (product.article && product.article.toLowerCase().includes(query)) ||
-        (product.description && product.description.toLowerCase().includes(query))
-      );
-    }).slice(0, 20);
-  }, [allProducts, searchQuery]);
-
-  // Инициализация корзины из заказа
   useEffect(() => {
     if (order && isOpen) {
       const initialCart: CartItem[] = (order.items || []).map(item => ({
@@ -626,6 +595,7 @@ export const EditOrderModal: React.FC<EditOrderModalProps> = ({
             />
           </div>
           
+          <ProductPagination page={productPage} total={productTotal} limit={20} loading={loadingProducts} onPage={setProductPage} />
           {loadingProducts && (
             <div className="text-center py-8">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600 mx-auto"></div>

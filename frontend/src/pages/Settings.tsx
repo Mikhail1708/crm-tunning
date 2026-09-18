@@ -90,21 +90,10 @@ const importDatabaseDump = async (event: React.ChangeEvent<HTMLInputElement>): P
       throw new Error('Неверный формат файла дампа');
     }
     
-    // Проверяем версию дампа
-    if (dumpData.version !== '3.0') {
-      const confirmRestore = confirm(
-        `ВНИМАНИЕ! Файл дампа версии ${dumpData.version || 'неизвестна'}, а система ожидает версию 3.0.\n\n` +
-        `Восстановление из старой версии может работать некорректно.\n\n` +
-        `Рекомендуется создать новый дамп текущей базы данных.\n\n` +
-        `Продолжить восстановление?`
-      );
-      if (!confirmRestore) {
-        setLoadingRestore(false);
-        if (fileInputRef.current) {
-          fileInputRef.current.value = '';
-        }
-        return;
-      }
+    if (dumpData.version !== '4.0') {
+      if (!['3.0', '1.0', undefined].includes(dumpData.version)) throw new Error('Неподдерживаемая версия дампа');
+      if (!confirm('Старый дамп не содержит резервов, status outbox, изображений и истории цен. Восстановление разрешено только если эти таблицы сейчас пусты. Продолжить с этим ограничением?')) return;
+      dumpData.legacyRuntimePolicy = 'require-empty';
     }
     
     // Подтверждение восстановления
@@ -118,7 +107,7 @@ const importDatabaseDump = async (event: React.ChangeEvent<HTMLInputElement>): P
     }
   } catch (error) {
     console.error('Error restoring database:', error);
-    toast.error('Ошибка восстановления базы данных');
+    toast.error((error as any)?.response?.data?.message || 'Ошибка восстановления базы данных');
   } finally {
     setLoadingRestore(false);
     if (fileInputRef.current) {

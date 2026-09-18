@@ -1,3 +1,5 @@
+import { useProductPage } from '../hooks/useProductPage';
+import { ProductPagination } from '../components/ui/ProductPagination';
 // frontend/src/pages/Products.tsx
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
@@ -440,9 +442,7 @@ StatsCards.displayName = 'StatsCards';
 export const Products: React.FC = () => {
   const navigate = useNavigate(); // 👈 ДОБАВЛЕНО
   const [searchParams, setSearchParams] = useSearchParams();
-  const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
   const [modalOpen, setModalOpen] = useState<boolean>(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [selectedCategoryFields, setSelectedCategoryFields] = useState<CategoryField[]>([]);
@@ -493,6 +493,13 @@ export const Products: React.FC = () => {
   }, [categories, filters.categoryIds]);
 
   // Сохранение фильтров в URL
+  const { products, total, summary: stats, loading, page, setPage, reload: loadProducts } = useProductPage({
+    search: debouncedSearch, categoryIds: filters.categoryIds.join(','), priceMin: filters.priceMin,
+    priceMax: filters.priceMax, stockStatus: filters.stockStatus,
+    characteristics: JSON.stringify(Object.fromEntries(Object.entries(filters.characteristics)
+      .filter(([key]) => availableCharacteristicFields.some(field => String(field.id) === key)))),
+  }, true, true);
+
   const updateUrlParams = useCallback((newFilters: FilterState) => {
     const params: Record<string, string> = {};
     if (newFilters.search) params.search = newFilters.search;
@@ -505,7 +512,6 @@ export const Products: React.FC = () => {
 
   // Загрузка данных
   useEffect(() => {
-    loadProducts();
     loadCategories();
   }, []);
 
@@ -513,19 +519,6 @@ export const Products: React.FC = () => {
   useEffect(() => {
     updateUrlParams(filters);
   }, [filters.search, filters.categoryIds, filters.priceMin, filters.priceMax, filters.stockStatus, updateUrlParams]);
-
-  const loadProducts = useCallback(async (): Promise<void> => {
-    try {
-      setLoading(true);
-      const { data } = await productsApi.getAll();
-      setProducts(data);
-    } catch (error) {
-      console.error('Error loading products:', error);
-      toast.error('Ошибка загрузки товаров');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
 
   const loadCategories = useCallback(async (): Promise<void> => {
     try {
@@ -537,90 +530,8 @@ export const Products: React.FC = () => {
   }, []);
 
   // Фильтрация товаров
-  const filteredProducts = useMemo(() => {
-    let filtered = [...products];
-    
-    // Поиск по тексту
-    if (debouncedSearch) {
-      const searchLower = debouncedSearch.toLowerCase();
-      filtered = filtered.filter(product => {
-        if (product.name?.toLowerCase().includes(searchLower)) return true;
-        if (product.article?.toLowerCase().includes(searchLower)) return true;
-        if (product.categories?.some(cat => cat.name?.toLowerCase().includes(searchLower))) return true;
-        if (product.characteristics) {
-          for (const [, value] of Object.entries(product.characteristics)) {
-            const stringValue = Array.isArray(value) ? value.join(' ') : String(value);
-            if (stringValue.toLowerCase().includes(searchLower)) return true;
-          }
-        }
-        return false;
-      });
-    }
-    
-    // Фильтр по категориям (если выбраны)
-    if (filters.categoryIds.length > 0) {
-      filtered = filtered.filter(product => {
-        const productCategoryIds = product.categories?.map(c => c.id) || product.categoryIds || [];
-        return filters.categoryIds.some(catId => productCategoryIds.includes(catId));
-      });
-    }
-    
-    // Фильтр по цене
-    if (filters.priceMin !== '') {
-      filtered = filtered.filter(product => product.retail_price >= filters.priceMin);
-    }
-    if (filters.priceMax !== '') {
-      filtered = filtered.filter(product => product.retail_price <= filters.priceMax);
-    }
-    
-    // Фильтр по остатку
-    if (filters.stockStatus !== 'all') {
-      filtered = filtered.filter(product => {
-        if (filters.stockStatus === 'low') return product.stock <= (product.min_stock || 5);
-        if (filters.stockStatus === 'out') return product.stock === 0;
-        if (filters.stockStatus === 'in') return product.stock > 0;
-        return true;
-      });
-    }
-    
-    // Фильтр по характеристикам
-    if (Object.keys(filters.characteristics).length > 0) {
-      filtered = filtered.filter(product => {
-        const productChars = product.characteristics || {};
-        for (const [fieldId, filterValue] of Object.entries(filters.characteristics)) {
-          if (!filterValue) continue;
-          
-          const field = availableCharacteristicFields.find(f => f.id.toString() === fieldId);
-          if (!field) continue;
-          
-          const productValue = productChars[field.name];
-          if (!productValue) return false;
-          
-          if (field.fieldType === 'multiselect' && Array.isArray(filterValue)) {
-            const productValues = Array.isArray(productValue) ? productValue : [String(productValue)];
-            const hasMatch = filterValue.some(v => productValues.includes(v));
-            if (!hasMatch) return false;
-          } else if (typeof filterValue === 'string') {
-            const productValueStr = Array.isArray(productValue) ? productValue.join(', ') : String(productValue);
-            if (!productValueStr.toLowerCase().includes(filterValue.toLowerCase())) return false;
-          }
-        }
-        return true;
-      });
-    }
-    
-    return filtered;
-  }, [products, debouncedSearch, filters, availableCharacteristicFields]);
+  const filteredProducts = products;
 
-  // Подсчёт статистики для отфильтрованных товаров
-  const stats: ProductsStats = useMemo(() => ({
-    total: filteredProducts.length,
-    totalStock: filteredProducts.reduce((sum, p) => sum + (p.stock || 0), 0),
-    totalValue: filteredProducts.reduce((sum, p) => sum + ((p.stock || 0) * (p.cost_price || 0)), 0),
-    lowStock: filteredProducts.filter(p => (p.stock || 0) <= (p.min_stock || 0)).length,
-  }), [filteredProducts]);
-
-  // Сброс всех фильтров
   const clearAllFilters = useCallback(() => {
     setFilters({
       search: '',
@@ -802,14 +713,6 @@ export const Products: React.FC = () => {
   }, [navigate]);
 
   const hasActiveFilters = filters.search || filters.categoryIds.length > 0 || filters.priceMin !== '' || filters.priceMax !== '' || filters.stockStatus !== 'all' || Object.keys(filters.characteristics).length > 0;
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-96">
-        <Loader className="animate-spin text-primary-600" size={48} />
-      </div>
-    );
-  }
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -1010,6 +913,8 @@ export const Products: React.FC = () => {
         </CardBody>
       </Card>
 
+      {loading && <p role="status">Загрузка товаров...</p>}
+      <ProductPagination page={page} total={total} loading={loading} onPage={setPage} />
       {/* Products Table */}
       <Card>
         <CardBody className="p-0">

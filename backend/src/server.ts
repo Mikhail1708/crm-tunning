@@ -18,17 +18,16 @@ import reportsRoutes from './routes/reports.routes';
 import publicRoutes from './routes/public.routes';
 import dotenv from 'dotenv';
 import { getJwtSecret } from './config/jwt';
+import { webhookConfiguration } from './config/webhook';
+import { getDashboard } from './controllers/dashboard.controller';
+import { authMiddleware } from './middleware/auth.middleware';
 import path from 'path';
 
 dotenv.config();
 getJwtSecret();
 
 if (process.env.NODE_ENV === 'production') {
-  const missingWebhookConfig = ['SITE_WEBHOOK_URL', 'WEBHOOK_SECRET']
-    .filter(name => !process.env[name]);
-  if (missingWebhookConfig.length > 0) {
-    throw new Error(`Missing CRM status sync configuration: ${missingWebhookConfig.join(', ')}`);
-  }
+  webhookConfiguration();
 }
 
 const app = express();
@@ -160,6 +159,7 @@ app.use('/api/sale-documents', saleDocumentRoutes);
 app.use('/api/clients', clientRoutes);
 app.use('/api/audit', auditRoutes);
 app.use('/api/reports', reportsRoutes);
+app.get('/api/dashboard', authMiddleware as any, getDashboard as any);
 
 // Публичные роуты С RATE LIMIT
 app.use('/api/public', publicLimiter);

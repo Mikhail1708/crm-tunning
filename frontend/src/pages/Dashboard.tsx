@@ -1,12 +1,9 @@
+import { api } from '../api/client';
 // frontend/src/pages/Dashboard.tsx
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { reportsApi } from '../api/reports';
-import { productsApi } from '../api/products';
-import { clientsApi } from '../api/clients';
-import { saleDocumentsApi } from '../api/saleDocuments';
 import { formatPrice, formatNumber, formatDate } from '../utils/formatters';
-import { DashboardStats, Product, SaleDocument, Client } from '../types';
+import { DashboardStats, Product } from '../types';
 import { 
   TrendingUp, 
   ShoppingBag, 
@@ -32,12 +29,6 @@ const getCurrentMonthRange = (): { start: Date; end: Date } => {
   const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
   end.setHours(23, 59, 59, 999);
   return { start, end };
-};
-
-const isDateInCurrentMonth = (dateStr: string): boolean => {
-  const date = new Date(dateStr);
-  const now = new Date();
-  return date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear();
 };
 
 interface TopProduct {
@@ -95,228 +86,31 @@ export const Dashboard: React.FC = () => {
   const [topProducts, setTopProducts] = useState<TopProduct[]>([]);
   const [recentSales, setRecentSales] = useState<RecentSale[]>([]);
   const [recentClients, setRecentClients] = useState<RecentClient[]>([]);
+  const requestVersion = useRef(0);
 
   const loadDashboardData = useCallback(async (force: boolean = false) => {
+    const version = ++requestVersion.current;
     try {
-      setLoading(true);
+      if (!force) setLoading(true);
       
-      const [productsRes, lowStockRes, clientsRes, salesRes] = await Promise.all([
-        productsApi.getAll(),
-        productsApi.getLowStock(),
-        clientsApi.getAll({ limit: 1000, sortBy: 'createdAt', sortOrder: 'desc' }),
-        saleDocumentsApi.getAll()
-      ]);
-    
-      const allProducts = productsRes.data || [];
-      const allSales = salesRes.data || [];
-      const lowStockData = lowStockRes.data || [];
-      
-      // 🔸 NEW: получаем диапазон текущего месяца
-      const { start: monthStart, end: monthEnd } = getCurrentMonthRange();
-      
-      // Фильтруем оплаченные заказы + за текущий месяц
-      const paidSalesInMonth = allSales.filter(sale => {
-        const status = (sale.paymentStatus || '').toLowerCase();
-        const isPaid = status === 'paid' || status === 'оплачен' || status === 'payed' || status === true;
-        if (!isPaid) return false;
-        const saleDate = new Date(sale.saleDate);
-        return saleDate >= monthStart && saleDate <= monthEnd;
-      });
-      
-      // Неоплаченные за текущий месяц (для предупреждения)
-      const unpaidSalesInMonth = allSales.filter(sale => {
-        const status = (sale.paymentStatus || '').toLowerCase();
-        const isPaid = status === 'paid' || status === 'оплачен' || status === 'payed' || status === true;
-        if (isPaid) return false;
-        const saleDate = new Date(sale.saleDate);
-        return saleDate >= monthStart && saleDate <= monthEnd;
-      });
-      
-      // Клиенты (общее количество, без фильтрации по дате)
-      let clients: Client[] = [];
-      let totalClients = 0;
-      if (clientsRes.data) {
-        if (Array.isArray(clientsRes.data)) {
-          clients = clientsRes.data;
-          totalClients = clients.length;
-        } else if (clientsRes.data.data && Array.isArray(clientsRes.data.data)) {
-          clients = clientsRes.data.data;
-          totalClients = clientsRes.data.total || clients.length;
-        } else if (clientsRes.data.clients && Array.isArray(clientsRes.data.clients)) {
-          clients = clientsRes.data.clients;
-          totalClients = clientsRes.data.total || clients.length;
-        } else if (clientsRes.data.items && Array.isArray(clientsRes.data.items)) {
-          clients = clientsRes.data.items;
-          totalClients = clientsRes.data.total || clients.length;
-        } else {
-          clients = Array.isArray(clientsRes.data) ? clientsRes.data : [];
-          totalClients = clients.length;
-        }
-      }
-      
-      // 🔸 NEW: расчет статистики ТОЛЬКО по оплаченным заказам текущего месяца
-      let totalRevenue = 0;
-      let totalCost = 0;
-      
-      paidSalesInMonth.forEach(sale => {
-        const saleTotal = sale.total || 0;
-        totalRevenue += saleTotal;
-        
-        let saleCost = 0;
-        if (sale.items && sale.items.length > 0) {
-          sale.items.forEach(item => {
-            const costPrice = item.cost_price || 0;
-            const quantity = item.quantity || 0;
-            saleCost += costPrice * quantity;
-          });
-        }
-        totalCost += saleCost;
-      });
-      
-      const totalProfit = totalRevenue - totalCost;
-      const margin = totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0;
-      const totalSalesCount = paidSalesInMonth.length;
-      const averageCheck = totalSalesCount > 0 ? totalRevenue / totalSalesCount : 0;
-      
-      const unpaidTotal = unpaidSalesInMonth.reduce((sum, sale) => sum + (sale.total || 0), 0);
-      const totalStock = allProducts.reduce((sum, p) => sum + (p.stock || 0), 0);
-      const lowStockProductsList = lowStockData.length > 0 ? lowStockData : allProducts.filter(p => p.stock <= (p.min_stock || 5));
-      
-      const newSummary: DashboardStats = {
-        totalRevenue,
-        totalProfit,
-        totalCost,
-        margin,
-        totalSales: totalSalesCount,
-        totalProducts: allProducts.length,
-        lowStockCount: lowStockProductsList.length,
-        totalClients: totalClients,
-        totalStock,
-        averageCheck,
-        unpaidSales: unpaidSalesInMonth.length,
-        unpaidTotal
-      };
-      
-      setSummary(newSummary);
-      setLowStockProducts(lowStockProductsList);
+      const { start, end } = getCurrentMonthRange();
+      const { data } = await api.get('/dashboard', { params: { startDate: start.toISOString(), endDate: end.toISOString() } });
+      if (version !== requestVersion.current) return;
+      setSummary(data.summary);
+      setLowStockProducts(data.lowStockProducts);
+      setTopProducts(data.topProducts);
+      setRecentSales(data.recentSales);
+      setRecentClients(data.recentClients);
       setLastUpdate(new Date());
-      
-      // 🔸 NEW: популярные товары (на основе заказов текущего месяца)
-      const productSalesMap = new Map<number, { total_sold: number; total_revenue: number; name: string; article: string; price: number }>();
-      
-      paidSalesInMonth.forEach(sale => {
-        const items = sale.items || [];
-        if (items.length > 0) {
-          items.forEach(item => {
-            const productId = item.productId;
-            const productName = item.productName || item.name;
-            const quantity = item.quantity || 0;
-            const total = item.total || (item.price * quantity);
-            
-            if (!productSalesMap.has(productId)) {
-              productSalesMap.set(productId, {
-                name: productName,
-                article: item.productArticle,
-                total_sold: 0,
-                total_revenue: 0,
-                price: item.price || 0
-              });
-            }
-            const product = productSalesMap.get(productId)!;
-            product.total_sold += quantity;
-            product.total_revenue += total;
-          });
-        }
-      });
-      
-      const formattedTopProducts: TopProduct[] = Array.from(productSalesMap.entries())
-        .filter(([, p]) => p.total_sold > 0)
-        .sort((a, b) => b[1].total_sold - a[1].total_sold)
-        .slice(0, 5)
-        .map(([id, product]) => {
-          const catalogProduct = allProducts.find(p => p.id === id);
-          const profitMargin = catalogProduct?.retail_price && catalogProduct?.cost_price 
-            ? ((catalogProduct.retail_price - catalogProduct.cost_price) / catalogProduct.retail_price * 100)
-            : 0;
-          return {
-            id,
-            name: product.name || 'Без названия',
-            article: catalogProduct?.article || product.article || '—',
-            retail_price: product.price || catalogProduct?.retail_price || 0,
-            total_sold: product.total_sold,
-            total_revenue: product.total_revenue,
-            profit_margin: profitMargin
-          };
-        });
-      setTopProducts(formattedTopProducts);
-      
-      // 🔸 NEW: последние 5 заказов текущего месяца
-      const recentSalesData: RecentSale[] = paidSalesInMonth
-        .sort((a, b) => new Date(b.saleDate).getTime() - new Date(a.saleDate).getTime())
-        .slice(0, 5)
-        .map(sale => {
-          let orderCost = 0;
-          const items = sale.items || [];
-          items.forEach(item => {
-            orderCost += (item.cost_price || 0) * (item.quantity || 0);
-          });
-          const orderProfit = (sale.total || 0) - orderCost;
-          
-          let docType = 'Заказ';
-          if (sale.documentType === 'receipt') docType = 'Чек';
-          else if (sale.documentType === 'invoice') docType = 'Счет';
-          
-          const isPaid = (sale.paymentStatus || '').toLowerCase() === 'paid' || 
-                         (sale.paymentStatus || '').toLowerCase() === 'оплачен' ||
-                         sale.paymentStatus === true;
-          
-          return {
-            id: sale.id,
-            documentNumber: sale.documentNumber,
-            saleDate: sale.saleDate,
-            customerName: sale.customerName || sale.clientName || '-',
-            customerCity: sale.client?.city || sale.customerCity || '-',
-            total: sale.total || 0,
-            profit: orderProfit,
-            documentType: docType,
-            paymentStatus: isPaid ? 'Оплачен' : 'Не оплачен',
-            isPaid: isPaid
-          };
-        });
-      setRecentSales(recentSalesData);
-      
-      // 🔸 NEW: новые клиенты, созданные в текущем месяце
-      const sortedClients = [...clients].sort((a, b) => 
-        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-      );
-      
-      const recentClientsData: RecentClient[] = sortedClients
-        .filter(client => isDateInCurrentMonth(client.createdAt))
-        .slice(0, 5)
-        .map((client: Client) => {
-          const fullName = [client.lastName, client.firstName, client.middleName]
-            .filter(Boolean)
-            .join(' ')
-            .trim();
-          
-          return {
-            id: client.id,
-            name: fullName || client.firstName || client.name || 'Без имени',
-            phone: client.phone,
-            city: client.city,
-            createdAt: client.createdAt,
-            totalSpent: client.totalSpent || 0
-          };
-        });
-      
-      setRecentClients(recentClientsData);
-      
     } catch (error) {
+      if (version !== requestVersion.current) return;
       console.error('❌ Error loading dashboard:', error);
       toast.error('Ошибка загрузки данных: ' + ((error as { response?: { data?: { error?: string } } }).response?.data?.error || (error as Error).message));
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (version === requestVersion.current) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
   }, []);
 
@@ -327,7 +121,7 @@ export const Dashboard: React.FC = () => {
       loadDashboardData(true);
     }, 30000);
     
-    return () => clearInterval(interval);
+    return () => { clearInterval(interval); requestVersion.current++; };
   }, [loadDashboardData]);
 
   const handleRefresh = () => {
@@ -466,7 +260,7 @@ export const Dashboard: React.FC = () => {
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <AlertCircle className="text-yellow-500" size={20} />
-                <h2 className="text-lg font-semibold text-gray-900">Товары с низким остатком</h2>
+                <h2 className="text-lg font-semibold text-gray-900">Товары с низким остатком (первые 10)</h2>
               </div>
               {summary.lowStockCount > 0 && (
                 <span className="px-2 py-1 text-xs font-medium bg-yellow-100 text-yellow-700 rounded-full">

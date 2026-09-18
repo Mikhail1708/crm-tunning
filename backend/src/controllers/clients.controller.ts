@@ -3,6 +3,7 @@ import { Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { RequestWithUser, CreateClientDTO, UpdateClientDiscountDTO } from '../types';
 import auditService from '../services/audit.service';
+import { parsePagination } from '../utils/pagination';
 
 const prisma = new PrismaClient();
 
@@ -22,6 +23,10 @@ export const getAllClients = async (req: RequestWithUser, res: Response): Promis
   try {
     const { search, sortBy = 'createdAt', sortOrder = 'desc', page = '1', limit = '20' } = req.query as GetClientsQuery;
     
+    const pagination = parsePagination(page, limit, 20, 1000);
+    const allowedSortFields = ['createdAt', 'updatedAt', 'firstName', 'lastName', 'totalOrders', 'totalSpent', 'phone', 'city', 'discountPercent', 'id'];
+    const sortField = allowedSortFields.includes(sortBy) ? sortBy : 'createdAt';
+    const direction: 'asc' | 'desc' = sortOrder === 'asc' ? 'asc' : 'desc';
     let where: any = {};
     
     if (search) {
@@ -41,9 +46,9 @@ export const getAllClients = async (req: RequestWithUser, res: Response): Promis
     
     const clients = await prisma.client.findMany({
       where,
-      orderBy: { [sortBy]: sortOrder },
-      skip: (parseInt(page) - 1) * parseInt(limit),
-      take: parseInt(limit),
+      orderBy: [{ [sortField]: direction }, ...(sortField === 'id' ? [] : [{ id: direction }])],
+      skip: pagination.skip,
+      take: pagination.limit,
       include: {
         _count: { select: { orders: true } }
       }
@@ -54,8 +59,8 @@ export const getAllClients = async (req: RequestWithUser, res: Response): Promis
     res.json({
       clients,
       total,
-      page: parseInt(page),
-      limit: parseInt(limit)
+      page: pagination.page,
+      limit: pagination.limit
     });
   } catch (error) {
     console.error('Error in getAllClients:', error);

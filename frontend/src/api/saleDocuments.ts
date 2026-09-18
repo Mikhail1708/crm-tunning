@@ -60,12 +60,13 @@ export interface UpdateFullOrderDto {
 export const saleDocumentsApi = {
   // Получить все документы
   getAll: (params?: any) => api.get('/sale-documents', { params }),
+  getSummary: (params?: any) => api.get('/sale-documents/summary', { params }),
   
   // Получить документ по ID
   getById: (id: number) => api.get(`/sale-documents/${id}`),
   
   // Получить заказы по клиенту
-  getByClientId: (clientId: number) => api.get(`/sale-documents/client/${clientId}`),
+  getByClientId: (clientId: number, params?: any) => api.get(`/sale-documents/client/${clientId}`, { params }),
   
   // Создать новый документ
   create: (data: any) => api.post('/sale-documents', data),

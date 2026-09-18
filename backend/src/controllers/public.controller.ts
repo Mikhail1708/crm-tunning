@@ -2,6 +2,7 @@
 import { Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { productAvailability } from '../domain/productAvailability';
+import { parsePagination } from '../utils/pagination';
 import {
   absolutePublicUrl,
   buildProductImageHttpResponse,
@@ -20,9 +21,7 @@ export const getPublicProducts = async (req: Request, res: Response): Promise<vo
   try {
     const { category, carModel, search, page = '1', limit = '12' } = req.query;
     
-    const pageNum = parseInt(page as string) || 1;
-    const limitNum = parseInt(limit as string) || 12;
-    const skip = (pageNum - 1) * limitNum;
+    const { page: pageNum, limit: limitNum, skip } = parsePagination(page, limit, 12, 100);
 
     // Строим фильтры
     // Product has no separate publication flag. Zero free stock does not unpublish it.
@@ -67,7 +66,7 @@ export const getPublicProducts = async (req: Request, res: Response): Promise<vo
             },
           },
         },
-        orderBy: { createdAt: 'desc' },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
         skip,
         take: limitNum,
       }),

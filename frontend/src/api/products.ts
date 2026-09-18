@@ -19,6 +19,14 @@ export type UpdateProductData = Partial<CreateProductData>;
 export interface GetProductsParams {
   search?: string;
   categoryId?: number;
+  categoryIds?: string;
+  priceMin?: number | '';
+  priceMax?: number | '';
+  stockStatus?: string;
+  inStockOnly?: boolean;
+  characteristics?: string;
+  characteristicMode?: 'joined';
+  searchScope?: 'basic' | 'description';
   page?: number;
   limit?: number;
   sortBy?: string;
@@ -26,8 +34,11 @@ export interface GetProductsParams {
 }
 
 export const productsApi = {
-  getAll: (params?: GetProductsParams): Promise<ApiResponse<Product[]>> =>
-    api.get('/products', { params }),
+  getAll: (params?: GetProductsParams) =>
+    api.get<Product[]>('/products', { params }),
+
+  getSummary: (params?: GetProductsParams) =>
+    api.get<{ total: number; totalStock: number; totalValue: number; lowStock: number }>('/products/summary', { params }),
   
   getById: (id: number): Promise<ApiResponse<Product>> =>
     api.get(`/products/${id}`),
@@ -41,11 +52,11 @@ export const productsApi = {
   delete: (id: number): Promise<ApiResponse<{ message: string }>> =>
     api.delete(`/products/${id}`),
   
-  getLowStock: (): Promise<ApiResponse<Product[]>> =>
-    api.get('/products/low-stock'),
+  getLowStock: (params?: { page?: number; limit?: number }) =>
+    api.get<Product[]>('/products/low-stock', { params }),
   
-  getPriceHistory: (id: number): Promise<ApiResponse<PriceHistoryEntry[]>> =>
-    api.get(`/products/${id}/price-history`),
+  getPriceHistory: (id: number, page = 1, limit = 10) =>
+    api.get<PriceHistoryEntry[]>(`/products/${id}/price-history`, { params: { page, limit } }),
   
   // frontend/src/api/products.ts
   updatePrice: (id: number, newPrice: number, reason?: string): Promise<ApiResponse<Product>> =>

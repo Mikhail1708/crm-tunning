@@ -431,15 +431,38 @@ const ProductGallery: React.FC<{
 const PriceHistoryModal: React.FC<{
   isOpen: boolean;
   onClose: () => void;
-  history: PriceHistoryEntry[];
-}> = ({ isOpen, onClose, history }) => {
-  const [showAll, setShowAll] = useState(false);
-  const displayHistory = showAll ? history : history.slice(0, 10);
+  productId: number;
+}> = ({ isOpen, onClose, productId }) => {
+  const [history, setHistory] = useState<PriceHistoryEntry[]>([]);
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => { setPage(1); }, [productId, isOpen]);
+  useEffect(() => {
+    if (!isOpen) return;
+    let active = true;
+    setLoading(true);
+    setFailed(false);
+    productsApi.getPriceHistory(productId, page, 10).then(response => {
+      if (!active) return;
+      const count = Number(response.headers['x-total-count']);
+      if (!Number.isSafeInteger(count) || count < 0) throw new Error('Missing history count');
+      setHistory(response.data);
+      setTotal(count);
+    }).catch(() => {
+      if (active) setFailed(true);
+    }).finally(() => {
+      if (active) setLoading(false);
+    });
+    return () => { active = false; };
+  }, [productId, page, isOpen]);
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="История изменения цен" size="lg">
       <div className="space-y-4">
-        {history.length === 0 ? (
+        {loading ? <p>Загрузка истории...</p> : failed ? <p role="alert">Не удалось загрузить историю цен</p> : history.length === 0 ? (
           <div className="text-center py-8 text-gray-500 dark:text-gray-400">
             <History size={48} className="mx-auto mb-2 opacity-50" />
             <p>История цен пуста</p>
@@ -448,7 +471,7 @@ const PriceHistoryModal: React.FC<{
         ) : (
           <>
             <div className="space-y-2 max-h-96 overflow-y-auto">
-              {displayHistory.map(entry => (
+              {history.map(entry => (
                 <div
                   key={entry.id}
                   className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
@@ -491,18 +514,13 @@ const PriceHistoryModal: React.FC<{
               ))}
             </div>
             
-            {history.length > 10 && !showAll && (
-              <Button
-                type="button"
-                variant="outline"
-                fullWidth
-                onClick={() => setShowAll(true)}
-              >
-                Показать все ({history.length} записей)
-              </Button>
-            )}
           </>
         )}
+        <div className="flex items-center justify-between gap-2">
+          <Button type="button" variant="outline" disabled={loading || page <= 1} onClick={() => setPage(value => value - 1)}>Назад</Button>
+          <span>Страница {page} из {Math.max(1, Math.ceil(total / 10))} · Всего: {total}</span>
+          <Button type="button" variant="outline" disabled={loading || failed || page * 10 >= total} onClick={() => setPage(value => value + 1)}>Далее</Button>
+        </div>
       </div>
     </Modal>
   );
@@ -598,7 +616,6 @@ export const ProductDetails: React.FC = () => {
   const [product, setProduct] = useState<Product | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
-  const [priceHistory, setPriceHistory] = useState<PriceHistoryEntry[]>([]);
   const [images, setImages] = useState<ProductImage[]>([]);
   const [showPriceHistory, setShowPriceHistory] = useState(false);
   const [showPriceModal, setShowPriceModal] = useState(false);
@@ -626,16 +643,14 @@ export const ProductDetails: React.FC = () => {
     try {
       setLoading(true);
       
-      const [productRes, historyRes, imagesRes, categoriesRes] = await Promise.all([
+      const [productRes, imagesRes, categoriesRes] = await Promise.all([
         productsApi.getById(parseInt(id)),
-        productsApi.getPriceHistory(parseInt(id)),
         productsApi.getImages(parseInt(id)),
         categoriesApi.getAll()
       ]);
       
       const productData = productRes.data;
       setProduct(productData);
-      setPriceHistory(historyRes.data);
       setImages(imagesRes.data);
       setCategories(categoriesRes.data);
       
@@ -1052,7 +1067,7 @@ export const ProductDetails: React.FC = () => {
       <PriceHistoryModal
         isOpen={showPriceHistory}
         onClose={() => setShowPriceHistory(false)}
-        history={priceHistory}
+        productId={product.id}
       />
 
       <UpdatePriceModal

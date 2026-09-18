@@ -1,3 +1,5 @@
+import { useProductPage } from '../../hooks/useProductPage';
+import { ProductPagination } from './ProductPagination';
 // frontend/src/components/ui/ShoppingCartModal.tsx
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { productsApi } from '../../api/products';
@@ -113,7 +115,6 @@ export const ShoppingCartModal: React.FC<ShoppingCartModalProps> = ({
   onSuccess 
 }) => {
   // Состояния для товаров и категорий
-  const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   
@@ -124,6 +125,11 @@ export const ShoppingCartModal: React.FC<ShoppingCartModalProps> = ({
   const [showFilters, setShowFilters] = useState<boolean>(false);
   
   // Корзина и заказ
+  const { products, total: productTotal, loading: productsLoading, page: productPage, setPage: setProductPage } = useProductPage({
+    search: debouncedSearchTerm.trim(), categoryId: selectedCategoryFilter ? Number(selectedCategoryFilter) : undefined,
+    inStockOnly: true,
+  }, isOpen);
+
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
   const [customerName, setCustomerName] = useState<string>('');
   const [customerPhone, setCustomerPhone] = useState<string>('');
@@ -141,7 +147,6 @@ export const ShoppingCartModal: React.FC<ShoppingCartModalProps> = ({
   // Загрузка данных при открытии модалки
   useEffect(() => {
     if (isOpen) {
-      loadProducts();
       loadCategories();
     }
   }, [isOpen]);
@@ -153,15 +158,6 @@ export const ShoppingCartModal: React.FC<ShoppingCartModalProps> = ({
       setPriceError('');
     }
   }, [selectedProduct]);
-
-  const loadProducts = async (): Promise<void> => {
-    try {
-      const { data } = await productsApi.getAll();
-      setProducts(data);
-    } catch (error) {
-      toast.error('Ошибка загрузки товаров');
-    }
-  };
 
   const loadCategories = async (): Promise<void> => {
     try {
@@ -191,39 +187,8 @@ export const ShoppingCartModal: React.FC<ShoppingCartModalProps> = ({
   };
 
   // Фильтрация товаров - оптимизирована с useCallback и useMemo
-  const filterProducts = useCallback((product: Product): boolean => {
-    const searchLower = debouncedSearchTerm.toLowerCase().trim();
-    
-    if (!searchLower) return true;
-    
-    if (product.name?.toLowerCase().includes(searchLower)) return true;
-    if (product.article?.toLowerCase().includes(searchLower)) return true;
-    if (product.productCategory?.name?.toLowerCase().includes(searchLower)) return true;
-    
-    if (product.characteristics) {
-      for (const [_, value] of Object.entries(product.characteristics)) {
-        const stringValue = Array.isArray(value) ? value.join(' ') : String(value);
-        if (stringValue.toLowerCase().includes(searchLower)) return true;
-      }
-    }
-    
-    return false;
-  }, [debouncedSearchTerm]);
+  const filteredProducts = products;
 
-  const filterByCategory = useCallback((product: Product): boolean => {
-    if (!selectedCategoryFilter) return true;
-    return product.categoryId === parseInt(selectedCategoryFilter);
-  }, [selectedCategoryFilter]);
-
-  // Оптимизированный список товаров с useMemo
-  const filteredProducts = useMemo(() => {
-    return products
-      .filter(filterProducts)
-      .filter(filterByCategory)
-      .filter(product => product.stock > 0);
-  }, [products, filterProducts, filterByCategory]);
-
-  // Оптимизированный список популярных товаров (первые 5)
   const popularProducts = useMemo(() => {
     return filteredProducts.slice(0, 5);
   }, [filteredProducts]);
@@ -490,6 +455,7 @@ export const ShoppingCartModal: React.FC<ShoppingCartModalProps> = ({
       </div>
 
       {/* Выбор товара */}
+      <ProductPagination page={productPage} total={productTotal} loading={productsLoading} onPage={setProductPage} />
       <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4">
         <h4 className="font-medium text-gray-900 dark:text-white mb-3">Добавить товар</h4>
         <select
@@ -598,7 +564,7 @@ export const ShoppingCartModal: React.FC<ShoppingCartModalProps> = ({
         )}
       </div>
     </div>
-  ), [searchTerm, handleSearchChange, showFilters, selectedCategoryFilter, categories, selectedProduct, selectedQuantity, quantityError, selectedPrice, priceError, addToCart, popularProducts, filteredProducts.length, products]);
+  ), [searchTerm, handleSearchChange, showFilters, selectedCategoryFilter, categories, selectedProduct, selectedQuantity, quantityError, selectedPrice, priceError, addToCart, popularProducts, filteredProducts.length, products, productPage, productTotal, productsLoading, setProductPage]);
 
   // Рендер корзины и оформления
   const renderCheckout = useMemo(() => (

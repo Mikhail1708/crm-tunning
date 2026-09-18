@@ -1,5 +1,5 @@
 // frontend/src/pages/Sales.tsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { saleDocumentsApi, SaleDocument } from '../api/saleDocuments';
 import { Button } from '../components/ui/Button';
@@ -38,20 +38,35 @@ export const Sales: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<OrderStatus | 'all'>('all');
   const [updatingStatusId, setUpdatingStatusId] = useState<number | null>(null);
 
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [stats, setStats] = useState<SalesStats>({ total: 0, totalRevenue: 0, unpaidCount: 0, unpaidAmount: 0, averageCheck: 0 });
+  const requestVersion = useRef(0);
   useEffect(() => {
-    loadDocuments();
-  }, []);
+    const timer = setTimeout(() => { void loadDocuments(); }, 200);
+    return () => { clearTimeout(timer); requestVersion.current++; };
+  }, [page, searchTerm, statusFilter]);
 
   const loadDocuments = async (): Promise<void> => {
+    const version = ++requestVersion.current;
     try {
       setLoading(true);
-      const { data } = await saleDocumentsApi.getAll();
-      setDocuments(data);
+      const params = { page, limit: 50, search: searchTerm, orderStatus: statusFilter };
+      const [rows, summary] = await Promise.all([saleDocumentsApi.getAll(params), saleDocumentsApi.getSummary(params)]);
+      if (version !== requestVersion.current) return;
+      if (page > 1 && !rows.data.length) {
+        setPage(Math.max(1, Math.ceil(summary.data.count / 50)));
+        return;
+      }
+      setDocuments(rows.data);
+      setTotal(Number(rows.headers['x-total-count'] ?? 0));
+      setStats({ total: summary.data.count, totalRevenue: summary.data.paidTotal, unpaidCount: summary.data.unpaidCount, unpaidAmount: summary.data.unpaidTotal, averageCheck: summary.data.averageCheck });
     } catch (error) {
+      if (version !== requestVersion.current) return;
       console.error('Error loading documents:', error);
       toast.error('Ошибка загрузки заказов');
     } finally {
-      setLoading(false);
+      if (version === requestVersion.current) setLoading(false);
     }
   };
 
@@ -90,6 +105,7 @@ export const Sales: React.FC = () => {
         cancelled: 'Отменён'
       };
       toast.success(`Статус заказа изменен на "${statusLabels[newStatus]}"`);
+      await loadDocuments();
     } catch (error) {
       console.error('Error updating status:', error);
       toast.error('Ошибка изменения статуса');
@@ -105,52 +121,9 @@ export const Sales: React.FC = () => {
     return (doc.orderStatus as OrderStatus) || 'confirmed';
   };
 
-  // Фильтрация документов
-  const filterDocuments = (doc: SaleDocument): boolean => {
-    if (searchTerm.trim()) {
-      const searchLower = searchTerm.toLowerCase().trim();
-      let matches = false;
-      
-      if (doc.documentNumber?.toLowerCase().includes(searchLower)) matches = true;
-      if (doc.customerName?.toLowerCase().includes(searchLower)) matches = true;
-      if (doc.customerPhone?.toLowerCase().includes(searchLower)) matches = true;
-      if (doc.clientName?.toLowerCase().includes(searchLower)) matches = true;
-      
-      if (doc.items?.some(item => 
-        item.productName?.toLowerCase().includes(searchLower) ||
-        item.productArticle?.toLowerCase().includes(searchLower)
-      )) matches = true;
-      
-      if (doc.total?.toString().includes(searchLower)) matches = true;
-      
-      if (!matches) return false;
-    }
-    
-    if (statusFilter !== 'all') {
-      const docStatus = getOrderStatus(doc);
-      if (docStatus !== statusFilter) return false;
-    }
-    
-    return true;
-  };
+  const filteredDocuments = documents;
 
-  const filteredDocuments = documents.filter(filterDocuments);
-
-  // Подсчет статистики
-  const paidDocuments = documents.filter(doc => doc.paymentStatus === 'paid');
-  const unpaidDocuments = documents.filter(doc => doc.paymentStatus === 'unpaid');
-  
-  const stats: SalesStats = {
-    total: documents.length,
-    totalRevenue: paidDocuments.reduce((sum, d) => sum + (d.total || 0), 0),
-    unpaidCount: unpaidDocuments.length,
-    unpaidAmount: unpaidDocuments.reduce((sum, d) => sum + (d.total || 0), 0),
-    averageCheck: paidDocuments.length > 0 
-      ? paidDocuments.reduce((sum, d) => sum + (d.total || 0), 0) / paidDocuments.length 
-      : 0,
-  };
-
-  if (loading) {
+  if (loading && documents.length === 0 && !searchTerm && statusFilter === 'all') {
     return (
       <div className="flex items-center justify-center h-96">
         <Loader className="animate-spin text-primary-600" size={48} />
@@ -255,7 +228,7 @@ export const Sales: React.FC = () => {
               type="text"
               placeholder="Поиск по номеру заказа, покупателю, телефону или товару..."
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={(e) => { setPage(1); setSearchTerm(e.target.value); }}
               className="pl-10"
             />
           </div>
@@ -265,7 +238,7 @@ export const Sales: React.FC = () => {
       {/* Фильтры по статусу заказа */}
       <div className="flex flex-wrap gap-2">
         <button
-          onClick={() => setStatusFilter('all')}
+          onClick={() => { setPage(1); setStatusFilter('all'); }}
           className={`px-3 py-1.5 rounded-full text-sm font-medium transition-all ${
             statusFilter === 'all' 
               ? 'bg-gray-800 text-white dark:bg-gray-200 dark:text-gray-800' 
@@ -275,7 +248,7 @@ export const Sales: React.FC = () => {
           Все заказы
         </button>
         <button
-          onClick={() => setStatusFilter('confirmed')}
+          onClick={() => { setPage(1); setStatusFilter('confirmed'); }}
           className={`px-3 py-1.5 rounded-full text-sm font-medium transition-all flex items-center gap-1 ${
             statusFilter === 'confirmed' 
               ? 'bg-indigo-600 text-white' 
@@ -285,7 +258,7 @@ export const Sales: React.FC = () => {
           Подтверждён
         </button>
         <button
-          onClick={() => setStatusFilter('assembling')}
+          onClick={() => { setPage(1); setStatusFilter('assembling'); }}
           className={`px-3 py-1.5 rounded-full text-sm font-medium transition-all flex items-center gap-1 ${
             statusFilter === 'assembling' 
               ? 'bg-yellow-600 text-white' 
@@ -295,7 +268,7 @@ export const Sales: React.FC = () => {
           Собирается
         </button>
         <button
-          onClick={() => setStatusFilter('shipped')}
+          onClick={() => { setPage(1); setStatusFilter('shipped'); }}
           className={`px-3 py-1.5 rounded-full text-sm font-medium transition-all flex items-center gap-1 ${
             statusFilter === 'shipped' 
               ? 'bg-green-600 text-white' 
@@ -305,7 +278,7 @@ export const Sales: React.FC = () => {
           Отправлен
         </button>
         <button
-          onClick={() => setStatusFilter('cancelled')}
+          onClick={() => { setPage(1); setStatusFilter('cancelled'); }}
           className={`px-3 py-1.5 rounded-full text-sm font-medium transition-all flex items-center gap-1 ${
             statusFilter === 'cancelled'
               ? 'bg-red-600 text-white'
@@ -316,6 +289,11 @@ export const Sales: React.FC = () => {
         </button>
       </div>
 
+      <div className="flex items-center gap-3">
+        <Button disabled={page <= 1 || loading} onClick={() => setPage(page - 1)}>Назад</Button>
+        <span>{page} / {Math.max(1, Math.ceil(total / 50))} · {total}</span>
+        <Button disabled={page * 50 >= total || loading} onClick={() => setPage(page + 1)}>Далее</Button>
+      </div>
       {/* Orders Table */}
       <Card>
         <CardBody className="p-0">

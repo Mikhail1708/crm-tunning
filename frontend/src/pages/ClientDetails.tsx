@@ -1,5 +1,5 @@
 // frontend/src/pages/ClientDetails.tsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { clientsApi } from '../api/clients';
 import { saleDocumentsApi } from '../api/saleDocuments';
@@ -45,6 +45,11 @@ export const ClientDetails: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [client, setClient] = useState<Client | null>(null);
+  const [position, setPosition] = useState({ id, page: 1 });
+  const page = position.id === id ? position.page : 1;
+  const setPage = (page: number) => setPosition({ id, page });
+  const requestVersion = useRef(0);
+  const [summary, setSummary] = useState({ count: 0, paidCount: 0, paidTotal: 0, averageCheck: 0, notPaidCount: 0, notPaidTotal: 0 });
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [showDiscountModal, setShowDiscountModal] = useState<boolean>(false);
@@ -60,25 +65,35 @@ export const ClientDetails: React.FC = () => {
     if (id) {
       loadClientData(parseInt(id));
     }
-  }, [id]);
+    return () => { requestVersion.current++; };
+  }, [id, page]);
 
   const loadClientData = async (clientId: number) => {
+    const version = ++requestVersion.current;
     try {
       setLoading(true);
-      const [clientRes, ordersRes] = await Promise.all([
+      const [clientRes, ordersRes, summaryRes] = await Promise.all([
         clientsApi.getById(clientId),
-        saleDocumentsApi.getByClientId(clientId)
+        saleDocumentsApi.getByClientId(clientId, { page, limit: 20 }),
+        saleDocumentsApi.getSummary({ clientId })
       ]);
+      if (version !== requestVersion.current) return;
+      if (page > 1 && !ordersRes.data.length) {
+        setPage(Math.max(1, Math.ceil(summaryRes.data.count / 20)));
+        return;
+      }
       setClient(clientRes.data);
       setDiscountPercent(clientRes.data.discountPercent || 0);
       setEditingNotes(clientRes.data.notes || '');
       setOrders(ordersRes.data || []);
+      setSummary(summaryRes.data);
     } catch (error) {
+      if (version !== requestVersion.current) return;
       console.error('Error loading client data:', error);
       toast.error('Ошибка загрузки данных клиента');
       navigate('/clients');
     } finally {
-      setLoading(false);
+      if (version === requestVersion.current) setLoading(false);
     }
   };
 
@@ -125,11 +140,10 @@ export const ClientDetails: React.FC = () => {
     return parts.join(' ') || 'Без имени';
   };
 
-  const paidOrders = orders.filter(order => order.paymentStatus === 'paid');
-  const getTotalSpent = (): number => paidOrders.reduce((sum, order) => sum + order.total, 0);
-  const getAverageCheck = (): number => paidOrders.length === 0 ? 0 : getTotalSpent() / paidOrders.length;
-  const getUnpaidCount = (): number => orders.filter(order => order.paymentStatus !== 'paid').length;
-  const getUnpaidTotal = (): number => orders.filter(order => order.paymentStatus !== 'paid').reduce((sum, order) => sum + order.total, 0);
+  const getTotalSpent = (): number => summary.paidTotal;
+  const getAverageCheck = (): number => summary.averageCheck;
+  const getUnpaidCount = (): number => summary.notPaidCount;
+  const getUnpaidTotal = (): number => summary.notPaidTotal;
 
   const handleNewOrder = () => navigate(`/sales/new?clientId=${client?.id}`);
 
@@ -318,7 +332,7 @@ export const ClientDetails: React.FC = () => {
               <p className="text-sm text-gray-500">Всего потрачено</p>
             </div>
             <div className="text-center">
-              <p className="text-2xl font-bold text-gray-900">{paidOrders.length}</p>
+              <p className="text-2xl font-bold text-gray-900">{summary.paidCount}</p>
               <p className="text-sm text-gray-500">Оплаченных заказов</p>
             </div>
             <div className="text-center">
@@ -357,6 +371,11 @@ export const ClientDetails: React.FC = () => {
           </div>
         </CardHeader>
         <CardBody>
+          <div className="flex items-center gap-3 mb-4">
+            <Button disabled={page <= 1} onClick={() => setPage(page - 1)}>Назад</Button>
+            <span>{page} / {Math.max(1, Math.ceil(summary.count / 20))} · {summary.count}</span>
+            <Button disabled={page * 20 >= summary.count} onClick={() => setPage(page + 1)}>Далее</Button>
+          </div>
           {orders.length === 0 ? (
             <div className="text-center py-8">
               <p className="text-gray-500">У клиента пока нет заказов</p>
