@@ -2,6 +2,10 @@ import { Prisma, PrismaClient } from '@prisma/client';
 import {
   crmStatusEventId,
   statusOutboxRetryDelayMs,
+  STATUS_OUTBOX_MAX_ATTEMPTS,
+  STATUS_OUTBOX_RETENTION_MS,
+  STATUS_OUTBOX_CLEANUP_BATCH_SIZE,
+  STATUS_OUTBOX_CLEANUP_INTERVAL_MS,
 } from '../domain/statusOutbox';
 import { deliverOrderStatusWebhook, OrderStatusWebhookPayload } from './webhook.service';
 
@@ -92,6 +96,7 @@ const claimNextStatusEvent = async (): Promise<ClaimedOutboxEvent | null> => {
       SELECT "id", "payload", "attempts"
       FROM "CrmStatusOutboxEvent"
       WHERE "deliveryStatus" = 'pending'
+        AND "attempts" < ${STATUS_OUTBOX_MAX_ATTEMPTS}
         AND "nextAttemptAt" <= CURRENT_TIMESTAMP
       ORDER BY "nextAttemptAt" ASC, "createdAt" ASC
       FOR UPDATE SKIP LOCKED
@@ -101,7 +106,7 @@ const claimNextStatusEvent = async (): Promise<ClaimedOutboxEvent | null> => {
     if (!candidate) return null;
 
     const claimed = await (tx as any).crmStatusOutboxEvent.updateMany({
-      where: { id: candidate.id, deliveryStatus: 'pending' },
+      where: { id: candidate.id, deliveryStatus: 'pending', attempts: { lt: STATUS_OUTBOX_MAX_ATTEMPTS } },
       data: {
         deliveryStatus: 'processing',
         attempts: { increment: 1 },
@@ -114,9 +119,10 @@ const claimNextStatusEvent = async (): Promise<ClaimedOutboxEvent | null> => {
   }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted, timeout: 10_000 });
 };
 
-const markDelivered = async (eventId: string): Promise<void> => {
+const markDelivered = async (event: ClaimedOutboxEvent): Promise<void> => {
   await (lifecyclePrisma as any).crmStatusOutboxEvent.updateMany({
-    where: { id: eventId, deliveryStatus: 'processing' },
+    // Fence an expired worker: it must not finalize a newer delivery claim.
+    where: { id: event.id, deliveryStatus: 'processing', attempts: event.attempts },
     data: {
       deliveryStatus: 'delivered',
       deliveredAt: new Date(),
@@ -129,8 +135,10 @@ const markDelivered = async (eventId: string): Promise<void> => {
 
 const reschedule = async (event: ClaimedOutboxEvent, error: string): Promise<void> => {
   await (lifecyclePrisma as any).crmStatusOutboxEvent.updateMany({
-    where: { id: event.id, deliveryStatus: 'processing' },
+    where: { id: event.id, deliveryStatus: 'processing', attempts: event.attempts },
     data: {
+      // pending + attempts >= MAX is retained but never automatically claimed.
+      // Keep payload/error for diagnosis; do not pretend it was delivered.
       deliveryStatus: 'pending',
       lockedAt: null,
       lastError: error.slice(0, 4_000),
@@ -146,7 +154,7 @@ export const dispatchNextOrderStatusProjection = async (): Promise<boolean> => {
 
   try {
     await deliverOrderStatusWebhook(event.payload as unknown as OrderStatusWebhookPayload);
-    await markDelivered(event.id);
+    await markDelivered(event);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown webhook delivery failure';
     console.error(`CRM status outbox delivery failed for ${event.id}: ${message}`);
@@ -157,13 +165,37 @@ export const dispatchNextOrderStatusProjection = async (): Promise<boolean> => {
 
 let dispatcherTimer: NodeJS.Timeout | null = null;
 let dispatcherRunning = false;
+let nextCleanupAt = 0;
 
-const drainAvailableEvents = async (): Promise<void> => {
+export const cleanupDeliveredStatusEvents = async (): Promise<number> => {
+  const cutoff = new Date(Date.now() - STATUS_OUTBOX_RETENTION_MS);
+  // One atomic bounded batch, no IDs/table materialized in Node. Skip rows held
+  // by another worker and never remove undelivered (including exhausted) events.
+  return lifecyclePrisma.$executeRaw`
+    WITH expired AS (
+      SELECT "id" FROM "CrmStatusOutboxEvent"
+      WHERE "deliveryStatus" = 'delivered' AND "deliveredAt" < ${cutoff}
+        AND "lockedAt" IS NULL
+      ORDER BY "deliveredAt", "id"
+      FOR UPDATE SKIP LOCKED
+      LIMIT ${STATUS_OUTBOX_CLEANUP_BATCH_SIZE}
+    )
+    DELETE FROM "CrmStatusOutboxEvent" event USING expired
+    WHERE event."id" = expired."id"
+  `;
+};
+
+export const drainAvailableEvents = async (): Promise<void> => {
   if (dispatcherRunning) return;
   dispatcherRunning = true;
   try {
     for (let processed = 0; processed < 25; processed += 1) {
       if (!(await dispatchNextOrderStatusProjection())) break;
+    }
+    if (Date.now() >= nextCleanupAt) {
+      nextCleanupAt = Date.now() + STATUS_OUTBOX_CLEANUP_INTERVAL_MS;
+      try { await cleanupDeliveredStatusEvents(); }
+      catch { console.error('CRM status outbox retention cleanup failed'); }
     }
   } finally {
     dispatcherRunning = false;

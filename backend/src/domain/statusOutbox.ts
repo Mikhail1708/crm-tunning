@@ -1,5 +1,10 @@
 export const DEFAULT_STATUS_OUTBOX_RETRY_BASE_MS = 1_000;
 export const DEFAULT_STATUS_OUTBOX_RETRY_MAX_MS = 15 * 60_000;
+// attempts counts durable claims, including claims interrupted before HTTP.
+export const STATUS_OUTBOX_MAX_ATTEMPTS = 10;
+export const STATUS_OUTBOX_RETENTION_MS = 30 * 24 * 60 * 60_000;
+export const STATUS_OUTBOX_CLEANUP_BATCH_SIZE = 100;
+export const STATUS_OUTBOX_CLEANUP_INTERVAL_MS = 60 * 60_000;
 
 const configuredInteger = (value: string | undefined, fallback: number, minimum: number): number => {
   const parsed = Number(value);
@@ -29,4 +34,3 @@ export const statusOutboxRetryDelayMs = (
 
 export const crmStatusEventId = (saleDocumentId: number, statusVersion: number): string =>
   `crm-order-status:${saleDocumentId}:v${statusVersion}`;
-
