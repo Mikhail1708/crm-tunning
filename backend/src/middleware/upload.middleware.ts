@@ -11,7 +11,8 @@ const allowedClientMimeTypes = new Set(['image/jpeg', 'image/png', 'image/webp']
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: MAX_PRODUCT_IMAGE_BYTES, files: 1 },
+  // This endpoint accepts only the image part, never structured text fields.
+  limits: { fileSize: MAX_PRODUCT_IMAGE_BYTES, files: 1, fields: 0 },
   fileFilter: (_req, file, callback) => {
     if (!allowedClientMimeTypes.has(file.mimetype)) {
       callback(new InvalidProductImageError('Разрешены только JPEG, PNG и WebP изображения'));
