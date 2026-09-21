@@ -150,10 +150,10 @@ test('paid status processing and cancellation still enqueue outbox events idempo
   const response: any = { code: 200, status(n: number) { this.code = n; return this; }, json(body: any) { this.body = body; } };
   const request: any = { params: { crmOrderId: '1' }, body: { requestId: 'cancel-1', externalOrderId: 'website-1' } };
   await cancellation.cancelWebsiteOrder(request, response);
-  assert.equal(response.code, 200); assert.equal(response.body.decision, 'accepted');
-  assert.equal(state.events[1].payload.status, 'cancelled');
+  assert.equal(response.code, 200); assert.equal(response.body.decision, 'requested');
+  assert.equal(state.events.length, 1);
   await cancellation.cancelWebsiteOrder(request, response);
-  assert.equal(response.body.idempotent, true); assert.equal(state.events.length, 2);
+  assert.equal(response.body.idempotent, true); assert.equal(state.events.length, 1);
   assert.equal(state.document.paymentStatus, 'paid'); assert.equal(state.document.total, 100);
 });
 

@@ -309,6 +309,7 @@ export const Sales: React.FC = () => {
                   <Th>Сумма</Th>
                   <Th>Статус оплаты</Th>
                   <Th>Статус заказа</Th>
+                  <Th>Отмена</Th>
                   <Th>Действия</Th>
                 </Tr>
               </Thead>
@@ -333,6 +334,13 @@ export const Sales: React.FC = () => {
                       }`}>
                         {doc.paymentStatus === 'paid' ? 'Оплачен' : 'Не оплачен'}
                       </span>
+                    </Td>
+                    <Td>
+                      {doc.cancellationRequestId && !doc.cancellationDecision && (
+                        <span className="px-2 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300">
+                          Запрос отмены
+                        </span>
+                      )}
                     </Td>
                     {/* Статус заказа с возможностью изменения */}
                     <Td onClick={(e) => e.stopPropagation()}>

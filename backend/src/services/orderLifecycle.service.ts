@@ -1,6 +1,5 @@
 import { Prisma, PrismaClient } from '@prisma/client';
 import { canTransitionOrderStatus, isOrderStatus } from '../domain/orderStateMachine';
-import { decideOrderCancellation } from '../domain/orderCancellation';
 import { enqueueOrderStatusProjection } from './statusOutbox.service';
 import { assertPositiveQuantity, lockSaleDocument, lockStockProducts } from './saleStock.service';
 
@@ -28,7 +27,7 @@ type LifecycleDocument = {
 
 export type CancellationDecisionResult = {
   requestId: string;
-  decision: 'accepted' | 'rejected';
+  decision: 'accepted' | 'rejected' | 'requested';
   reasonCode: string;
   reason: string | null;
   crmOrderId: number;
@@ -36,7 +35,7 @@ export type CancellationDecisionResult = {
   orderStatus: string;
   statusVersion: number;
   requestedAt: Date;
-  decidedAt: Date;
+  decidedAt: Date | null;
   idempotent: boolean;
 };
 
@@ -128,7 +127,13 @@ export const updateAuthoritativeOrderStatus = async (
 
     const updated = await (tx.saleDocument as any).update({
       where: { id: saleDocumentId },
-      data: { orderStatus: nextStatus, statusVersion: { increment: 1 } },
+      data: {
+        orderStatus: nextStatus,
+        statusVersion: { increment: 1 },
+        ...(nextStatus === 'cancelled' && current.cancellationRequestId
+          ? { cancellationDecision: 'accepted', cancellationDecidedAt: new Date(), cancellationReasonCode: 'MANAGER_ACCEPTED' }
+          : {}),
+      },
       select: lifecycleSelect,
     }) as LifecycleDocument;
     if (updated.source === 'website') {
@@ -140,7 +145,7 @@ export const updateAuthoritativeOrderStatus = async (
 
 const storedCancellationResult = (document: LifecycleDocument): CancellationDecisionResult => ({
   requestId: document.cancellationRequestId!,
-  decision: document.cancellationDecision as 'accepted' | 'rejected',
+  decision: (document.cancellationDecision || 'requested') as 'accepted' | 'rejected' | 'requested',
   reasonCode: document.cancellationReasonCode!,
   reason: document.cancellationReason,
   crmOrderId: document.id,
@@ -148,7 +153,7 @@ const storedCancellationResult = (document: LifecycleDocument): CancellationDeci
   orderStatus: document.orderStatus,
   statusVersion: document.statusVersion,
   requestedAt: document.cancellationRequestedAt!,
-  decidedAt: document.cancellationDecidedAt!,
+  decidedAt: document.cancellationDecidedAt,
   idempotent: true,
 });
 
@@ -181,30 +186,28 @@ export const decideWebsiteCancellation = async (
     return storedCancellationResult(current);
   }
 
-  const requestedAt = new Date();
-  const { decision, reasonCode } = decideOrderCancellation(current.orderStatus);
-  const accepted = decision === 'accepted';
+  if (current.orderStatus !== 'cancelled' && !canTransitionOrderStatus(current.orderStatus, 'cancelled')) {
+    throw new OrderLifecycleError(409, 'CANCELLATION_NOT_ALLOWED', 'Cancellation is not allowed for the current order status');
+  }
 
-  if (accepted) await restoreCancelledWebsiteStock(tx, current);
+  const requestedAt = new Date();
+  const decision = 'requested' as const;
+  const reasonCode = 'CUSTOMER_CANCELLATION_REQUESTED';
 
   const updated = await (tx.saleDocument as any).update({
     where: { id: current.id },
     data: {
-      orderStatus: accepted ? 'cancelled' : current.orderStatus,
-      statusVersion: accepted && current.orderStatus !== 'cancelled' ? { increment: 1 } : undefined,
+      orderStatus: current.orderStatus,
+      statusVersion: undefined,
       cancellationRequestId: input.requestId,
-      cancellationDecision: decision,
+      cancellationDecision: null,
       cancellationReasonCode: reasonCode,
       cancellationReason: input.reason,
       cancellationRequestedAt: requestedAt,
-      cancellationDecidedAt: requestedAt,
+      cancellationDecidedAt: null,
     },
     select: lifecycleSelect,
   }) as LifecycleDocument;
-
-  if (accepted && current.orderStatus !== 'cancelled') {
-    await enqueueOrderStatusProjection(tx, projectionDocument(updated));
-  }
 
   return {
     ...storedCancellationResult(updated),

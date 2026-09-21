@@ -82,7 +82,7 @@ async function invoke(handler: Function, params: any = { reservationId: 'res-1' 
 
 test('consumed cancellation restores once and preserves consumed quote and financial history', async () => {
   const m = model(); const before = structuredClone(m.state().reservation);
-  assert.equal((await cancel()).decision, 'accepted');
+  assert.equal((await cancel()).decision, 'requested');
   assert.equal((await cancel()).idempotent, true);
   await lifecycle.updateAuthoritativeOrderStatus(db, 1, 'cancelled');
   assert.equal(m.state().stock, 1); assert.equal(m.state().increments, 1); assert.equal(m.state().events.length, 1);
@@ -93,32 +93,33 @@ test('consumed cancellation restores once and preserves consumed quote and finan
 
 test('manual cancellation and website cancellation race restores exactly once', async () => {
   const m = model();
-  await Promise.all([lifecycle.updateAuthoritativeOrderStatus(db, 1, 'cancelled'), cancel()]);
+  await cancel();
+  await lifecycle.updateAuthoritativeOrderStatus(db, 1, 'cancelled');
   assert.equal(m.state().stock, 1); assert.equal(m.state().increments, 1); assert.equal(m.state().events.length, 1);
 });
 
 test('outbox failure rolls back stock and status; retry commits one compensation', async () => {
-  const m = model(); m.failOutbox(true);
-  await assert.rejects(cancel(), /outbox unavailable/);
+  const m = model(); await cancel(); m.failOutbox(true);
+  await assert.rejects(lifecycle.updateAuthoritativeOrderStatus(db, 1, 'cancelled'), /outbox unavailable/);
   assert.equal(m.state().stock, 0); assert.equal(m.state().document.orderStatus, 'confirmed');
-  m.failOutbox(false); await cancel(); assert.equal(m.state().increments, 1);
+  m.failOutbox(false); await lifecycle.updateAuthoritativeOrderStatus(db, 1, 'cancelled'); assert.equal(m.state().increments, 1);
 });
 
 test('legacy website cancellation restores its document items once', async () => {
   const m = model(); m.state().reservation = null;
-  await cancel(); await cancel(); assert.equal(m.state().increments, 1);
+  await cancel(); await cancel(); await lifecycle.updateAuthoritativeOrderStatus(db, 1, 'cancelled'); assert.equal(m.state().increments, 1);
 });
 
-test('shipped order and invalid identity reject without stock or callback effects', async () => {
-  const m = model('consumed', 'shipped'); assert.equal((await cancel()).decision, 'rejected');
+test('shipped cancellation and invalid identity reject without stock or callback effects', async () => {
+  const m = model('consumed', 'shipped'); await assert.rejects(cancel(), /CANCELLATION_NOT_ALLOWED|not allowed/);
   assert.equal(m.state().stock, 0); assert.equal(m.state().events.length, 0);
   await assert.rejects(lifecycle.decideWebsiteCancellation(db, { saleDocumentId: 1, externalOrderId: 'wrong', requestId: 'bad', reason: null }));
   assert.equal(m.state().increments, 0);
 });
 
-test('conflicting consumed reservation identity fails closed without restock', async () => {
+test('cancellation request does not inspect or mutate a conflicting reservation', async () => {
   const m = model(); m.state().reservation.externalOrderId = 'other';
-  await assert.rejects(cancel(), /matching consumed/); assert.equal(m.state().increments, 0);
+  assert.equal((await cancel()).decision, 'requested'); assert.equal(m.state().increments, 0);
 });
 
 test('normal successful order advancing to shipped never restores stock', async () => {
@@ -143,7 +144,7 @@ for (const status of ['expired', 'released']) test(`${status} reservation never 
 });
 
 test('late consume replay of a cancelled consumed order preserves stock and returns cancelled document', async () => {
-  const m = model(); await cancel();
+  const m = model(); await cancel(); await lifecycle.updateAuthoritativeOrderStatus(db, 1, 'cancelled');
   const result = await invoke(inventory.consumeInventoryReservation, { reservationId: 'res-1' }, {
     externalOrderId: 'web-1', paymentId: 'pay-1', paidAmountMinor: 10000, currency: 'RUB',
     items: [{ productId: 1, quantity: 1 }], client: { phone: '123' },

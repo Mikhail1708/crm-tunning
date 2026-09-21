@@ -19,6 +19,10 @@ export interface SaleDocument {
   paymentMethod?: string;
   paymentStatus: string;
   orderStatus?: OrderStatus;
+  cancellationRequestId?: string | null;
+  cancellationDecision?: string | null;
+  cancellationReason?: string | null;
+  cancellationRequestedAt?: string | null;
   saleDate: string;
   items: SaleDocumentItem[];
   clientName?: string;
