@@ -1383,7 +1383,9 @@ export const updateOrderStatus = async (req: RequestWithUser, res: Response): Pr
       return;
     }
 
-    const lifecycle = await updateAuthoritativeOrderStatus(prisma, documentId, orderStatus);
+    // This route is authenticated and manager-only. Internal/automatic flows keep
+    // their existing transition policy; no request field can enable this mode.
+    const lifecycle = await updateAuthoritativeOrderStatus(prisma, documentId, orderStatus, { manual: true });
     const document = await (prisma.saleDocument as any).findUniqueOrThrow({
       where: { id: documentId },
       select: {

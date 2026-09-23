@@ -75,6 +75,81 @@ function model(status = 'consumed', orderStatus = 'confirmed') {
 const cancel = (requestId = 'cancel-1') => lifecycle.decideWebsiteCancellation(db, {
   saleDocumentId: 1, externalOrderId: 'web-1', requestId, reason: null,
 });
+const manual = (status: unknown) => lifecycle.updateAuthoritativeOrderStatus(db, 1, status, { manual: true });
+
+for (const from of ['confirmed', 'assembling', 'shipped', 'cancelled']) {
+  for (const to of ['confirmed', 'assembling', 'shipped', 'cancelled']) {
+    test(`manual ${from} -> ${to}: stock, version and durable projection agree`, async () => {
+      const m = model('consumed', from);
+      m.state().stock = from === 'cancelled' ? 1 : 0;
+      const reservation = structuredClone(m.state().reservation);
+      const updated = await manual(to);
+      assert.equal(updated.orderStatus, to);
+      assert.equal(updated.statusVersion, from === to ? 0 : 1);
+      assert.equal(m.state().stock, to === 'cancelled' ? 1 : 0);
+      assert.equal(m.state().document.paymentStatus, 'paid');
+      assert.deepEqual(m.state().reservation, reservation);
+      assert.equal(m.state().events.length, from === to ? 0 : 1);
+      if (from !== to) {
+        assert.equal(m.state().events[0].payload.status, to);
+        assert.equal(m.state().events[0].payload.version, 1);
+        assert.equal(m.state().events[0].payload.externalOrderId, 'web-1');
+      }
+    });
+  }
+}
+
+test('cancel/reopen/cancel balances stock and concurrent duplicate reopen deducts once', async () => {
+  const m = model();
+  await manual('cancelled');
+  await Promise.all([manual('confirmed'), manual('confirmed')]);
+  assert.equal(m.state().stock, 0);
+  assert.equal(m.state().document.statusVersion, 2);
+  await manual('cancelled');
+  assert.equal(m.state().stock, 1);
+  assert.equal(m.state().document.statusVersion, 3);
+  assert.equal(new Set(m.state().events.map((e: any) => e.id)).size, 3);
+});
+
+test('reopen with insufficient stock or outbox failure rolls back all changes', async () => {
+  const m = model('consumed', 'cancelled');
+  await assert.rejects(manual('confirmed'), (error: any) => error.statusCode === 409 && error.code === 'INSUFFICIENT_STOCK');
+  assert.equal(m.state().document.orderStatus, 'cancelled');
+  assert.equal(m.state().document.statusVersion, 0);
+  assert.equal(m.state().events.length, 0);
+  m.state().stock = 1; m.failOutbox(true);
+  await assert.rejects(manual('shipped'), /outbox unavailable/);
+  assert.equal(m.state().stock, 1);
+  assert.equal(m.state().document.orderStatus, 'cancelled');
+  assert.equal(m.state().document.statusVersion, 0);
+  m.failOutbox(false); await manual('shipped');
+  assert.equal(m.state().stock, 0);
+});
+
+test('legacy website reopen deducts document items but never changes payment/refund', async () => {
+  const m = model('consumed', 'cancelled');
+  m.state().reservation = null; m.state().stock = 1;
+  m.state().document.paymentStatus = 'refunded';
+  await manual('assembling');
+  assert.equal(m.state().stock, 0);
+  assert.equal(m.state().document.paymentStatus, 'refunded');
+});
+
+test('local CRM reopen does not deduct stock a second time or enqueue website event', async () => {
+  const m = model('consumed', 'cancelled'); m.state().document.source = 'crm';
+  await manual('confirmed');
+  assert.equal(m.state().stock, 0);
+  assert.equal(m.state().events.length, 0);
+  assert.equal(m.state().document.statusVersion, 1);
+});
+
+test('manual mode rejects unknown status; automatic transitions remain strict', async () => {
+  const m = model('consumed', 'shipped');
+  await assert.rejects(manual('paid'), (error: any) => error.statusCode === 400);
+  await assert.rejects(lifecycle.updateAuthoritativeOrderStatus(db, 1, 'confirmed'), /Invalid order status transition/);
+  assert.equal(m.state().document.statusVersion, 0);
+  assert.equal(m.state().events.length, 0);
+});
 async function invoke(handler: Function, params: any = { reservationId: 'res-1' }, body: any = {}) {
   const res: any = { code: 200, status(n: number) { this.code = n; return this; }, json(value: any) { this.body = value; } };
   await handler({ params, body }, res); return res;

@@ -17,13 +17,6 @@ export const orderStatusLabels: Record<OrderStatus, string> = {
   cancelled: 'Отменён',
 };
 
-const nextStatuses: Record<OrderStatus, readonly OrderStatus[]> = {
-  confirmed: ['assembling', 'shipped', 'cancelled'],
-  assembling: ['shipped', 'cancelled'],
-  shipped: [],
-  cancelled: [],
-};
-
 const statusClasses: Record<OrderStatus, string> = {
   confirmed: 'border-indigo-300 bg-indigo-50 text-indigo-800 dark:border-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300',
   assembling: 'border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-700 dark:bg-amber-950/50 dark:text-amber-300',
@@ -38,8 +31,7 @@ export const OrderStatusSelect: React.FC<OrderStatusSelectProps> = ({
   size = 'md',
   disabled = false,
 }) => {
-  const choices = [currentStatus, ...nextStatuses[currentStatus]];
-  const isTerminal = nextStatuses[currentStatus].length === 0;
+  const choices = Object.keys(orderStatusLabels) as OrderStatus[];
   const sizeClasses = { sm: 'px-2 py-1 text-xs', md: 'px-3 py-1.5 text-sm', lg: 'px-4 py-2 text-base' };
 
   return (
@@ -47,9 +39,9 @@ export const OrderStatusSelect: React.FC<OrderStatusSelectProps> = ({
       <select
         value={currentStatus}
         onChange={(event) => onStatusChange(orderId, event.target.value as OrderStatus)}
-        disabled={disabled || isTerminal}
+        disabled={disabled}
         className={`${sizeClasses[size]} rounded-lg border-2 font-medium transition-all duration-200 pr-8
-          ${(disabled || isTerminal) ? 'opacity-70 cursor-not-allowed' : 'cursor-pointer hover:shadow-md'}
+          ${disabled ? 'opacity-70 cursor-not-allowed' : 'cursor-pointer hover:shadow-md'}
           ${statusClasses[currentStatus]}`}
       >
         {choices.map((status) => (

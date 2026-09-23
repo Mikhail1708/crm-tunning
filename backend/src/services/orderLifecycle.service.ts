@@ -1,7 +1,7 @@
 import { Prisma, PrismaClient } from '@prisma/client';
 import { canTransitionOrderStatus, isOrderStatus } from '../domain/orderStateMachine';
 import { enqueueOrderStatusProjection } from './statusOutbox.service';
-import { assertPositiveQuantity, lockSaleDocument, lockStockProducts } from './saleStock.service';
+import { assertPositiveQuantity, deductSaleStock, SaleStockError, lockSaleDocument, lockStockProducts } from './saleStock.service';
 
 export class OrderLifecycleError extends Error {
   constructor(public statusCode: number, public code: string, message: string) {
@@ -79,13 +79,14 @@ const projectionDocument = (document: LifecycleDocument) => ({
   statusVersion: document.statusVersion,
 });
 
-// The irreversible transition to cancelled is the existing compensation key.
+// A transition across the cancelled boundary balances website stock once.
 // Keep consumed reservations consumed: a release/consume replay must never
 // allocate or return stock again. Refund processing does not own stock.
 const restoreCancelledWebsiteStock = async (
   tx: Prisma.TransactionClient, current: LifecycleDocument,
+  reopening = false,
 ): Promise<void> => {
-  if (current.source !== 'website' || current.orderStatus === 'cancelled') return;
+  if (current.source !== 'website' || (!reopening && current.orderStatus === 'cancelled')) return;
   const reservation = await tx.inventoryReservation.findUnique({
     where: { saleDocumentId: current.id }, include: { items: true },
   });
@@ -97,6 +98,16 @@ const restoreCancelledWebsiteStock = async (
     where: { documentId: current.id }, select: { productId: true, quantity: true },
   });
   for (const item of items) assertPositiveQuantity(item.quantity);
+  if (reopening) {
+    // Stock returned by cancellation may already have been sold/reserved again.
+    // Reuse the guarded deduction and product lock order; never reopen on credit.
+    try { await deductSaleStock(tx, items); }
+    catch (error) {
+      if (error instanceof SaleStockError) throw new OrderLifecycleError(error.status, error.code, error.message);
+      throw error;
+    }
+    return;
+  }
   await lockStockProducts(tx, items.map(item => item.productId));
   for (const item of [...items].sort((a, b) => a.productId - b.productId)) {
     await tx.product.update({ where: { id: item.productId }, data: { stock: { increment: item.quantity } } });
@@ -107,6 +118,7 @@ export const updateAuthoritativeOrderStatus = async (
   prisma: PrismaClient,
   saleDocumentId: number,
   nextStatus: unknown,
+  options: { manual?: boolean } = {},
 ): Promise<LifecycleDocument> => {
   if (!isOrderStatus(nextStatus)) {
     throw new OrderLifecycleError(400, 'INVALID_ORDER_STATUS', 'Invalid orderStatus');
@@ -114,7 +126,10 @@ export const updateAuthoritativeOrderStatus = async (
 
   return prisma.$transaction(async tx => {
     const current = await lockAndRead(tx, saleDocumentId);
-    if (!canTransitionOrderStatus(current.orderStatus, nextStatus)) {
+    const allowed = options.manual
+      ? isOrderStatus(current.orderStatus)
+      : canTransitionOrderStatus(current.orderStatus, nextStatus);
+    if (!allowed) {
       throw new OrderLifecycleError(
         409,
         'INVALID_ORDER_STATUS_TRANSITION',
@@ -124,6 +139,7 @@ export const updateAuthoritativeOrderStatus = async (
     if (current.orderStatus === nextStatus) return current;
 
     if (nextStatus === 'cancelled') await restoreCancelledWebsiteStock(tx, current);
+    if (current.orderStatus === 'cancelled') await restoreCancelledWebsiteStock(tx, current, true);
 
     const updated = await (tx.saleDocument as any).update({
       where: { id: saleDocumentId },
