@@ -41,7 +41,9 @@ for (const tab of ['overview', 'products', 'clients', 'cities', 'cost']) {
     assert.match(query.text, /COUNT\(\*\)::double precision FROM grouped/);
     assert.match(query.text, /FROM doc_rows\) AS stats/);
     assert.match(query.text, /LIMIT \$\d+ OFFSET \$\d+/);
-    assert.match(query.text, /paymentStatus" = 'paid'/);
+    assert.match(query.text, /paymentStatus" = \$\d+ AND d."orderStatus" <> \$\d+/);
+    assert.ok(query.values.includes('paid'));
+    assert.ok(query.values.includes('cancelled'));
     assert.match(query.text, /EXISTS \(SELECT 1 FROM "SaleDocumentItem"/);
     assert.ok(!query.text.includes("a' OR 1=1"));
     assert.ok(query.values.includes("a' OR 1=1 --"));

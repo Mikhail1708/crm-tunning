@@ -4,15 +4,15 @@ import { Prisma } from '@prisma/client';
 
 const start = new Date('2026-09-01T00:00:00Z');
 const end = new Date('2026-09-30T23:59:59.999Z');
-const orders = Array.from({ length: 9 }, (_, index) => ({
+const orders = Array.from({ length: 12 }, (_, index) => ({
   id: index + 1, saleDate: new Date('2026-09-12'), documentNumber: `D-${index}`,
   customerName: 'Fixture', clientName: null, client: { city: 'Test' }, documentType: index ? 'order' : 'receipt',
-  paymentStatus: index < 7 ? (index === 1 ? 'payed' : 'paid') : 'unpaid', total: 100,
+  orderStatus: index === 0 ? 'cancelled' : 'confirmed', paymentStatus: index < 10 ? (index === 1 ? 'payed' : 'paid') : 'unpaid', total: 100,
   items: [{ cost_price: 10, quantity: 2 }, { cost_price: 5, quantity: 1 }],
 }));
 let queries: any[] = [];
 let fail = false;
-const matching = () => orders.filter(order => ['paid', 'payed', 'оплачен'].includes(order.paymentStatus));
+const matching = () => orders.filter(order => order.paymentStatus === 'paid' && order.orderStatus !== 'cancelled');
 const db: any = {
   $queryRaw: async (query: any) => {
     if (fail) throw new Error('private-db-secret-sentinel');
@@ -20,14 +20,15 @@ const db: any = {
     if (sql.includes('WITH docs')) {
       assert.match(sql, /SUM\(total\) FILTER\(WHERE paid\)/);
       assert.match(sql, /SUM\(i.cost_price \* i.quantity\)/);
-      assert.deepEqual(query.values, [start, end]);
+      assert.deepEqual(query.values, ['paid', 'cancelled', start, end]);
+      assert.match(sql, /d."orderStatus" <>/);
       return [{ totalSales: matching().length, totalRevenue: matching().reduce((sum, row) => sum + row.total, 0),
         totalCost: matching().reduce((sum, row) => sum + row.items.reduce((s, item) => s + item.cost_price * item.quantity, 0), 0),
-        unpaidSales: 2, unpaidTotal: 200 }];
+        unpaidSales: 2, unpaidTotal: 0 }];
     }
     if (sql.includes('WITH top')) {
       assert.match(sql, /LIMIT 5/); assert.match(sql, /LIMIT 1/);
-      assert.ok(query.values.every((v: Date) => v instanceof Date)); return [];
+      assert.ok(query.values.every((v: Date) => v instanceof Date || v === ('paid' as any) || v === ('cancelled' as any))); return [];
     }
     assert.match(sql, /SUM\(stock\)/);
     return [{ totalProducts: 500, totalStock: 800, lowStockCount: 60 }];
@@ -39,7 +40,7 @@ const db: any = {
   saleDocument: { findMany: async (q: any) => {
     assert.equal(q.take, 5); assert.deepEqual(q.orderBy, [{ saleDate: 'desc' }, { id: 'desc' }]);
     assert.deepEqual(q.where.saleDate, { gte: start, lte: end });
-    assert.equal(q.where.OR.length, 3); return matching().slice(0, q.take);
+    assert.equal(q.where.paymentStatus, 'paid'); assert.deepEqual(q.where.orderStatus, { not: 'cancelled' }); return matching().slice(0, q.take);
   } },
   client: { count: async () => 1200, findMany: async (q: any) => {
     assert.equal(q.take, 5); assert.deepEqual(q.where.createdAt, { gte: start, lte: end }); return [];
@@ -64,10 +65,10 @@ test('dashboard full monthly totals are independent of bounded recent lists', as
   queries = [];
   const result = await invoke({ startDate: start.toISOString(), endDate: end.toISOString() });
   assert.equal(result.code, 200);
-  assert.equal(result.body.summary.totalSales, 7);
-  assert.equal(result.body.summary.totalRevenue, 700);
-  assert.equal(result.body.summary.totalCost, 175);
-  assert.equal(result.body.summary.totalProfit, 525);
+  assert.equal(result.body.summary.totalSales, 8);
+  assert.equal(result.body.summary.totalRevenue, 800);
+  assert.equal(result.body.summary.totalCost, 200);
+  assert.equal(result.body.summary.totalProfit, 600);
   assert.equal(result.body.summary.averageCheck, 100);
   assert.equal(result.body.summary.lowStockCount, 60);
   assert.equal(result.body.summary.totalClients, 1200);
@@ -89,4 +90,24 @@ test('dashboard DB failure preserves safe HTTP errors', async () => {
     const result = await invoke({ startDate: start.toISOString(), endDate: end.toISOString() });
     assert.equal(result.code, 500); assert.doesNotMatch(JSON.stringify(result.body), /sentinel|stack|secret/);
   } finally { fail = false; }
+});
+
+
+test('restored paid orders rejoin monthly money without changing payment or document amount', async () => {
+  const order = orders[0];
+  assert.equal(order.paymentStatus, 'paid');
+  assert.equal(order.orderStatus, 'cancelled');
+  try {
+    for (const status of ['confirmed', 'assembling']) {
+      order.orderStatus = status;
+      const result = await invoke({ startDate: start.toISOString(), endDate: end.toISOString() });
+      assert.equal(result.code, 200);
+      assert.equal(result.body.summary.totalRevenue, 900);
+      assert.equal(result.body.summary.totalSales, 9);
+      assert.equal(result.body.summary.averageCheck, 100);
+      assert.equal(result.body.recentSales.length, 5);
+      assert.equal(order.paymentStatus, 'paid');
+      assert.equal(order.total, 100);
+    }
+  } finally { order.orderStatus = 'cancelled'; }
 });

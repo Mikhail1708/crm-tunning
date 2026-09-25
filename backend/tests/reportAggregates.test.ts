@@ -3,7 +3,9 @@ import test from 'node:test';
 import { Prisma } from '@prisma/client';
 import { paidOrderTotalsQuery } from '../src/services/reportAggregates.service';
 
-// Controller regression fixtures only: SQL shape is checked, but no PostgreSQL is run.
+// Execute production financial SELECTs in SQLite memory (Node >=22.13).
+// Only PostgreSQL period discovery, JSON packaging and casts are adapted.
+const { DatabaseSync } = require('node:sqlite');
 const products = [
   { id: 1, name: 'A', article: 'A', cost_price: 9, retail_price: 20, stock: 2, min_stock: 1, categories: [] },
   { id: 2, name: 'B', article: 'B', cost_price: 5, retail_price: 10, stock: 0, min_stock: 1, categories: [] }
@@ -17,25 +19,17 @@ const fixture = () => [
   { id: 4, saleDate: date, paymentStatus: 'paid', documentType: 'invoice', total: 999, items: [] }
 ];
 let captured: any;
-const paid = () => orders.filter(o => o.paymentStatus === 'paid' && o.documentType === 'order');
+const paid = () => orders.filter(o => o.paymentStatus === 'paid' && o.orderStatus !== 'cancelled' && o.documentType === 'order');
 const db: any = {
   $queryRaw: async (query: any, ...values: any[]) => {
+    const tagged = Array.isArray(query);
+    query = tagged ? Prisma.sql(query, ...values) : query;
+    values = query.values;
     captured = { query, values };
-    if (Array.isArray(query)) {
-      const sql = query.join('?');
-      if (!sql.includes('WITH grouped AS')) return [];
-      assert.match(sql, /LEFT JOIN grouped g ON g\."productId" = p.id/);
-      assert.match(sql, /SUM\(i.cost_price\) AS cost/);
-      assert.match(sql, /ORDER BY total_profit DESC, id ASC LIMIT \? OFFSET \?/);
-      assert.match(sql, /COUNT\(\*\)::double precision FROM calculated/);
-      const rows = products.map(p => {
-        const items = paid().flatMap(o => o.items).filter(i => i.productId === p.id);
-        const sold = items.reduce((s, i) => s + i.quantity, 0);
-        const revenue = items.reduce((s, i) => s + i.total, 0);
-        const cost = items.reduce((s, i) => s + i.cost_price, 0) || p.cost_price * sold;
-        return { id: p.id, total_sold: sold, total_revenue: revenue, total_cost: cost, total_profit: revenue - cost };
-      }).sort((a, b) => b.total_profit - a.total_profit || a.id - b.id);
-      return [{ rows: rows.slice(values[1], values[1] + values[0]), total: rows.length }];
+    assert.match(query.sql, /"orderStatus" <> \?/);
+    assert.ok(values.includes('paid') && values.includes('cancelled'));
+    if (tagged) {
+      return executeReportSql(query);
     }
     assert.match(query.text, /COUNT\(\*\)::double precision/);
     const start = query.values.find((v: any) => v instanceof Date);
@@ -51,17 +45,66 @@ const db: any = {
       return { id: p.id, name: p.name, article: p.article, retail_price: p.retail_price, cost_price: p.cost_price };
     } },
   client: { count: async () => 4 },
-  saleDocumentItem: { groupBy: async (args: any) => {
-    assert.deepEqual(args.where, { document: { paymentStatus: 'paid', documentType: 'order' } });
-    const groups = new Map<number, any>();
-    for (const o of paid()) for (const i of o.items) {
-      const g = groups.get(i.productId) || { productId: i.productId, _sum: { quantity: 0, total: 0, cost_price: 0 } };
-      for (const k of ['quantity', 'total', 'cost_price']) g._sum[k] += i[k];
-      groups.set(i.productId, g);
-    }
-    return [...groups.values()].sort((a, b) => b._sum.total - a._sum.total).slice(0, args.take);
-  } }
+
 };
+function executeReportSql(query: Prisma.Sql): any[] {
+  const sqlite = new DatabaseSync(':memory:');
+  try {
+    sqlite.exec(`
+      CREATE TABLE SaleDocument(id INTEGER PRIMARY KEY, saleDate TEXT, paymentStatus TEXT, orderStatus TEXT, documentType TEXT, total REAL);
+      CREATE TABLE SaleDocumentItem(documentId INTEGER, productId INTEGER, quantity REAL, total REAL, cost_price REAL);
+      CREATE TABLE Product(id INTEGER PRIMARY KEY, name TEXT, article TEXT, cost_price REAL, retail_price REAL, stock REAL, min_stock REAL);
+      CREATE TABLE ProductCategory(productId INTEGER, categoryId INTEGER);
+      CREATE TABLE Category(id INTEGER PRIMARY KEY, name TEXT);
+    `);
+    sqlite.function('DATE_TRUNC', (period: string, value: string) => {
+      assert.equal(period, 'month');
+      return value.slice(0, 7);
+    });
+    for (const o of orders) {
+      sqlite.prepare('INSERT INTO SaleDocument VALUES(?,?,?,?,?,?)').run(o.id, o.saleDate.toISOString(), o.paymentStatus, o.orderStatus || 'confirmed', o.documentType, o.total);
+      for (const i of o.items) sqlite.prepare('INSERT INTO SaleDocumentItem VALUES(?,?,?,?,?)').run(o.id, i.productId, i.quantity, i.total, i.cost_price);
+    }
+    for (const p of products) sqlite.prepare('INSERT INTO Product VALUES(?,?,?,?,?,?,?)').run(p.id, p.name, p.article, p.cost_price, p.retail_price, p.stock, p.min_stock);
+    let sql = query.sql;
+    let values = [...query.values];
+    const chart = sql.includes('WITH RECURSIVE periods');
+    const productReport = sql.includes('WITH grouped AS');
+    if (chart) {
+      assert.match(sql, /WHERE p.n < \?/);
+      assert.match(sql, /DATE_TRUNC\(\?, MAX\("saleDate"\)\)/);
+      assert.match(sql, /JOIN periods p ON p.period = DATE_TRUNC/);
+      assert.match(sql, /GROUP BY 1/);
+      assert.match(sql, /GROUP BY i."documentId"/);
+      assert.match(sql, /LEFT JOIN item_costs ic ON ic."documentId" = sd.id/);
+      assert.doesNotMatch(sql, /SUM\(DISTINCT/i);
+      const cutoff = sql.indexOf('selected_documents AS');
+      assert.ok(cutoff > 0);
+      const parameterCount = (sql.slice(0, cutoff).match(/\?/g) || []).length;
+      const limit = values.find(v => typeof v === 'number') as number;
+      // Only PostgreSQL LATERAL occupied-period discovery is replaced.
+      const periods = [...new Set(paid().map(o => o.saleDate.toISOString().slice(0, 7)))].sort().reverse().slice(0, limit);
+      const periodSql = periods.length ? 'VALUES ' + periods.map(() => '(?)').join(',') : 'SELECT NULL WHERE 0';
+      sql = 'WITH periods(period) AS (' + periodSql + '), ' + sql.slice(cutoff);
+      values = [...periods, ...values.slice(parameterCount)];
+    } else if (productReport) {
+      assert.match(sql, /LEFT JOIN grouped g ON g\."productId" = p.id/);
+      assert.match(sql, /ORDER BY total_profit DESC, id ASC LIMIT \? OFFSET \?/);
+      assert.match(sql, /SUM\(i.cost_price \* i.quantity\) AS cost/);
+      assert.match(sql, /COUNT\(\*\)::double precision FROM calculated/);
+      // Execute calculated rows/order/page; replace PostgreSQL json_agg packaging only.
+      const cutoff = sql.indexOf('), page_rows AS');
+      assert.ok(cutoff > 0);
+      sql = sql.slice(0, cutoff) + ') SELECT * FROM calculated ORDER BY total_profit DESC, id ASC LIMIT ? OFFSET ?';
+    } else {
+      assert.match(sql, /SUM\(i.cost_price \* i.quantity\) AS cost/);
+      assert.match(sql, /GROUP BY i."productId" ORDER BY revenue DESC, i."productId" ASC LIMIT 5/);
+    }
+    sql = sql.replace(/::double precision/g, '');
+    const rows = sqlite.prepare(sql).all(...values).map((row: any) => ({ ...row }));
+    return productReport ? [{ rows, total: products.length }] : rows;
+  } finally { sqlite.close(); }
+}
 const Module = require('node:module');
 const load = Module._load;
 let controller: any;
@@ -77,12 +120,12 @@ async function call(name: string, query: any = {}, params: any = {}) {
   return result;
 }
 
-test('summary retains historical quantity-weighted totals and legacy top-product cost fallback', async () => {
+test('summary uses quantity-weighted historical costs including legitimate zero cost', async () => {
   orders = fixture();
   const result = await call('getSummary');
   assert.deepEqual(result.total, { revenue: 100, cost: 10, profit: 90, margin: 90 });
-  assert.equal(result.top_products[0].total_cost, 6); // Legacy SUM(unit cost), not SUM(cost * quantity).
-  assert.equal(result.top_products[1].total_cost, 10); // Zero sum falls back to current cost * quantity.
+  assert.equal(result.top_products[0].total_cost, 10);
+  assert.equal(result.top_products[1].total_cost, 0);
 });
 test('period stats retain current product cost, excluding unpaid/non-order documents', async () => {
   orders = fixture();
@@ -124,10 +167,10 @@ test('orders retains full totals while removing unused sales/client includes', a
     assert.equal(result.orders.length, 2);
   } finally { db.saleDocument.findMany = original; }
 });
-test('product report keeps legacy financial totals and profit ordering', async () => {
+test('product report uses weighted financial totals and profit ordering', async () => {
   orders = fixture();
   const result = await call('getProfitByProduct');
-  assert.deepEqual(result.map((r: any) => [r.id, r.total_sold, r.total_revenue, r.total_cost, r.total_profit]), [[1, 4, 80, 6, 74], [2, 2, 20, 10, 10]]);
+  assert.deepEqual(result.map((r: any) => [r.id, r.total_sold, r.total_revenue, r.total_cost, r.total_profit]), [[1, 4, 80, 10, 70], [2, 2, 20, 0, 20]]);
 });
 test('no paid orders still returns all products with zero financial metrics', async () => {
   orders = [];
@@ -146,7 +189,7 @@ test('product report bounds results but preserves full count and zero-sale produ
   assert.equal(total, '2');
   assert.equal(result.length, 1);
   assert.equal(result[0].id, 2);
-  assert.deepEqual(captured.values, [1, 1]);
+  assert.deepEqual(captured.values, ['paid', 'cancelled', 1, 1]);
 });
 test('expenses uses the full date filter for total and category sums, independent of page', async () => {
   const calls: any = {};
@@ -168,80 +211,68 @@ test('totals SQL keeps revenue independent of item multiplicity and dates parame
   const query = paidOrderTotalsQuery(date, true);
   assert.match(query.text, /SELECT SUM\(total\) FROM orders/);
   assert.match(query.text, /JOIN "Product" p/);
-  assert.deepEqual(query.values, [date]);
+  assert.deepEqual(query.values, ['paid', 'cancelled', date]);
   assert.ok(!paidOrderTotalsQuery().text.includes('JOIN "Product"'));
 });
 for (const [input, expected] of [[undefined, 12], ['-1', 12], ['0', 12], ['abc', 12], ['1.5', 12], ['1000000000', 120]] as const) {
   test(`chart normalizes limit ${input} and bounds occupied groups before item join`, async () => {
     await call('getProfitChart', { limit: input, period: 'invalid' });
-    const sql = captured.query.join('?');
+    const sql = captured.query.sql;
     assert.match(sql, /WITH RECURSIVE periods/);
     assert.match(sql, /"saleDate" < p.period/);
     assert.match(sql, /JOIN periods/);
-    assert.match(sql, /SUM\(sd.total\)/); // Preserve prior join-based revenue semantics.
+    assert.match(sql, /SUM\(sd.total\)/);
     assert.ok(captured.values.includes(expected));
     assert.ok(captured.values.includes('month'));
     assert.ok(!captured.values.includes('invalid'));
   });
 }
 
-test('chart latest occupied periods preserve old join arithmetic across gaps, ties and empty items', async () => {
-  // Independent reference for the OLD all-history LEFT JOIN then GROUP BY path.
-  // The mock below models the new period-selection path; neither executes PostgreSQL.
-  const rows = fixture();
-  rows[0].saleDate = new Date('2025-06-02T00:00:00Z');
-  rows[1].saleDate = new Date('2025-06-02T00:00:00Z');
-  rows.push({ ...rows[0], id: 10, saleDate: new Date('2025-02-03T00:00:00Z') });
-  rows.push({ ...rows[0], id: 11, saleDate: new Date('2024-10-01T00:00:00Z') });
-  rows.push({ ...rows[0], id: 12, total: 7, items: [], saleDate: new Date('2025-04-01T00:00:00Z') });
-  const eligible = rows.filter(r => r.paymentStatus === 'paid' && r.documentType === 'order');
-  const key = (r: any) => r.saleDate.toISOString().slice(0, 7);
-  const oldGroups = new Map<string, any>();
-  for (const row of eligible) {
-    const group = oldGroups.get(key(row)) || { period: key(row), revenue: 0, cost: null, profit: null, sales_count: 0 };
-    group.sales_count++;
-    for (const item of row.items.length ? row.items : [null]) {
-      group.revenue += row.total; // Intentionally repeated once per joined item.
-      if (item) {
-        group.cost = (group.cost || 0) + item.cost_price * item.quantity;
-        group.profit = (group.profit || 0) + row.total - item.cost_price * item.quantity;
-      }
-    }
-    oldGroups.set(key(row), group);
+test('chart preserves latest occupied periods, gaps and no-item documents', async () => {
+  orders = fixture();
+  orders[0].saleDate = new Date('2025-06-02T00:00:00Z');
+  orders[1].saleDate = new Date('2025-06-02T00:00:00Z');
+  orders.push({ ...orders[0], id: 10, saleDate: new Date('2025-02-03T00:00:00Z') });
+  orders.push({ ...orders[0], id: 11, saleDate: new Date('2024-10-01T00:00:00Z') });
+  orders.push({ ...orders[0], id: 12, total: 7, items: [], saleDate: new Date('2025-04-01T00:00:00Z') });
+  assert.deepEqual(await call('getProfitChart', { period: 'month', limit: '3' }), [
+    { period: '2025-06', revenue: 100, cost: 10, profit: 90, sales_count: 2 },
+    { period: '2025-04', revenue: 7, cost: 0, profit: 7, sales_count: 1 },
+    { period: '2025-02', revenue: 80, cost: 6, profit: 74, sales_count: 1 }
+  ]);
+});
+
+const financialOrder = (total: number, items: any[], overrides: any = {}) => ({
+  id: 1, saleDate: date, paymentStatus: 'paid', orderStatus: 'confirmed', documentType: 'order', total, items, ...overrides
+});
+const line = (quantity = 1, cost_price = 1000, total = 6000) => ({ productId: 1, quantity, cost_price, total });
+for (const scenario of [
+  { name: 'three items never multiply document revenue', rows: [financialOrder(25000, [line(), line(), line()])], revenue: 25000, cost: 3000, profit: 22000, count: 1 },
+  { name: 'quantity weights unit cost exactly once', rows: [financialOrder(6000, [line(3)])], revenue: 6000, cost: 3000, profit: 3000, count: 1 },
+  { name: 'no items retains full document profit', rows: [financialOrder(10000, [])], revenue: 10000, cost: 0, profit: 10000, count: 1 },
+  { name: 'distinct documents with equal totals both count', rows: [financialOrder(25000, [line()]), financialOrder(25000, [line()], { id: 2 })], revenue: 50000, cost: 2000, profit: 48000, count: 2 },
+  { name: 'paid cancelled contributes no money', rows: [financialOrder(25000, [line(3)], { orderStatus: 'cancelled' })], revenue: 0, cost: 0, profit: 0, count: 0 }
+]) {
+  test('SQL arithmetic: ' + scenario.name, async () => {
+    orders = scenario.rows;
+    const chart = await call('getProfitChart');
+    assert.equal(chart.reduce((s: number, r: any) => s + r.revenue, 0), scenario.revenue);
+    assert.equal(chart.reduce((s: number, r: any) => s + r.cost, 0), scenario.cost);
+    assert.equal(chart.reduce((s: number, r: any) => s + r.profit, 0), scenario.profit);
+    assert.equal(chart.reduce((s: number, r: any) => s + r.sales_count, 0), scenario.count);
+  });
+}
+test('SQL product report and summary top products both weight cost and exclude ineligible items', async () => {
+  orders = [financialOrder(6000, [line(3)]),
+    financialOrder(90000, [line(9)], { id: 2, orderStatus: 'cancelled' }),
+    financialOrder(90000, [line(9)], { id: 3, paymentStatus: 'not_paid' })];
+  for (const rows of [await call('getProfitByProduct'), (await call('getSummary')).top_products]) {
+    const row = rows.find((r: any) => r.id === 1);
+    assert.equal(row.total_sold, 3);
+    assert.equal(row.total_revenue, 6000);
+    assert.equal(row.total_cost, 3000);
+    assert.equal(row.total_profit, 3000);
   }
-  const expected = [...oldGroups.values()].sort((a, b) => b.period.localeCompare(a.period)).slice(0, 3);
-  const original = db.$queryRaw;
-  db.$queryRaw = async (strings: TemplateStringsArray, ...values: any[]) => {
-    const sql = strings.join('?');
-    assert.match(sql, /DATE_TRUNC\(\?, MAX\("saleDate"\)\)/);
-    assert.match(sql, /WHERE p.n < \?/);
-    assert.match(sql, /JOIN periods p ON p.period = DATE_TRUNC/);
-    assert.match(sql, /LEFT JOIN "SaleDocumentItem"/);
-    assert.match(sql, /SUM\(sd.total - \(sdi\."cost_price" \* sdi.quantity\)\)/);
-    assert.match(sql, /COUNT\(DISTINCT sd.id\)/);
-    assert.match(sql, /GROUP BY 1/);
-    const limit = values.find(v => typeof v === 'number');
-    assert.equal(limit, 3);
-    const periods = [...new Set(eligible.map(key))].sort().reverse().slice(0, limit);
-    return periods.map(period => {
-      const documents = eligible.filter(r => key(r) === period);
-      const items = documents.flatMap(r => r.items.map((i: any) => ({ revenue: r.total, cost: i.cost_price * i.quantity })));
-      return {
-        period,
-        revenue: documents.reduce((sum, r) => sum + r.total * Math.max(1, r.items.length), 0),
-        cost: items.length ? items.reduce((sum, i) => sum + i.cost, 0) : null,
-        profit: items.length ? items.reduce((sum, i) => sum + i.revenue - i.cost, 0) : null,
-        sales_count: documents.length
-      };
-    });
-  };
-  try {
-    const result = await call('getProfitChart', { period: 'month', limit: '3' });
-    assert.deepEqual(result, expected);
-    assert.deepEqual(result.map((r: any) => r.period), ['2025-06', '2025-04', '2025-02']);
-    assert.equal(result[0].revenue, 180); // NOT 100: preserve existing joined revenue.
-    assert.equal(result[1].cost, null);
-  } finally { db.$queryRaw = original; }
 });
 
 test('summary, period stats and chart keep database errors out of HTTP responses', async () => {
@@ -260,4 +291,47 @@ test('summary, period stats and chart keep database errors out of HTTP responses
       assert.ok(!JSON.stringify(body).includes('stack'));
     }
   } finally { db.$queryRaw = original; console.error = originalLog; }
+});
+
+// Eligibility must remain identical across full and bounded monetary reports.
+test('full and bounded reports exclude cancelled/unpaid documents and include restored paid orders', async () => {
+  const states = [
+    ['paid', 'confirmed'], ['paid', 'assembling'], ['paid', 'shipped'],
+    ['paid', 'cancelled'], ['unpaid', 'confirmed'], ['unpaid', 'shipped'],
+    ['pending', 'confirmed'], ['failed', 'shipped']
+  ];
+  orders = states.map(([paymentStatus, orderStatus], index) => ({
+    id: index + 1, paymentStatus, orderStatus, documentType: 'order', saleDate: date,
+    total: 10, items: [{ productId: 1, quantity: 1, total: 10, cost_price: 2 }]
+  }));
+  const original = db.saleDocument.findMany;
+  db.saleDocument.findMany = async (query: any) => {
+    assert.deepEqual(query.where, { documentType: 'order', paymentStatus: 'paid', orderStatus: { not: 'cancelled' } });
+    assert.equal(query.take, 1);
+    return paid().slice(query.skip, query.skip + query.take);
+  };
+  try {
+    const cancelled = orders[3];
+    assert.equal((await call('getSummary')).total.revenue, 30);
+    assert.equal((await call('getSalesStats', {}, { period: 'year' })).totalRevenue, 30);
+    const page = await call('getOrdersByPeriod', { page: '2', limit: '1' });
+    assert.equal(page.orders.length, 1);
+    assert.equal(page.stats.totalRevenue, 30);
+    assert.equal(page.stats.totalOrders, 3);
+    const products = await call('getProfitByProduct', { limit: '1' });
+    assert.equal(products[0].total_revenue, 30);
+    assert.equal(products[0].total_sold, 3);
+    assert.equal(cancelled.paymentStatus, 'paid');
+    cancelled.orderStatus = 'assembling';
+    assert.equal((await call('getSummary')).total.revenue, 40);
+    assert.equal((await call('getOrdersByPeriod', { limit: '1' })).stats.totalRevenue, 40);
+    assert.equal(cancelled.paymentStatus, 'paid');
+  } finally { db.saleDocument.findMany = original; }
+});
+
+test('chart filters cancelled documents both when finding occupied periods and when aggregating', async () => {
+  await call('getProfitChart', { period: 'month', limit: '2' });
+  assert.equal((captured.query.sql.match(/"orderStatus" <> \?/g) || []).length, 3);
+  assert.equal(captured.values.filter((v: unknown) => v === 'paid').length, 3);
+  assert.equal(captured.values.filter((v: unknown) => v === 'cancelled').length, 3);
 });

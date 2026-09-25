@@ -227,3 +227,78 @@ test('late consume replay of a cancelled consumed order preserves stock and retu
   assert.equal(result.code, 200); assert.equal(result.body.orderStatus, 'cancelled');
   assert.equal(m.state().stock, 1); assert.equal(m.state().increments, 1);
 });
+
+test('pending cancellation retries preserve identity, timestamp, payment and inventory', async () => {
+  const m = model();
+  const before = structuredClone(m.state().reservation);
+  const results = await Promise.all([cancel(), cancel()]);
+  assert.deepEqual(results.map(r => r.idempotent), [false, true]);
+  assert.ok(results.every(r => r.decision === 'requested' && r.decidedAt === null));
+  assert.equal(results[0].requestedAt.getTime(), results[1].requestedAt.getTime());
+  assert.equal(m.state().document.cancellationRequestId, 'cancel-1');
+  assert.equal(m.state().document.cancellationDecision, null);
+  assert.equal(m.state().document.cancellationReasonCode, 'CUSTOMER_CANCELLATION_REQUESTED');
+  assert.equal(m.state().document.orderStatus, 'confirmed');
+  assert.equal(m.state().document.statusVersion, 0);
+  assert.equal(m.state().document.paymentStatus, 'paid');
+  assert.equal(m.state().events.length, 0);
+  assert.equal(m.state().increments, 0);
+  assert.deepEqual(m.state().reservation, before);
+  await assert.rejects(cancel('another-request'), (e: any) => e.code === 'CANCELLATION_REQUEST_CONFLICT');
+});
+
+test('retry after manager decision preserves processed request without duplicate stock or event', async () => {
+  const m = model();
+  await cancel();
+  await manual('cancelled');
+  const before = structuredClone(m.state());
+  const result = await cancel();
+  assert.equal(result.decision, 'accepted');
+  assert.equal(result.reasonCode, 'MANAGER_ACCEPTED');
+  assert.equal(result.idempotent, true);
+  assert.equal(result.statusVersion, 1);
+  assert.deepEqual(m.state(), before);
+});
+
+test('request on already cancelled order leaves stock, payment and version unchanged', async () => {
+  const m = model('consumed', 'cancelled');
+  m.state().stock = 1;
+  assert.equal((await cancel()).decision, 'requested');
+  assert.equal((await cancel()).idempotent, true);
+  assert.equal(m.state().document.orderStatus, 'cancelled');
+  assert.equal(m.state().document.paymentStatus, 'paid');
+  assert.equal(m.state().document.statusVersion, 0);
+  assert.equal(m.state().stock, 1);
+  assert.equal(m.state().events.length, 0);
+});
+
+test('internal cancellation controller stores trimmed customer reason and replays request without mutation', async () => {
+  const handler = require('../src/controllers/internalCancellation.controller').cancelWebsiteOrder;
+  const m = model();
+  const params = { crmOrderId: '1' };
+  const body = { requestId: 'crm-order-cancellation:web-1', externalOrderId: 'web-1', reason: ' customer_request ' };
+  const first = await invoke(handler, params, body);
+  assert.equal(first.code, 200);
+  assert.equal(first.body.decision, 'requested');
+  assert.equal(first.body.reason, 'customer_request');
+  const before = structuredClone(m.state());
+  const repeat = await invoke(handler, params, body);
+  assert.equal(repeat.code, 200);
+  assert.equal(repeat.body.idempotent, true);
+  assert.deepEqual(m.state(), before);
+});
+
+test('internal cancellation rejects invalid input before a write and identity conflict is not 500', async () => {
+  const handler = require('../src/controllers/internalCancellation.controller').cancelWebsiteOrder;
+  const m = model();
+  const before = structuredClone(m.state());
+  for (const body of [{}, { requestId: 'ok', externalOrderId: 'web-1', reason: 3 }]) {
+    const result = await invoke(handler, { crmOrderId: '1' }, body);
+    assert.equal(result.code, 400);
+    assert.equal(result.body.code, 'INVALID_CANCELLATION_REQUEST');
+  }
+  const mismatch = await invoke(handler, { crmOrderId: '1' }, { requestId: 'ok', externalOrderId: 'another' });
+  assert.equal(mismatch.code, 409);
+  assert.equal(mismatch.body.code, 'ORDER_IDENTITY_MISMATCH');
+  assert.deepEqual(m.state(), before);
+});

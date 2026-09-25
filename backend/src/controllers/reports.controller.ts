@@ -7,6 +7,7 @@ import fs from 'fs';
 import path from 'path';
 import { parsePagination } from '../utils/pagination';
 import { paidOrderTotals } from '../services/reportAggregates.service';
+import { paidSaleWhere, paidSaleSql } from '../utils/saleFinancialEligibility';
 
 const prisma = new PrismaClient();
 
@@ -286,39 +287,27 @@ export const getSummary = async (req: RequestWithUser, res: Response): Promise<v
     let topProducts: any[] = [];
     
     if (totals.count > 0) {
-      // ✅ ИСПРАВЛЕНО: добавлен cost_price в groupBy
-      const itemsGrouped = await prisma.saleDocumentItem.groupBy({
-        by: ['productId'],
-        where: {
-          document: { paymentStatus: 'paid', documentType: 'order' }
-        },
-        _sum: {
-          quantity: true,
-          total: true,
-          cost_price: true
-        },
-        orderBy: {
-          _sum: {
-            total: 'desc'
-          }
-        },
-        take: 5
-      });
-      
+      const itemsGrouped = await prisma.$queryRaw<Array<{ productId: number; sold: number; revenue: number; cost: number }>>`
+        SELECT i."productId", SUM(i.quantity)::double precision AS sold,
+          SUM(i.total) AS revenue, SUM(i.cost_price * i.quantity) AS cost
+        FROM "SaleDocumentItem" i JOIN "SaleDocument" d ON d.id = i."documentId"
+        WHERE ${paidSaleSql('d')} AND d."documentType" = 'order'
+        GROUP BY i."productId" ORDER BY revenue DESC, i."productId" ASC LIMIT 5
+      `;
+
       topProducts = await Promise.all(
         itemsGrouped.map(async (item) => {
           const product = await prisma.product.findUnique({
             where: { id: item.productId },
             select: { id: true, name: true, article: true, retail_price: true, cost_price: true }
           });
-          // ✅ ИСПРАВЛЕНО: используем cost_price из groupBy, если есть
-          const totalCost = item._sum.cost_price || (product?.cost_price || 0) * (item._sum.quantity || 0);
+          const totalCost = item.cost;
           return {
             ...product,
-            total_sold: item._sum.quantity || 0,
-            total_revenue: item._sum.total || 0,
+            total_sold: item.sold,
+            total_revenue: item.revenue,
             total_cost: totalCost,
-            total_profit: (item._sum.total || 0) - totalCost
+            total_profit: (item.revenue) - totalCost
           };
         })
       );
@@ -353,30 +342,36 @@ export const getProfitChart = async (req: RequestWithUser, res: Response): Promi
       ? requestedPeriod : 'month';
     const { limit } = parsePagination(1, req.query.limit, 12, 120);
     
-    // Last occupied periods preserve gaps and existing join-based financial semantics.
+    // Select occupied periods first; aggregate item cost before joining it to documents.
     const sales = await prisma.$queryRaw`
       WITH RECURSIVE periods(period, n) AS (
         SELECT DATE_TRUNC(${period}, MAX("saleDate")), 1
-        FROM "SaleDocument" WHERE "paymentStatus" = 'paid' AND "documentType" = 'order'
+        FROM "SaleDocument" WHERE ${paidSaleSql()} AND "documentType" = 'order'
         UNION ALL
         SELECT next_period.period, p.n + 1 FROM periods p
         CROSS JOIN LATERAL (
           SELECT DATE_TRUNC(${period}, MAX("saleDate")) AS period FROM "SaleDocument"
-          WHERE "paymentStatus" = 'paid' AND "documentType" = 'order' AND "saleDate" < p.period
+          WHERE ${paidSaleSql()} AND "documentType" = 'order' AND "saleDate" < p.period
         ) next_period
         WHERE p.n < ${limit} AND next_period.period IS NOT NULL
+      ), selected_documents AS (
+        SELECT sd.id, sd.total, sd."saleDate"
+        FROM "SaleDocument" sd
+        JOIN periods p ON p.period = DATE_TRUNC(${period}, sd."saleDate")
+        WHERE ${paidSaleSql('sd')} AND sd."documentType" = 'order'
+      ), item_costs AS (
+        SELECT i."documentId", SUM(i.cost_price * i.quantity) AS cost
+        FROM "SaleDocumentItem" i JOIN selected_documents sd ON sd.id = i."documentId"
+        GROUP BY i."documentId"
       )
-      SELECT 
+      SELECT
         DATE_TRUNC(${period}, sd."saleDate") as period,
         SUM(sd.total) as revenue,
-        SUM(sdi."cost_price" * sdi.quantity) as cost,
-        SUM(sd.total - (sdi."cost_price" * sdi.quantity)) as profit,
-        COUNT(DISTINCT sd.id)::double precision as sales_count
-      FROM "SaleDocument" sd
-      JOIN periods p ON p.period = DATE_TRUNC(${period}, sd."saleDate")
-      LEFT JOIN "SaleDocumentItem" sdi ON sd.id = sdi."documentId"
-      WHERE sd."paymentStatus" = 'paid'
-        AND sd."documentType" = 'order'
+        SUM(COALESCE(ic.cost, 0)) as cost,
+        SUM(sd.total - COALESCE(ic.cost, 0)) as profit,
+        COUNT(*)::double precision as sales_count
+      FROM selected_documents sd
+      LEFT JOIN item_costs ic ON ic."documentId" = sd.id
       GROUP BY 1
       ORDER BY period DESC
       LIMIT ${limit}
@@ -393,15 +388,15 @@ export const getProfitByProduct = async (req: RequestWithUser, res: Response): P
     const { page, limit, skip } = parsePagination(req.query.page, req.query.limit, 50, 200);
     const [result] = await prisma.$queryRaw<Array<{ rows: unknown[]; total: number }>>`
       WITH grouped AS (
-        SELECT i."productId", SUM(i.quantity) AS sold, SUM(i.total) AS revenue, SUM(i.cost_price) AS cost
+        SELECT i."productId", SUM(i.quantity) AS sold, SUM(i.total) AS revenue, SUM(i.cost_price * i.quantity) AS cost
         FROM "SaleDocumentItem" i JOIN "SaleDocument" d ON d.id = i."documentId"
-        WHERE d."paymentStatus" = 'paid' AND d."documentType" = 'order' GROUP BY i."productId"
+        WHERE ${paidSaleSql('d')} AND d."documentType" = 'order' GROUP BY i."productId"
       ), report AS (
         SELECT p.id, p.name, p.article, p.cost_price, p.retail_price, p.stock, p.min_stock,
           COALESCE((SELECT c.name FROM "ProductCategory" pc JOIN "Category" c ON c.id = pc."categoryId"
             WHERE pc."productId" = p.id ORDER BY pc."categoryId" LIMIT 1), '') AS category,
           COALESCE(g.sold, 0)::double precision AS total_sold, COALESCE(g.revenue, 0) AS total_revenue,
-          COALESCE(NULLIF(g.cost, 0), p.cost_price * COALESCE(g.sold, 0)) AS total_cost
+          COALESCE(g.cost, 0) AS total_cost
         FROM "Product" p LEFT JOIN grouped g ON g."productId" = p.id
       ), calculated AS (
         SELECT *, total_revenue - total_cost AS total_profit,
@@ -488,7 +483,7 @@ export const getOrdersByPeriod = async (req: RequestWithUser, res: Response): Pr
     
     const where: any = {
       documentType: 'order',
-      paymentStatus: 'paid'
+      ...paidSaleWhere()
     };
     
     if (startDate || endDate) {

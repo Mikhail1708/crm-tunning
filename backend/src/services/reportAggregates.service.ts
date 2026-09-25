@@ -1,11 +1,12 @@
 import { Prisma, PrismaClient } from '@prisma/client';
+import { paidSaleSql } from '../utils/saleFinancialEligibility';
 
 // Revenue is aggregated before joining items: an order contributes exactly once.
 // Summary uses historical item cost; period stats intentionally use current product cost.
 export const paidOrderTotalsQuery = (startDate?: Date, currentCost = false, endDate?: Date) => Prisma.sql`
   WITH orders AS (
     SELECT id, total FROM "SaleDocument"
-    WHERE "paymentStatus" = 'paid' AND "documentType" = 'order'
+    WHERE ${paidSaleSql()} AND "documentType" = 'order'
       ${startDate ? Prisma.sql`AND "saleDate" >= ${startDate}` : Prisma.empty}
       ${endDate ? Prisma.sql`AND "saleDate" <= ${endDate}` : Prisma.empty}
   )

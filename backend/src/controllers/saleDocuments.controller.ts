@@ -1,3 +1,5 @@
+import { paidSaleSql } from '../utils/saleFinancialEligibility';
+import { withClientFinancialTotals } from '../services/clientFinancials.service';
 import { resolveSaleDocumentPage, saleDocumentListQuery, saleDocumentSummary } from '../services/saleDocumentList.service';
 import { assertPaidWebsiteOrderEditable, paidWebsiteOrderSelect } from '../services/paidWebsiteOrder.service';
 // crm-project/backend/src/controllers/saleDocuments.controller.ts
@@ -185,7 +187,8 @@ export const getSaleDocuments = async (req: RequestWithUser, res: Response): Pro
      
     });
     res.setHeader('X-Total-Count', String(total ?? await prisma.saleDocument.count({ where })));
-    res.json(documents);
+    const clients = await withClientFinancialTotals(prisma, documents.flatMap(document => document.client ? [document.client] : []));
+    res.json(documents.map(document => ({ ...document, client: document.client ? clients.find(client => client.id === document.client!.id) : document.client })));
   } catch (error) {
     console.error('Error getting documents:', error);
     res.status(500).json({ message: 'Ошибка загрузки документов' });
@@ -270,7 +273,9 @@ export const getSaleDocumentById = async (req: RequestWithUser, res: Response): 
       res.status(404).json({ message: 'Документ не найден' });
       return;
     }
-    res.json(document);
+    res.json(document.client
+      ? { ...document, client: (await withClientFinancialTotals(prisma, [document.client]))[0] }
+      : document);
   } catch (error) {
     console.error('Error getting document:', error);
     res.status(500).json({ message: 'Ошибка загрузки документа' });
@@ -1612,7 +1617,8 @@ export const getDocumentsByClient = async (req: RequestWithUser, res: Response):
     });
     
     res.setHeader('X-Total-Count', String(total ?? await prisma.saleDocument.count({ where })));
-    res.json(documents);
+    const clients = await withClientFinancialTotals(prisma, documents.flatMap(document => document.client ? [document.client] : []));
+    res.json(documents.map(document => ({ ...document, client: document.client ? clients.find(client => client.id === document.client!.id) : document.client })));
   } catch (error) {
     console.error('Error getting documents by client:', error);
     res.status(500).json({ message: 'Ошибка загрузки документов клиента' });
@@ -1625,22 +1631,15 @@ export const getDocumentsByClient = async (req: RequestWithUser, res: Response):
 export const getClientStatistics = async (req: RequestWithUser, res: Response): Promise<void> => {
   try {
     const stats = await prisma.$queryRaw`
-      SELECT 
-        c.id,
-        c.first_name as firstName,
-        c.last_name as lastName,
-        c.phone,
-        c.city,
-        COUNT(sd.id) as orderCount,
-        COALESCE(SUM(sd.total), 0) as totalSpent,
-        MAX(sd.sale_date) as lastOrderDate
-      FROM "Client" c
-      LEFT JOIN "SaleDocument" sd ON c.id = sd.client_id AND sd.payment_status = 'paid'
-      GROUP BY c.id, c.first_name, c.last_name, c.phone, c.city
-      ORDER BY totalSpent DESC NULLS LAST
-      LIMIT 10
+      SELECT c.id, c."firstName", c."lastName", c.phone, c.city,
+        COUNT(sd.id) FILTER (WHERE sd."paymentStatus" = 'paid')::double precision AS "orderCount",
+        COALESCE(SUM(sd.total) FILTER (WHERE ${paidSaleSql('sd')}), 0) AS "totalSpent",
+        MAX(sd."saleDate") FILTER (WHERE sd."paymentStatus" = 'paid') AS "lastOrderDate"
+      FROM "Client" c LEFT JOIN "SaleDocument" sd ON c.id = sd."clientId"
+      GROUP BY c.id
+      ORDER BY "totalSpent" DESC, c.id DESC LIMIT 10
     `;
-    
+
     res.json(stats);
   } catch (error) {
     console.error('Error getting client statistics:', error);

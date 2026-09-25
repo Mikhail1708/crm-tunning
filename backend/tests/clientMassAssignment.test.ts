@@ -12,7 +12,7 @@ let row: any;
 let currentUser: any;
 const authGeneration = '11111111-1111-4111-8111-111111111111';
 const audit: any[] = [];
-const db = { user: { findUnique: async () => currentUser }, client: {
+const db = { saleDocument: { groupBy: async () => [] }, user: { findUnique: async () => currentUser }, client: {
   findUnique: async () => row,
   findFirst: async () => null,
   update: async ({ data }: any) => {

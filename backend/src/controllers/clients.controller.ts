@@ -4,6 +4,8 @@ import { PrismaClient } from '@prisma/client';
 import { RequestWithUser, CreateClientDTO, UpdateClientDiscountDTO } from '../types';
 import auditService from '../services/audit.service';
 import { parsePagination } from '../utils/pagination';
+import { paidSaleWhere } from '../utils/saleFinancialEligibility';
+import { clientsRankedBySpending, withClientFinancialTotals } from '../services/clientFinancials.service';
 
 const prisma = new PrismaClient();
 
@@ -44,16 +46,21 @@ export const getAllClients = async (req: RequestWithUser, res: Response): Promis
       };
     }
     
-    const clients = await prisma.client.findMany({
-      where,
+    const ranked = sortField === 'totalSpent'
+      ? await clientsRankedBySpending(prisma, { search, direction, limit: pagination.limit, skip: pagination.skip }) : null;
+    const pageClients = await prisma.client.findMany({
+      where: ranked ? { id: { in: ranked.map(row => row.id) } } : where,
       orderBy: [{ [sortField]: direction }, ...(sortField === 'id' ? [] : [{ id: direction }])],
-      skip: pagination.skip,
+      skip: ranked ? 0 : pagination.skip,
       take: pagination.limit,
       include: {
         _count: { select: { orders: true } }
       }
     });
     
+    const clients = ranked
+      ? ranked.map(row => ({ ...pageClients.find(client => client.id === row.id)!, totalSpent: Number(row.totalSpent) }))
+      : await withClientFinancialTotals(prisma, pageClients);
     const total = await prisma.client.count({ where });
     
     res.json({
@@ -100,7 +107,7 @@ export const getClientById = async (req: RequestWithUser, res: Response): Promis
       return;
     }
     
-    res.json(client);
+    res.json((await withClientFinancialTotals(prisma, [client]))[0]);
   } catch (error) {
     console.error('Error in getClientById:', error);
     res.status(500).json({ error: 'Ошибка получения клиента' });
@@ -272,7 +279,7 @@ export const updateClient = async (req: RequestWithUser, res: Response): Promise
       );
     }
     
-    res.json(client);
+    res.json((await withClientFinancialTotals(prisma, [client]))[0]);
   } catch (error) {
     console.error('Error in updateClient:', error);
     res.status(500).json({ error: 'Ошибка обновления клиента' });
@@ -347,7 +354,7 @@ export const searchClients = async (req: RequestWithUser, res: Response): Promis
       ]
     });
     
-    res.json({ clients });
+    res.json({ clients: await withClientFinancialTotals(prisma, clients) });
   } catch (error) {
     console.error('Error in searchClients:', error);
     res.status(500).json({ error: 'Ошибка поиска клиентов' });
@@ -362,12 +369,13 @@ export const getClientsStats = async (req: RequestWithUser, res: Response): Prom
   try {
     const totalClients = await prisma.client.count();
     
-    const totalSpentResult = await prisma.client.aggregate({
-      _sum: { totalSpent: true }
+    const totalSpentResult = await prisma.saleDocument.aggregate({
+      where: { ...paidSaleWhere(), clientId: { not: null } }, _sum: { total: true }
     });
+    const ranked = await clientsRankedBySpending(prisma, { limit: 10 });
     
-    const topClients = await prisma.client.findMany({
-      orderBy: { totalSpent: 'desc' },
+    const selectedClients = await prisma.client.findMany({
+      where: { id: { in: ranked.map(row => row.id) } },
       take: 10,
       select: {
         id: true,
@@ -381,6 +389,8 @@ export const getClientsStats = async (req: RequestWithUser, res: Response): Prom
       }
     });
     
+    const topClients = ranked.map(row => ({ ...selectedClients.find(client => client.id === row.id)!, totalSpent: Number(row.totalSpent) }));
+
     const newClientsThisMonth = await prisma.client.count({
       where: {
         createdAt: {
@@ -391,7 +401,7 @@ export const getClientsStats = async (req: RequestWithUser, res: Response): Prom
     
     res.json({
       totalClients,
-      totalSpent: totalSpentResult._sum.totalSpent || 0,
+      totalSpent: totalSpentResult._sum.total || 0,
       topClients,
       newClientsThisMonth
     });

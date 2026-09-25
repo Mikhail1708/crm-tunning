@@ -1,3 +1,4 @@
+import { paidSaleSql, paidSaleWhere } from '../utils/saleFinancialEligibility';
 import { Prisma, PrismaClient } from '@prisma/client';
 import { parsePagination } from '../utils/pagination';
 
@@ -68,18 +69,24 @@ export async function resolveSaleDocumentPage(store: Pick<PrismaClient, '$queryR
 export async function saleDocumentSummary(store: Pick<PrismaClient, 'saleDocument' | '$queryRaw'>, where: Prisma.SaleDocumentWhereInput, query?: Record<string, unknown>) {
   const search = typeof query?.search === 'string' && query.search.trim();
   const groups = search
-    ? (await store.$queryRaw<Array<{ paymentStatus: string; count: bigint; total: number }>>`
-        SELECT d."paymentStatus", count(*) AS count, sum(d.total) AS total FROM "SaleDocument" d
+    ? (await store.$queryRaw<Array<{ paymentStatus: string; count: bigint }>>`
+        SELECT d."paymentStatus", count(*) AS count FROM "SaleDocument" d
         WHERE ${saleDocumentSearchSql(query!).filter} GROUP BY d."paymentStatus"`)
-        .map(row => ({ paymentStatus: row.paymentStatus, _count: { _all: Number(row.count) }, _sum: { total: row.total } }))
-    : await store.saleDocument.groupBy({ by: ['paymentStatus'], where, _count: { _all: true }, _sum: { total: true } });
-  let count = 0, totalAmount = 0, paidCount = 0, paidTotal = 0, unpaidCount = 0, unpaidTotal = 0;
+        .map(row => ({ paymentStatus: row.paymentStatus, _count: { _all: Number(row.count) } }))
+    : await store.saleDocument.groupBy({ by: ['paymentStatus'], where, _count: { _all: true } });
+  const money = search
+    ? (await store.$queryRaw<Array<{ amount: number; count: bigint }>>`
+        SELECT COALESCE(SUM(d.total), 0) AS amount, COUNT(*) AS count FROM "SaleDocument" d
+        WHERE ${saleDocumentSearchSql(query!).filter} AND (${paidSaleSql('d')})`)[0]
+    : await store.saleDocument.aggregate({ where: { AND: [where, paidSaleWhere()] }, _sum: { total: true }, _count: true })
+        .then(result => ({ amount: result._sum.total ?? 0, count: result._count }));
+  let count = 0, paidCount = 0, unpaidCount = 0;
   for (const row of groups) {
-    const amount = row._sum.total ?? 0;
-    count += row._count._all; totalAmount += amount;
-    if (row.paymentStatus === 'paid') { paidCount += row._count._all; paidTotal += amount; }
-    if (row.paymentStatus === 'unpaid') { unpaidCount += row._count._all; unpaidTotal += amount; }
+    count += row._count._all;
+    if (row.paymentStatus === 'paid') paidCount += row._count._all;
+    if (row.paymentStatus === 'unpaid') unpaidCount += row._count._all;
   }
-  return { total: count, count, totalAmount, paidCount, paidTotal, unpaidCount, unpaidTotal,
-    notPaidCount: count - paidCount, notPaidTotal: totalAmount - paidTotal, averageCheck: paidCount ? paidTotal / paidCount : 0 };
+  const paidTotal = Number(money.amount), eligibleCount = Number(money.count);
+  return { total: count, count, totalAmount: paidTotal, paidCount, paidTotal, unpaidCount, unpaidTotal: 0,
+    notPaidCount: count - paidCount, notPaidTotal: 0, averageCheck: eligibleCount ? paidTotal / eligibleCount : 0 };
 }

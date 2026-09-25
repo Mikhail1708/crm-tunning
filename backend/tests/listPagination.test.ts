@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { Prisma } from '@prisma/client';
 
 // Real controllers/services, isolated dependencies. Never load or write audit.log.
 const Module = require('node:module');
@@ -7,6 +8,8 @@ const originalLoad = Module._load;
 let selected: any;
 let counted: any;
 const db = {
+  saleDocument: { groupBy: async () => [] },
+  $queryRaw: async () => [{ id: 1, totalSpent: 0 }],
   client: {
     findMany: async (args: any) => { selected = args; return [{ id: 1 }]; },
     count: async (args: any) => { counted = args; return 1234; },
@@ -17,7 +20,7 @@ const db = {
   },
 };
 Module._load = function(id: string, ...args: any[]) {
-  if (id === '@prisma/client') return { PrismaClient: function() { return db; } };
+  if (id === '@prisma/client') return { Prisma, PrismaClient: function() { return db; } };
   if (id === 'fs') return {
     existsSync: () => true,
     readFileSync: () => '',

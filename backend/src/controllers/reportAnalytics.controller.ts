@@ -2,6 +2,7 @@ import { Response } from 'express';
 import { Prisma, PrismaClient } from '@prisma/client';
 import { RequestWithUser } from '../types';
 import { parsePagination } from '../utils/pagination';
+import { paidSaleSql } from '../utils/saleFinancialEligibility';
 
 const prisma = new PrismaClient();
 const positiveId = (value: unknown) => typeof value === 'string' && /^[1-9]\d*$/.test(value) && Number.isSafeInteger(Number(value)) ? Number(value) : undefined;
@@ -14,7 +15,7 @@ export function analyticsDocuments(query: Record<string, unknown>) {
   return Prisma.sql`
     documents AS (
       SELECT d.* FROM "SaleDocument" d LEFT JOIN "Client" c ON c.id = d."clientId"
-      WHERE d."paymentStatus" = 'paid'
+      WHERE ${paidSaleSql('d')}
         ${start ? Prisma.sql`AND d."saleDate" >= ${start}` : Prisma.empty}
         ${end ? Prisma.sql`AND d."saleDate" <= ${end}` : Prisma.empty}
         ${client ? Prisma.sql`AND d."clientId" = ${client}` : Prisma.empty}
@@ -83,7 +84,7 @@ export async function getReportAnalytics(req: RequestWithUser, res: Response): P
         COALESCE((${serializedRows}), '[]'::json) AS rows,
         (SELECT json_build_object('totalOrders', COUNT(*)::double precision, 'totalRevenue', COALESCE(SUM(total), 0),
           'totalCost', COALESCE(SUM("totalCost"), 0), 'totalProfit', COALESCE(SUM("totalProfit"), 0)) FROM doc_rows) AS stats,
-        (SELECT json_build_object('unpaidCount', COUNT(*)::double precision, 'unpaidAmount', COALESCE(SUM(total), 0))
+        (SELECT json_build_object('unpaidCount', COUNT(*)::double precision, 'unpaidAmount', 0)
           FROM "SaleDocument" WHERE "paymentStatus" <> 'paid') AS unpaid,
         COALESCE((SELECT json_agg(days ORDER BY day) FROM (
           SELECT DATE_TRUNC('day', "saleDate") AS day, SUM(total) AS revenue, SUM("totalProfit") AS profit,

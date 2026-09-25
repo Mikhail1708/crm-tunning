@@ -28,13 +28,17 @@ test('invalid sort fields fall back to deterministic date order', () => assert.d
 
 test('financial summary uses full filtered DB groups, preserving unpaid distinctions and empty totals', async () => {
   const fixture = [
-    { clientId: 7, paymentStatus: 'paid', total: 100 },
-    { clientId: 7, paymentStatus: 'paid', total: 300 },
+    { clientId: 7, paymentStatus: 'paid', orderStatus: 'confirmed', total: 100 },
+    { clientId: 7, paymentStatus: 'paid', orderStatus: 'cancelled', total: 300 },
     { clientId: 7, paymentStatus: 'unpaid', total: 50 },
     { clientId: 7, paymentStatus: 'refunded', total: 80 },
     { clientId: 8, paymentStatus: 'paid', total: 999 },
   ];
-  const store = { saleDocument: { groupBy: async (query: any) => {
+  const store = { saleDocument: { aggregate: async (q: any) => {
+    assert.deepEqual(q.where.AND[1], { paymentStatus: 'paid', orderStatus: { not: 'cancelled' } });
+    const rows = fixture.filter(row => row.clientId === q.where.AND[0].clientId && row.paymentStatus === 'paid' && row.orderStatus !== 'cancelled');
+    return { _sum: { total: rows.reduce((sum, row) => sum + row.total, 0) }, _count: rows.length };
+  }, groupBy: async (query: any) => {
     assert.deepEqual(query.by, ['paymentStatus']); assert.equal(query.take, undefined); assert.equal(query.skip, undefined);
     const rows = fixture.filter(row => row.clientId === query.where.clientId);
     return [...new Set(rows.map(row => row.paymentStatus))].map(paymentStatus => ({ paymentStatus,
@@ -42,7 +46,7 @@ test('financial summary uses full filtered DB groups, preserving unpaid distinct
       _sum: { total: rows.filter(row => row.paymentStatus === paymentStatus).reduce((sum, row) => sum + row.total, 0) } }));
   } } } as any;
   const summary = await saleDocumentSummary(store, { clientId: 7 });
-  assert.deepEqual(summary, { total: 4, count: 4, totalAmount: 530, paidCount: 2, paidTotal: 400, unpaidCount: 1, unpaidTotal: 50, notPaidCount: 2, notPaidTotal: 130, averageCheck: 200 });
+  assert.deepEqual(summary, { total: 4, count: 4, totalAmount: 100, paidCount: 2, paidTotal: 100, unpaidCount: 1, unpaidTotal: 0, notPaidCount: 2, notPaidTotal: 0, averageCheck: 100 });
   assert.equal((await saleDocumentSummary(store, { clientId: 9 })).averageCheck, 0);
 });
 
@@ -57,6 +61,7 @@ test('amount substring search remains parameterized and shared by rows and full 
     assert.ok(sql.values.includes('23'));
     assert.ok(sql.values.includes(7));
     if (sql.text.includes('GROUP BY')) return [{ paymentStatus: 'paid', count: 2n, total: 357 }];
+    if (sql.text.includes('SUM(d.total)')) { assert.deepEqual(sql.values.slice(-2), ['paid', 'cancelled']); return [{ amount: 357, count: 2n }]; }
     if (sql.text.startsWith('SELECT count')) return [{ total: 2n }];
     assert.deepEqual(sql.values.slice(-2), [1, 1]);
     return fixture.slice(1).map(({ id }) => ({ id }));

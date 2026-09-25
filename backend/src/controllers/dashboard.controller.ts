@@ -1,3 +1,5 @@
+import { paidSaleSql, paidSaleWhere } from '../utils/saleFinancialEligibility';
+import { withClientFinancialTotals } from '../services/clientFinancials.service';
 import { PrismaClient, Prisma } from '@prisma/client';
 import { Response } from 'express';
 import { RequestWithUser } from '../types';
@@ -5,7 +7,7 @@ import { RequestWithUser } from '../types';
 const prisma = new PrismaClient();
 export async function dashboardData(db: Prisma.TransactionClient, start: Date, end: Date) {
   const dateFilter = Prisma.sql`d."saleDate" >= ${start} AND d."saleDate" <= ${end}`;
-  const paid = Prisma.sql`lower(d."paymentStatus") IN ('paid', 'payed', 'оплачен')`;
+  const paid = paidSaleSql('d');
   const [financial] = await db.$queryRaw<any[]>(Prisma.sql`
     WITH docs AS (SELECT d.*, ${paid} AS paid FROM "SaleDocument" d WHERE ${dateFilter}),
     costs AS (SELECT COALESCE(SUM(i.cost_price * i.quantity), 0) AS cost
@@ -13,8 +15,8 @@ export async function dashboardData(db: Prisma.TransactionClient, start: Date, e
     SELECT COUNT(*) FILTER(WHERE paid)::float AS "totalSales",
       COALESCE(SUM(total) FILTER(WHERE paid), 0)::float AS "totalRevenue",
       (SELECT cost FROM costs)::float AS "totalCost",
-      COUNT(*) FILTER(WHERE NOT paid)::float AS "unpaidSales",
-      COALESCE(SUM(total) FILTER(WHERE NOT paid), 0)::float AS "unpaidTotal" FROM docs`);
+      COUNT(*) FILTER(WHERE lower("paymentStatus") NOT IN ('paid', 'payed', 'оплачен'))::float AS "unpaidSales",
+      0::float AS "unpaidTotal" FROM docs`);
   const [catalog] = await db.$queryRaw<any[]>`SELECT COUNT(*)::float AS "totalProducts",
     COALESCE(SUM(stock), 0)::float AS "totalStock",
     COUNT(*) FILTER(WHERE stock <= min_stock)::float AS "lowStockCount" FROM "Product"`;
@@ -37,7 +39,7 @@ export async function dashboardData(db: Prisma.TransactionClient, start: Date, e
       ORDER BY d."saleDate" DESC, d.id DESC, i.id ASC LIMIT 1) latest ON TRUE
     ORDER BY top.total_sold DESC, p.id ASC`);
   const recent = await db.saleDocument.findMany({ where: { saleDate: { gte: start, lte: end },
-    OR: ['paid', 'payed', 'оплачен'].map(status => ({ paymentStatus: { equals: status, mode: 'insensitive' as const } })) },
+    ...paidSaleWhere() },
     take: 5, orderBy: [{ saleDate: 'desc' }, { id: 'desc' }],
     select: { id: true, documentNumber: true, saleDate: true, customerName: true, clientName: true,
       total: true, documentType: true, client: { select: { city: true } },
@@ -55,7 +57,7 @@ export async function dashboardData(db: Prisma.TransactionClient, start: Date, e
       total: sale.total, profit: sale.total - sale.items.reduce((sum, item) => sum + item.cost_price * item.quantity, 0),
       documentType: sale.documentType === 'receipt' ? 'Чек' : sale.documentType === 'invoice' ? 'Счет' : 'Заказ',
       paymentStatus: 'Оплачен', isPaid: true })),
-    recentClients: clients.map(client => ({ ...client, name: [client.lastName, client.firstName, client.middleName].filter(Boolean).join(' ') })) };
+    recentClients: (await withClientFinancialTotals(db, clients)).map(client => ({ ...client, name: [client.lastName, client.firstName, client.middleName].filter(Boolean).join(' ') })) };
 }
 
 export const getDashboard = async (req: RequestWithUser, res: Response): Promise<void> => {
