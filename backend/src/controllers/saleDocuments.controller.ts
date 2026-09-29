@@ -223,6 +223,7 @@ export const getSaleDocumentById = async (req: RequestWithUser, res: Response): 
         deliveryMethod: true,
         deliveryProvider: true,
         description: true,
+        invoiceAllocation: { select: { invoiceId: true, invoiceNumber: true, dueAt: true, status: true, confirmedAt: true, confirmedByName: true } },
         subtotal: true,
         discount: true,
         total: true,
@@ -324,6 +325,7 @@ export const createPublicOrder = async (req: Request, res: Response): Promise<vo
       });
       return;
     }
+    if (data.paymentMethod === 'bank_invoice' || data.invoiceId !== undefined) { res.status(400).json({ message: 'Use invoice intake' }); return; }
     requestExternalOrderId = externalOrderIdRaw.trim();
 
     if (!Array.isArray(items) || items.length === 0) {
@@ -413,6 +415,7 @@ export const createPublicOrder = async (req: Request, res: Response): Promise<vo
         )::text AS "lockResult"
       `;
 
+      if (await tx.invoiceAllocation.findUnique({ where: { externalOrderId: requestExternalOrderId } })) throw new SaleStockError(409, 'INVOICE_ORDER_IMMUTABLE', 'Use invoice intake');
       const orderAfterLock = await (tx.saleDocument as any).findUnique({
         where: { externalOrderId: requestExternalOrderId },
       });
@@ -622,6 +625,7 @@ export const createSaleDocument = async (req: RequestWithUser, res: Response): P
       paymentStatus = 'unpaid'
     } = data;
     
+    if (paymentMethod === 'bank_invoice') { res.status(400).json({ message: 'Use invoice intake' }); return; }
     assertSaleItems(items);
     if (!items || items.length === 0) {
       res.status(400).json({ message: 'Корзина не может быть пустой' });
@@ -1253,6 +1257,7 @@ export const updateFullOrder = async (req: RequestWithUser, res: Response): Prom
         contactMethod: true,
         deliveryMethod: true,
         deliveryProvider: true,
+        invoiceAllocation: { select: { invoiceId: true, invoiceNumber: true, dueAt: true, status: true, confirmedAt: true, confirmedByName: true } },
         description: true,
         subtotal: true,
         discount: true,
@@ -1325,12 +1330,13 @@ export const updatePaymentStatus = async (req: RequestWithUser, res: Response): 
 
     const currentDocument = await prisma.saleDocument.findUnique({
       where: { id: documentId },
-      select: { paymentStatus: true },
+      select: { paymentStatus: true, paymentMethod: true },
     });
     if (!currentDocument) {
       res.status(404).json({ message: 'Document not found' });
       return;
     }
+    if (currentDocument.paymentMethod === 'bank_invoice') { res.status(409).json({ code: 'INVOICE_PAYMENT_FORBIDDEN' }); return; }
     if (!canTransitionPaymentStatus(currentDocument.paymentStatus, paymentStatus)) {
       res.status(409).json({
         message: `Invalid payment status transition: ${currentDocument.paymentStatus} -> ${paymentStatus}`,
@@ -1339,7 +1345,7 @@ export const updatePaymentStatus = async (req: RequestWithUser, res: Response): 
     }
 
     const updated = await prisma.saleDocument.updateMany({
-      where: { id: documentId, paymentStatus: currentDocument.paymentStatus },
+      where: { id: documentId, paymentStatus: currentDocument.paymentStatus, OR: [{ paymentMethod: null }, { paymentMethod: { not: 'bank_invoice' } }] },
       data: { paymentStatus },
     });
     if (updated.count !== 1) {

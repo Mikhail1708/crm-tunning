@@ -31,6 +31,7 @@ export interface GetProductsParams {
   limit?: number;
   sortBy?: string;
   sortOrder?: 'asc' | 'desc';
+  excludeKits?: boolean;
 }
 
 export const productsApi = {
@@ -48,6 +49,9 @@ export const productsApi = {
   
   update: (id: number, data: UpdateProductData): Promise<ApiResponse<Product>> =>
     api.put(`/products/${id}`, data),
+
+  setPublication: (id: number, isPublished: boolean): Promise<ApiResponse<Product>> =>
+    api.patch(`/products/${id}/publication`, { isPublished }),
   
   delete: (id: number): Promise<ApiResponse<{ message: string }>> =>
     api.delete(`/products/${id}`),

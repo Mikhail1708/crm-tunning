@@ -40,6 +40,8 @@ interface FormattedProduct {
   description: string | null;
   stock: number;
   min_stock: number;
+  isPublished: boolean;
+  isKit: boolean;
   image_url: string | null;
   costBreakdown: any;
   createdAt: Date;
@@ -67,6 +69,9 @@ const formatProduct = (product: any): FormattedProduct => {
     });
   }
   
+  const kitItems = product.kit?.items || [];
+  const kitCost = kitItems.reduce((sum: number, item: any) => sum + item.component.cost_price * item.quantity, 0);
+  const kitRetail = kitItems.reduce((sum: number, item: any) => sum + item.component.retail_price * item.quantity, 0);
   return {
     id: product.id,
     name: product.name,
@@ -77,11 +82,14 @@ const formatProduct = (product: any): FormattedProduct => {
       name: pc.category.name,
       fields: pc.category.fields || []
     })) || [],
-    cost_price: product.cost_price,
-    retail_price: product.retail_price,
+    cost_price: product.isKit ? kitCost : product.cost_price,
+    retail_price: product.isKit ? kitRetail : product.retail_price,
     description: product.description,
-    stock: product.stock,
+    // Комплект — виртуальный товар. Его stock не является складским остатком.
+    stock: product.isKit ? 0 : product.stock,
     min_stock: product.min_stock,
+    isPublished: product.isPublished,
+    isKit: product.isKit,
     image_url: product.image_url,
     costBreakdown: product.costBreakdown || [],
     createdAt: product.createdAt,
@@ -113,7 +121,8 @@ export const getProducts = async (req: RequestWithUser, res: Response): Promise<
           include: {
             field: true
           }
-        }
+        },
+        kit: { include: { items: { include: { component: true } } } }
       },
       orderBy: { createdAt: 'desc' }
     });
@@ -134,7 +143,7 @@ export const getProductsSummary = async (req: RequestWithUser, res: Response): P
     const [summary] = await prisma.$queryRaw<Array<{ total: bigint; totalStock: bigint; totalValue: number; lowStock: bigint }>>`
       SELECT count(*) AS total, COALESCE(sum(p.stock), 0) AS "totalStock",
         COALESCE(sum(p.stock::double precision * p.cost_price), 0) AS "totalValue",
-        count(*) FILTER (WHERE p.stock <= p.min_stock) AS "lowStock"
+        count(*) FILTER (WHERE p."isKit" = false AND p.stock <= p.min_stock) AS "lowStock"
       FROM "Product" p WHERE ${productListFilter(req.query)}`;
     res.json({ total: Number(summary.total), totalStock: Number(summary.totalStock),
       totalValue: Number(summary.totalValue), lowStock: Number(summary.lowStock) });
@@ -170,7 +179,8 @@ export const getProductById = async (req: RequestWithUser, res: Response): Promi
           include: {
             field: true
           }
-        }
+        },
+        kit: { include: { items: { include: { component: true } } } }
       }
     });
     
@@ -447,6 +457,7 @@ export const getLowStockProducts = async (req: RequestWithUser, res: Response): 
       take: limit,
       skip,
       where: {
+        isKit: false,
         stock: {
           lte: prisma.product.fields.min_stock
         }
@@ -474,7 +485,7 @@ export const getLowStockProducts = async (req: RequestWithUser, res: Response): 
       costBreakdown: product.costBreakdown || []
     }));
     
-    res.setHeader('X-Total-Count', String(await prisma.product.count({ where: { stock: { lte: prisma.product.fields.min_stock } } })));
+    res.setHeader('X-Total-Count', String(await prisma.product.count({ where: { isKit: false, stock: { lte: prisma.product.fields.min_stock } } })));
     res.json(formattedProducts);
   } catch (error) {
     console.error('Error getting low stock products:', error);
@@ -526,6 +537,42 @@ export const getPriceHistory = async (req: RequestWithUser, res: Response): Prom
   } catch (error) {
     console.error('Error getting price history:', error);
     res.status(500).json({ message: 'Ошибка загрузки истории цен' });
+  }
+};
+
+export const updateProductPublication = async (req: RequestWithUser, res: Response): Promise<void> => {
+  try {
+    const productId = Number(req.params.id);
+    const { isPublished } = req.body;
+
+    if (!Number.isSafeInteger(productId) || productId <= 0) {
+      res.status(400).json({ message: 'Неверный ID товара' });
+      return;
+    }
+    if (typeof isPublished !== 'boolean') {
+      res.status(400).json({ message: 'isPublished должен быть boolean' });
+      return;
+    }
+
+    const existing = await prisma.product.findUnique({ where: { id: productId }, select: { id: true } });
+    if (!existing) {
+      res.status(404).json({ message: 'Товар не найден' });
+      return;
+    }
+
+    await prisma.product.update({ where: { id: productId }, data: { isPublished } });
+    const product = await prisma.product.findUnique({
+      where: { id: productId },
+      include: {
+        categories: { include: { category: { include: { fields: true } } } },
+        characteristics: { include: { field: true } }
+      }
+    });
+
+    res.json(formatProduct(product));
+  } catch (error) {
+    console.error('Error updating product publication:', error);
+    res.status(500).json({ message: 'Ошибка изменения видимости товара на сайте' });
   }
 };
 

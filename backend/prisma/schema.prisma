@@ -33,6 +33,8 @@ model Product {
   stock        Int       @default(0)
   min_stock    Int       @default(5)
   image_url    String?
+  isPublished  Boolean   @default(true)
+  isKit        Boolean   @default(false)
   costBreakdown Json?
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
@@ -44,6 +46,32 @@ model Product {
   images              ProductImage[]
   priceHistory        PriceHistory[]
   reservationItems    InventoryReservationItem[]
+  kit                 ProductKit?
+  kitItems            ProductKitItem[] @relation("KitComponent")
+}
+
+
+model ProductKit {
+  id        Int              @id @default(autoincrement())
+  productId Int              @unique
+  product   Product          @relation(fields: [productId], references: [id], onDelete: Cascade)
+  items     ProductKitItem[]
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+}
+
+model ProductKitItem {
+  id                 Int        @id @default(autoincrement())
+  kitId              Int
+  componentProductId Int
+  quantity           Int        @default(1)
+  sortOrder          Int        @default(0)
+  kit                ProductKit @relation(fields: [kitId], references: [id], onDelete: Cascade)
+  component          Product    @relation("KitComponent", fields: [componentProductId], references: [id], onDelete: Restrict)
+
+  @@unique([kitId, componentProductId])
+  @@index([kitId])
+  @@index([componentProductId])
 }
 
 model Category {
@@ -172,7 +200,35 @@ model SaleDocument {
   sales Sale[]
   creator User? @relation("UserSaleDocuments", fields: [createdBy], references: [id])
   inventoryReservation InventoryReservation?
+  invoiceAllocation InvoiceAllocation?
   statusOutboxEvents CrmStatusOutboxEvent[]
+}
+
+model InvoiceAllocation {
+  id String @id
+  externalOrderId String @unique
+  invoiceId String @unique
+  invoiceNumber String? @unique
+  requestId String? @unique
+  payloadHash String?
+  payload Json?
+  amountMinor BigInt?
+  currency String @default("RUB")
+  dueAt DateTime?
+  status String @default("held")
+  saleDocumentId Int? @unique
+  saleDocument SaleDocument? @relation(fields: [saleDocumentId], references: [id], onDelete: Restrict)
+  releaseRequestId String? @unique
+  releaseReason String?
+  releasedAt DateTime?
+  confirmationId String? @unique
+  confirmedAt DateTime?
+  confirmedById Int?
+  confirmedByName String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status, dueAt])
 }
 
 model CrmStatusOutboxEvent {

@@ -27,8 +27,12 @@ import {
 } from '../controllers/inventoryReservations.controller';
 
 import { validateSaleItems } from '../middleware/saleItems.middleware';
+import { createInvoiceOrder, releaseInvoiceOrder } from '../controllers/invoiceIntake.controller';
+import { confirmInvoicePayment } from '../controllers/invoiceConfirmation.controller';
 
 const router = Router();
+router.post('/internal/v1/invoice-orders', orderLimiter, requireInternalApiKey, createInvoiceOrder);
+router.post('/internal/v1/invoice-orders/:externalOrderId/release', orderLimiter, requireInternalApiKey, releaseInvoiceOrder);
 
 // 🔓 ПУБЛИЧНЫЙ ЭНДПОИНТ (без JWT) для создания заказа с сайта
 // Ограничение частоты запросов через rate-limit (настраивается отдельно)
@@ -42,6 +46,7 @@ router.post('/internal/v1/orders/:crmOrderId/cancellation', orderLimiter, requir
 
 // 🔒 Все остальные маршруты требуют аутентификации
 router.use(authMiddleware as any);
+router.post('/:id/invoice-payment-confirmation', managerAccess as any, confirmInvoicePayment as any);
 
 router.get('/', getSaleDocuments as any);
 router.get('/summary', getSaleDocumentSummary as any);

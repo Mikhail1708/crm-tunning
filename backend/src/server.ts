@@ -8,6 +8,7 @@ import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
 import authRoutes from './routes/auth.routes';
 import productRoutes from './routes/products.routes';
+import productKitRoutes from './routes/productKits.routes';
 import categoryRoutes from './routes/categories.routes';
 import saleDocumentRoutes from './routes/saleDocuments.routes';
 import { startInventoryReservationExpiryWorker } from './controllers/inventoryReservations.controller';
@@ -154,6 +155,7 @@ app.use((req, res, next) => {
 // ============================================================
 app.use('/api/auth', authRoutes);
 app.use('/api/products', productRoutes);
+app.use('/api/product-kits', productKitRoutes);
 app.use('/api/categories', categoryRoutes);
 app.use('/api/sale-documents', saleDocumentRoutes);
 app.use('/api/clients', clientRoutes);

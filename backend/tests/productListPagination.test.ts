@@ -93,7 +93,7 @@ test('summary aggregates complete filtered stock and value in PostgreSQL without
   assert.deepEqual(response.body, { total: 205, totalStock: 410, totalValue: 1230, lowStock: 205 });
   assert.equal(hydrationQuery, null);
   assert.match(sqlCalls[0].text, /sum\(p.stock::double precision \* p.cost_price\)/);
-  assert.match(sqlCalls[0].text, /count\(\*\) FILTER \(WHERE p.stock <= p.min_stock\)/);
+  assert.match(sqlCalls[0].text, /count\(\*\) FILTER \(WHERE p\."isKit" = false AND p.stock <= p.min_stock\)/);
   assert.doesNotMatch(sqlCalls[0].text, /LIMIT|OFFSET/);
   assert.deepEqual(sqlCalls[0].values, productListFilter(filters).values);
 });

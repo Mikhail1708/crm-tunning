@@ -50,6 +50,8 @@ export interface Product {
   retail_price: number;
   stock: number;
   min_stock: number;
+  isPublished: boolean;
+  isKit?: boolean;
   description?: string;
   categoryIds: number[];
   categories?: Category[];
@@ -116,6 +118,7 @@ export interface SaleDocument {
   discount: number;
   total: number;
   paymentMethod?: string;
+  invoiceAllocation?: { invoiceId: string; invoiceNumber: string | null; dueAt: string | null; status: string; confirmedAt: string | null; confirmedByName: string | null } | null;
   paymentStatus: 'paid' | 'unpaid';
   items: SaleDocumentItem[];
   saleDate: string;

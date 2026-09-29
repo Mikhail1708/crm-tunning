@@ -2,6 +2,7 @@ import { Prisma, PrismaClient } from '@prisma/client';
 import { canTransitionOrderStatus, isOrderStatus } from '../domain/orderStateMachine';
 import { enqueueOrderStatusProjection } from './statusOutbox.service';
 import { assertPositiveQuantity, deductSaleStock, SaleStockError, lockSaleDocument, lockStockProducts } from './saleStock.service';
+import { releaseInvoiceAllocationInTransaction } from './invoiceIntake.service';
 
 export class OrderLifecycleError extends Error {
   constructor(public statusCode: number, public code: string, message: string) {
@@ -17,6 +18,8 @@ type LifecycleDocument = {
   orderStatus: string;
   statusVersion: number;
   source: string | null;
+  paymentMethod?: string | null;
+  paymentStatus?: string;
   cancellationRequestId: string | null;
   cancellationDecision: string | null;
   cancellationReasonCode: string | null;
@@ -46,6 +49,8 @@ const lifecycleSelect = {
   orderStatus: true,
   statusVersion: true,
   source: true,
+  paymentMethod: true,
+  paymentStatus: true,
   cancellationRequestId: true,
   cancellationDecision: true,
   cancellationReasonCode: true,
@@ -77,6 +82,8 @@ const projectionDocument = (document: LifecycleDocument) => ({
   documentNumber: document.documentNumber,
   orderStatus: document.orderStatus,
   statusVersion: document.statusVersion,
+  paymentMethod: document.paymentMethod,
+  paymentStatus: document.paymentStatus,
 });
 
 // A transition across the cancelled boundary balances website stock once.
@@ -87,6 +94,12 @@ const restoreCancelledWebsiteStock = async (
   reopening = false,
 ): Promise<void> => {
   if (current.source !== 'website' || (!reopening && current.orderStatus === 'cancelled')) return;
+  if (current.paymentMethod === 'bank_invoice' && current.paymentStatus === 'unpaid') {
+    if (reopening) throw new OrderLifecycleError(409, 'INVOICE_REOPEN_FORBIDDEN', 'Released invoice cannot be reopened');
+    try { await releaseInvoiceAllocationInTransaction(tx, { id: current.id, paymentStatus: current.paymentStatus! }); }
+    catch (error) { if (error instanceof SaleStockError) throw new OrderLifecycleError(error.status, error.code, error.message); throw error; }
+    return;
+  }
   const reservation = await tx.inventoryReservation.findUnique({
     where: { saleDocumentId: current.id }, include: { items: true },
   });
@@ -126,6 +139,18 @@ export const updateAuthoritativeOrderStatus = async (
 
   return prisma.$transaction(async tx => {
     const current = await lockAndRead(tx, saleDocumentId);
+    if (current.paymentMethod === 'bank_invoice' && current.paymentStatus !== 'paid'
+      && nextStatus !== 'confirmed' && nextStatus !== 'cancelled') {
+      throw new OrderLifecycleError(409, 'INVOICE_UNPAID', 'Confirm receipt of payment before fulfillment');
+    }
+    if (current.paymentMethod === 'bank_invoice' && current.paymentStatus !== 'paid'
+      && nextStatus !== 'confirmed' && nextStatus !== 'cancelled') {
+      throw new OrderLifecycleError(409, 'INVOICE_UNPAID', 'Confirm receipt of payment before fulfillment');
+    }
+    if (current.paymentMethod === 'bank_invoice' && current.paymentStatus !== 'paid'
+      && nextStatus !== 'confirmed' && nextStatus !== 'cancelled') {
+      throw new OrderLifecycleError(409, 'INVOICE_UNPAID', 'Confirm receipt of payment before fulfillment');
+    }
     const allowed = options.manual
       ? isOrderStatus(current.orderStatus)
       : canTransitionOrderStatus(current.orderStatus, nextStatus);

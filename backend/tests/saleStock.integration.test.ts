@@ -173,7 +173,15 @@ test('PostgreSQL sale stock and historical product regressions', {
         // Only remove this test's alternate child to prove each FK on its own.
         if (keep === 'sale') await db.saleDocumentItem.deleteMany({ where: { productId: row.id } });
         else await db.sale.deleteMany({ where: { productId: row.id } });
-        await assert.rejects(db.product.delete({ where: { id: row.id } }), (error: any) => error.code === 'P2003');
+        const constraint = keep === 'sale' ? 'Sale_productId_fkey' : 'SaleDocumentItem_productId_fkey';
+        await assert.rejects(db.product.delete({ where: { id: row.id } }), (error: any) => {
+          const diagnostic = `${error.message || ''} ${JSON.stringify(error.meta || {})}`;
+          // PostgreSQL 18 RESTRICT uses SQLSTATE 23001, which Prisma 5 can
+          // expose as an unknown-request wrapper instead of its P2003 error.
+          const foreignKeyError = error.code === 'P2003'
+            || (error.name === 'PrismaClientUnknownRequestError' && /code: "23001"/.test(diagnostic));
+          return foreignKeyError && diagnostic.includes(constraint);
+        });
         assert.equal(await stock(row.id), 0);
         const count = keep === 'sale'
           ? await db.sale.count({ where: { productId: row.id } })

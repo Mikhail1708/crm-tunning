@@ -32,7 +32,9 @@ import {
   Save,
   Plus,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { isAxiosError } from 'axios';
@@ -795,6 +797,19 @@ export const ProductDetails: React.FC = () => {
     }
   };
 
+  const handleTogglePublication = async () => {
+    if (!product) return;
+    const nextValue = !product.isPublished;
+    try {
+      const response = await productsApi.setPublication(product.id, nextValue);
+      setProduct(response.data);
+      toast.success(nextValue ? 'Товар отображается на сайте' : 'Товар скрыт с сайта');
+    } catch (error) {
+      console.error('Publication update error:', error);
+      toast.error('Не удалось изменить отображение товара на сайте');
+    }
+  };
+
   const handleDeleteProduct = async () => {
     if (!product) return;
     if (confirm(`Удалить товар "${product.name}"? Это действие нельзя отменить.`)) {
@@ -893,7 +908,14 @@ export const ProductDetails: React.FC = () => {
             <p className="text-gray-500 dark:text-gray-400">Артикул: {product.article || '—'}</p>
           </div>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
+          <Button
+            variant="outline"
+            icon={product.isPublished ? Eye : EyeOff}
+            onClick={handleTogglePublication}
+          >
+            {product.isPublished ? 'Не отображать на сайте' : 'Отображать на сайте'}
+          </Button>
           <Button
             variant="outline"
             icon={History}

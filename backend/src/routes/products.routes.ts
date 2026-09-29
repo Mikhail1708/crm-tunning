@@ -10,6 +10,7 @@ import {
   getLowStockProducts,
   getPriceHistory,
   updateProductPrice,
+  updateProductPublication,
   uploadProductImage,
   deleteProductImage,
   setMainProductImage,
@@ -31,6 +32,7 @@ router.get('/:id/images', getProductImages as any);
 
 router.post('/', managerAccess as any, createProduct as any);
 router.put('/:id', managerAccess as any, updateProduct as any);
+router.patch('/:id/publication', managerAccess as any, updateProductPublication as any);
 router.delete('/:id', managerAccess as any, deleteProduct as any);
 router.put('/:id/price', managerAccess as any, updateProductPrice as any);
 

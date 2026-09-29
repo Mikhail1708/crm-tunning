@@ -6,6 +6,7 @@ export const paidWebsiteOrderSelect = {
   externalPaymentId: true,
   paidAmountMinor: true,
   paymentStatus: true,
+  paymentMethod: true,
   inventoryReservation: { select: { status: true, paymentId: true, paidAmountMinor: true } },
 } as const;
 
@@ -15,6 +16,7 @@ type PaymentFacts = {
   externalPaymentId: string | null;
   paidAmountMinor: bigint | null;
   paymentStatus: string;
+  paymentMethod?: string | null;
   inventoryReservation: { status: string; paymentId: string | null; paidAmountMinor: bigint | null } | null;
 };
 
@@ -30,6 +32,9 @@ export function isPaidWebsiteOrder(document: PaymentFacts): boolean {
 
 // Call only after locking and reading the persisted document in the write transaction.
 export function assertPaidWebsiteOrderEditable(document: PaymentFacts, metadata?: Record<string, unknown>): void {
+  if (document.paymentMethod === 'bank_invoice') {
+    throw new SaleStockError(409, 'INVOICE_ORDER_IMMUTABLE', 'Bank invoice orders require dedicated lifecycle operations');
+  }
   if (isPaidWebsiteOrder(document)
     && (!metadata || Object.keys(metadata).some(key => key !== 'description'))) {
     throw new SaleStockError(409, 'PAID_ORDER_IMMUTABLE',

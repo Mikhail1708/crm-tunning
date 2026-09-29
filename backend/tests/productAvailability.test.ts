@@ -15,10 +15,12 @@ test('public HTTP catalogue keeps Дроп Панара 4 дюйма through fre
   const Module = require('node:module');
   const originalLoad = Module._load;
   const queries: any[] = [];
-  const target = { id: 134, name: 'Дроп Панара 4 дюйма', article: 'PANARA-4', description: '', stock: 0, retail_price: 100,
+  const target = { id: 134, name: 'Дроп Панара 4 дюйма', article: 'PANARA-4', description: '', stock: 0, retail_price: 100, isPublished: true, isKit: false,
     categories: [{ category: { id: 2, name: 'Подвеска' } }, { category: { id: 3, name: 'Лифт-комплекты' } }], images: [], characteristics: [] };
   const products = [{ ...target, id: 1, name: 'Другой товар', article: 'OTHER', stock: 5, categories: [{ category: { id: 1, name: 'Прочее' } }] }, target];
   const matching = (where: any) => products.filter(product => {
+    if (where.isPublished !== undefined && product.isPublished !== where.isPublished) return false;
+    if (where.id !== undefined && product.id !== where.id) return false;
     if (where.stock?.gt !== undefined && !(product.stock > where.stock.gt)) return false;
     if (where.OR && !where.OR.some((filter: any) => Object.entries(filter).some(([key, query]: [string, any]) =>
       String((product as any)[key] || '').toLowerCase().includes(query.contains.toLowerCase())))) return false;
@@ -32,7 +34,7 @@ test('public HTTP catalogue keeps Дроп Панара 4 дюйма through fre
     product: {
       findMany: async (query: any) => { queries.push(query); return matching(query.where).slice(query.skip, query.skip + query.take); },
       count: async (query: any) => { assert.deepEqual(query.where, queries[queries.length - 1].where); return matching(query.where).length; },
-      findUnique: async (query: any) => products.find(product => product.id === query.where.id) || null,
+      findFirst: async (query: any) => matching(query.where)[0] || null,
     },
     category: { findMany: async (query: any) => { assert.equal(query.where.isActive, true); assert.equal(query.select._count.select.products, true); return []; } },
   };

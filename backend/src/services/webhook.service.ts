@@ -10,6 +10,14 @@ export type OrderStatusWebhookPayload = {
   status: string;
   version: number;
   timestamp: string;
+  paymentMethod?: 'bank_invoice';
+  paymentStatus?: string;
+  invoiceId?: string;
+  invoiceNumber?: string | null;
+  amountMinor?: string;
+  currency?: string;
+  paidAt?: string | null;
+  paymentConfirmationId?: string | null;
 };
 
 const canonicalStringify = (obj: Record<string, unknown>): string => {

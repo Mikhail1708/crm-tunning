@@ -170,3 +170,15 @@ test('HTTP manager and internal full routes reject payloads without payment fiel
     } assert.deepEqual(state, before);
   } finally { server.closeAllConnections(); await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())); }
 });
+
+test('bank invoice rejects print-payment, generic edit, full edit and deletion without mutation', async () => {
+  for (const handler of [documents.updatePaymentStatus, documents.updateSaleDocument, documents.updateFullOrder, documents.deleteSaleDocument]) {
+    const { state, calls } = store({ ...paid(), paymentMethod: 'bank_invoice', paymentStatus: 'unpaid' });
+    const before = structuredClone(state);
+    const response = await invoke(handler, { paymentStatus: 'paid', items: paid().items });
+    assert.equal(response.statusCode, 409);
+    assert.match(response.body.code, /^INVOICE_/);
+    assert.deepEqual(state, before);
+    assert.ok(!calls.includes('write') && !calls.includes('stock') && !calls.includes('delete'));
+  }
+});

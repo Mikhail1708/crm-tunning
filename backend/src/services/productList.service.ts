@@ -38,11 +38,12 @@ export function productListFilter(query: Record<string, any>): Prisma.Sql {
       conditions.push(operation === 'gte' ? Prisma.sql`p.retail_price >= ${Number(value)}` : Prisma.sql`p.retail_price <= ${Number(value)}`);
     }
   }
-  if (query.inStockOnly === 'true' || query.inStockOnly === true) conditions.push(Prisma.sql`p.stock > 0`);
-  if (query.stockStatus === 'in') conditions.push(Prisma.sql`p.stock > 0`);
-  if (query.stockStatus === 'out') conditions.push(Prisma.sql`p.stock = 0`);
+  if (query.inStockOnly === 'true' || query.inStockOnly === true) conditions.push(Prisma.sql`(p.stock > 0 OR p."isKit" = true)`);
+  if (query.excludeKits === 'true' || query.excludeKits === true) conditions.push(Prisma.sql`p."isKit" = false`);
+  if (query.stockStatus === 'in') conditions.push(Prisma.sql`p."isKit" = false AND p.stock > 0`);
+  if (query.stockStatus === 'out') conditions.push(Prisma.sql`p."isKit" = false AND p.stock = 0`);
   // Preserve the existing catalogue's min_stock || 5 filter semantics.
-  if (query.stockStatus === 'low') conditions.push(Prisma.sql`p.stock <= COALESCE(NULLIF(p.min_stock, 0), 5)`);
+  if (query.stockStatus === 'low') conditions.push(Prisma.sql`p."isKit" = false AND p.stock <= COALESCE(NULLIF(p.min_stock, 0), 5)`);
   let characteristics: unknown = query.characteristics;
   if (typeof characteristics === 'string') {
     try { characteristics = JSON.parse(characteristics); } catch { characteristics = {}; }

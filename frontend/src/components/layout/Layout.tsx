@@ -6,6 +6,7 @@ import { useTheme } from '../../contexts/ThemeContext';
 import { 
   LayoutDashboard, 
   Package, 
+  PackagePlus,
   ShoppingCart, 
   BarChart3,
   Tag,  
@@ -31,6 +32,7 @@ interface NavItem {
 const navigation: NavItem[] = [
   { name: 'Главная', href: '/dashboard', icon: LayoutDashboard, roles: ['admin', 'manager'] },
   { name: 'Товары', href: '/products', icon: Package, roles: ['admin', 'manager'] },
+  { name: 'Комплекты', href: '/product-kits', icon: PackagePlus, roles: ['admin', 'manager'] },
   { name: 'Категории', href: '/categories', icon: Tag, roles: ['admin', 'manager'] },
   { name: 'Клиенты', href: '/clients', icon: Users, roles: ['admin', 'manager'] },
   { name: 'Продажи', href: '/sales', icon: ShoppingCart, roles: ['admin', 'manager'] },

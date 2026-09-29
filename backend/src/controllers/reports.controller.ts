@@ -649,19 +649,172 @@ export const getDatabaseDump = async (req: RequestWithUser, res: Response): Prom
   }
 };
 
-export const restoreDatabase = async (req: RequestWithUser, res: Response): Promise<void> => {
+export const restoreDatabase = async (
+  req: RequestWithUser,
+  res: Response
+): Promise<void> => {
   try {
-    if (req.user?.role !== 'admin') { res.status(403).json({ message: 'Доступ запрещен. Требуются права администратора' }); return; }
-    let dump = req.body;
-    if (dump?.data && (!dump.version || dump.version === '1.0')) {
-      dump = { ...convertDumpToV3(dump), legacyRuntimePolicy: dump.legacyRuntimePolicy };
+    if (req.user?.role !== 'admin') {
+      res.status(403).json({
+        message:
+          'Доступ запрещен. Требуются права администратора',
+      });
+
+      return;
     }
-    await restoreDatabaseBackup(prisma, dump);
-    res.json({ success: true, message: 'База данных успешно восстановлена из дампа', timestamp: new Date().toISOString() });
-  } catch (error) {
-    if (error instanceof BackupError) { res.status(error.status).json({ message: error.message }); return; }
-    console.error('Database restore failed');
-    res.status(500).json({ message: 'Ошибка восстановления базы данных' });
+
+    let dump = req.body;
+
+    console.log(
+      '🔄 Начало восстановления базы данных...'
+    );
+
+    console.log(
+      '📦 Версия дампа:',
+      dump?.version || 'не указана'
+    );
+
+    if (
+      dump?.data &&
+      (!dump.version || dump.version === '1.0')
+    ) {
+      console.log(
+        '🔄 Конвертация старого дампа в формат v3...'
+      );
+
+      dump = {
+        ...convertDumpToV3(dump),
+        legacyRuntimePolicy:
+          dump.legacyRuntimePolicy,
+      };
+    }
+
+    await restoreDatabaseBackup(
+      prisma,
+      dump
+    );
+
+    console.log(
+      '✅ База данных успешно восстановлена'
+    );
+
+    res.json({
+      success: true,
+      message:
+        'База данных успешно восстановлена из дампа',
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error: unknown) {
+    if (error instanceof BackupError) {
+      console.error(
+        `❌ Database restore rejected [${error.status}]:`,
+        error.message
+      );
+
+      res
+        .status(error.status)
+        .json({
+          message: error.message,
+        });
+
+      return;
+    }
+
+    console.error(
+      '❌ Database restore failed:',
+      error
+    );
+
+    if (
+      error instanceof
+      Prisma.PrismaClientKnownRequestError
+    ) {
+      console.error(
+        'Prisma error code:',
+        error.code
+      );
+
+      console.error(
+        'Prisma error meta:',
+        error.meta
+      );
+
+      res.status(500).json({
+        message:
+          'Ошибка восстановления базы данных',
+
+        error:
+          process.env.NODE_ENV ===
+          'development'
+            ? `Prisma ${error.code}: ${error.message}`
+            : undefined,
+      });
+
+      return;
+    }
+
+    if (
+      error instanceof
+      Prisma.PrismaClientUnknownRequestError
+    ) {
+      console.error(
+        'Prisma unknown request error:',
+        error.message
+      );
+
+      res.status(500).json({
+        message:
+          'Ошибка восстановления базы данных',
+
+        error:
+          process.env.NODE_ENV ===
+          'development'
+            ? error.message
+            : undefined,
+      });
+
+      return;
+    }
+
+    if (error instanceof Error) {
+      console.error(
+        'Restore error name:',
+        error.name
+      );
+
+      console.error(
+        'Restore error message:',
+        error.message
+      );
+
+      console.error(
+        'Restore error stack:',
+        error.stack
+      );
+
+      res.status(500).json({
+        message:
+          'Ошибка восстановления базы данных',
+
+        error:
+          process.env.NODE_ENV ===
+          'development'
+            ? error.message
+            : undefined,
+      });
+
+      return;
+    }
+
+    console.error(
+      'Unknown restore error:',
+      error
+    );
+
+    res.status(500).json({
+      message:
+        'Ошибка восстановления базы данных',
+    });
   }
 };
 

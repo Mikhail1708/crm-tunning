@@ -70,6 +70,7 @@ test('F25 public order ignores internal fields and nested client writes at the P
   const tx = {
     $queryRaw: async () => [{ id: 1 }],
     product: { updateMany: async () => ({ count: 1 }) },
+    invoiceAllocation: { findUnique: async () => null },
     saleDocument: {
       findUnique: async () => null,
       create: async ({ data }: any) => { documentData = data; return { id: 11, ...data }; },
@@ -86,6 +87,7 @@ test('F25 public order ignores internal fields and nested client writes at the P
     sale: { createMany: async ({ data }: any) => { saleData = data; return { count: data.length }; } },
   };
   db = {
+    invoiceAllocation: { findUnique: async () => null },
     saleDocument: { findUnique: async () => null },
     product: { findMany: async () => [{ id: 1, stock: 2, cost_price: 50, retail_price: 100, name: 'Product', article: 'A' }] },
     $transaction: (run: Function) => run(tx),
@@ -136,7 +138,8 @@ test('createSaleDocument maps a lost stock race to 409 before inserting financia
       return run({
         $queryRaw: async () => [{ id: 1 }],
         product: { updateMany: async ({ where }: any) => ({ count: stock >= where.stock.gte ? 1 : 0 }) },
-        saleDocument: { create: async () => { financialWrites++; } },
+        invoiceAllocation: { findUnique: async () => null },
+    saleDocument: { create: async () => { financialWrites++; } },
         sale: { createMany: async () => { financialWrites++; } },
       });
     },

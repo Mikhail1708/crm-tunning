@@ -24,8 +24,8 @@ export const getPublicProducts = async (req: Request, res: Response): Promise<vo
     const { page: pageNum, limit: limitNum, skip } = parsePagination(page, limit, 12, 100);
 
     // Строим фильтры
-    // Product has no separate publication flag. Zero free stock does not unpublish it.
-    const where: any = {};
+    // На сайт попадают только опубликованные товары. Остаток на публикацию не влияет.
+    const where: any = { isPublished: true };
 
     // Фильтр по поиску
     if (search) {
@@ -63,6 +63,14 @@ export const getPublicProducts = async (req: Request, res: Response): Promise<vo
           characteristics: {
             include: {
               field: true,
+            },
+          },
+          kit: {
+            include: {
+              items: {
+                orderBy: { sortOrder: 'asc' },
+                include: { component: true },
+              },
             },
           },
         },
@@ -104,17 +112,29 @@ export const getPublicProducts = async (req: Request, res: Response): Promise<vo
 
       // Если нет изображений — ставим заглушку
       const finalImages = images.length > 0 ? images : ['/images/placeholder.jpg'];
+      const kitItems = product.kit?.items || [];
+      const kitPrice = kitItems.reduce((sum: number, item: any) => sum + item.component.retail_price * item.quantity, 0);
+      const kitComposition = kitItems.map((item: any) => ({
+        productId: item.component.id,
+        name: item.component.name,
+        article: item.component.article || '',
+        quantity: item.quantity,
+        price: item.component.retail_price,
+        lineTotal: item.component.retail_price * item.quantity,
+      }));
 
       return {
         id: product.id,
         name: product.name,
         description: product.description || '',
-        price: product.retail_price,
+        price: product.isKit ? kitPrice : product.retail_price,
         oldPrice: null,
         category: categories.length > 0 ? categories[0].name : '',
         categories: categories,
         carModel: 'Универсальный',
-        ...productAvailability(product.stock),
+        ...(product.isKit ? { stock: 0, availableStock: 0, inStock: false, availabilityStatus: 'on_order' as const } : productAvailability(product.stock)),
+        isKit: product.isKit,
+        kitComposition,
         images: finalImages,
         sku: product.article || '',
         rating: null,
@@ -153,8 +173,8 @@ export const getPublicProductById = async (req: Request, res: Response): Promise
       return;
     }
 
-    const product = await prisma.product.findUnique({
-      where: { id: productId },
+    const product = await prisma.product.findFirst({
+      where: { id: productId, isPublished: true },
       include: {
         categories: {
           include: {
@@ -172,6 +192,14 @@ export const getPublicProductById = async (req: Request, res: Response): Promise
         characteristics: {
           include: {
             field: true,
+          },
+        },
+        kit: {
+          include: {
+            items: {
+              orderBy: { sortOrder: 'asc' },
+              include: { component: true },
+            },
           },
         },
       },
@@ -202,12 +230,22 @@ export const getPublicProductById = async (req: Request, res: Response): Promise
     }
 
     const finalImages = images.length > 0 ? images : ['/images/placeholder.jpg'];
+    const kitItems = product.kit?.items || [];
+    const kitPrice = kitItems.reduce((sum: number, item: any) => sum + item.component.retail_price * item.quantity, 0);
+    const kitComposition = kitItems.map((item: any) => ({
+      productId: item.component.id,
+      name: item.component.name,
+      article: item.component.article || '',
+      quantity: item.quantity,
+      price: item.component.retail_price,
+      lineTotal: item.component.retail_price * item.quantity,
+    }));
 
     const formattedProduct = {
       id: product.id,
       name: product.name,
       description: product.description || '',
-      price: product.retail_price,
+      price: product.isKit ? kitPrice : product.retail_price,
       oldPrice: null,
       category: product.categories?.[0]?.category?.name || '',
       categories: product.categories.map((pc: any) => ({
@@ -215,7 +253,9 @@ export const getPublicProductById = async (req: Request, res: Response): Promise
         name: pc.category.name,
       })),
       carModel: 'Универсальный',
-      ...productAvailability(product.stock),
+      ...(product.isKit ? { stock: 0, availableStock: 0, inStock: false, availabilityStatus: 'on_order' as const } : productAvailability(product.stock)),
+      isKit: product.isKit,
+      kitComposition,
       images: finalImages,
       sku: product.article || '',
       rating: null,

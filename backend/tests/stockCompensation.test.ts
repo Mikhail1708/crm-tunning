@@ -30,6 +30,7 @@ function model(status = 'consumed', orderStatus = 'confirmed') {
   const tx: any = {
     $queryRaw: async (strings: TemplateStringsArray) => strings.join('').includes('SELECT id, name')
       ? [{ id: 1, stock: state.stock, name: 'Last unit', article: 'A', retail_price: 100, cost_price: 50 }] : [],
+    invoiceAllocation: { findUnique: async () => null },
     saleDocument: {
       findUnique: async () => structuredClone(state.document),
       update: async ({ data }: any) => {

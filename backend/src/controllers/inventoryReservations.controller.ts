@@ -111,6 +111,7 @@ export const createInventoryReservation = async (req: Request, res: Response): P
     const payloadHash = buildReservationPayloadHash(externalOrderId, currency, items);
     const result = await prisma.$transaction(async tx => {
       await lockReservation(tx, externalOrderId);
+      if (await tx.invoiceAllocation.findUnique({ where: { externalOrderId } })) throw new ReservationHttpError(409, 'Order belongs to bank invoice');
       const existing = await tx.inventoryReservation.findUnique({
         where: { externalOrderId },
         include: { items: true },
@@ -310,6 +311,7 @@ const findOrCreateClient = async (tx: Prisma.TransactionClient, clientData: any)
 
 export const consumeInventoryReservation = async (req: Request, res: Response): Promise<void> => {
   try {
+    if (req.body?.paymentMethod === 'bank_invoice' || req.body?.invoiceId !== undefined) { res.status(400).json({ message: 'Use invoice intake' }); return; }
     const reservationId = req.params.reservationId;
     const externalOrderId = typeof req.body?.externalOrderId === 'string' ? req.body.externalOrderId.trim() : '';
     const paymentId = typeof req.body?.paymentId === 'string' ? req.body.paymentId.trim() : '';
@@ -329,6 +331,7 @@ export const consumeInventoryReservation = async (req: Request, res: Response): 
       const initial = await tx.inventoryReservation.findUnique({ where: { id: reservationId } });
       if (!initial) throw new ReservationHttpError(404, 'Reservation not found');
       await lockReservation(tx, initial.externalOrderId);
+      if (await tx.invoiceAllocation.findUnique({ where: { externalOrderId: initial.externalOrderId } })) throw new ReservationHttpError(409, 'Order belongs to bank invoice');
       const reservation = await tx.inventoryReservation.findUnique({
         where: { id: reservationId },
         include: { items: true, saleDocument: true },

@@ -140,7 +140,8 @@ export const OrderDetails: React.FC = () => {
     
     setGenerating(true);
     try {
-      await saleDocumentsApi.updatePaymentStatus(order.id, 'paid');
+      if (order.paymentMethod === 'bank_invoice') await saleDocumentsApi.confirmInvoicePayment(order.id);
+      else await saleDocumentsApi.updatePaymentStatus(order.id, 'paid');
       const updatedOrder = { ...order, paymentStatus: 'paid' };
       setOrder(updatedOrder);
       toast.success('Заказ отмечен как оплаченный');
@@ -326,6 +327,7 @@ export const OrderDetails: React.FC = () => {
           </div>
         </div>
         <div className="flex gap-2">
+          {order.paymentMethod !== 'bank_invoice' && <>
           <Button
             onClick={() => setShowEditModal(true)}
             icon={Edit3}
@@ -349,6 +351,7 @@ export const OrderDetails: React.FC = () => {
           >
             Счет
           </Button>
+          </>}
         </div>
       </div>
 
@@ -424,7 +427,7 @@ export const OrderDetails: React.FC = () => {
               )}
             </div>
             
-            {order.paymentStatus !== 'paid' && (
+            {order.paymentStatus !== 'paid' && orderStatus !== 'cancelled' && (user?.role === 'manager' || user?.role === 'admin') && (
               <Button
                 onClick={handleMarkAsPaid}
                 disabled={generating}
@@ -432,13 +435,20 @@ export const OrderDetails: React.FC = () => {
                 variant="secondary"
                 size="sm"
               >
-                {generating ? 'Обработка...' : 'Отметить как оплаченный'}
+                {generating ? 'Обработка...' : order.paymentMethod === 'bank_invoice' ? 'Оплата получена' : 'Отметить как оплаченный'}
               </Button>
             )}
           </div>
         </div>
       </div>
 
+      {order.paymentMethod === 'bank_invoice' && <div className="p-4 rounded-lg border space-y-2">
+        <p>Способ оплаты: <strong>По счёту</strong></p>
+        <p>{order.paymentStatus === 'paid' ? 'Оплачено по счёту' : 'Ожидает оплаты'}</p>
+        <p>Номер счёта: {order.invoiceAllocation?.invoiceNumber || '—'}</p>
+        <p>Сумма: {formatPrice(order.total)}</p>
+        {order.invoiceAllocation?.dueAt && <p>Оплатить до: {formatDate(order.invoiceAllocation.dueAt)}</p>}
+      </div>}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
           <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">

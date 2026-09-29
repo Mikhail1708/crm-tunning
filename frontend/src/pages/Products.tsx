@@ -35,7 +35,9 @@ import {
   Boxes,
   RefreshCw,
   CheckSquare,
-  Square
+  Square,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -239,6 +241,7 @@ interface ProductRowProps {
   onToggleExpand: (id: number) => void;
   onEdit: (product: Product) => void;
   onDelete: (id: number, name: string) => void;
+  onTogglePublication: (product: Product) => void;
   onDoubleClick: () => void; // 👈 ДОБАВЛЕНО
 }
 
@@ -249,6 +252,7 @@ const ProductRow = React.memo(({
   onToggleExpand, 
   onEdit, 
   onDelete,
+  onTogglePublication,
   onDoubleClick // 👈 ДОБАВЛЕНО
 }: ProductRowProps) => {
   const margin = product.cost_price > 0 
@@ -350,13 +354,26 @@ const ProductRow = React.memo(({
           </span>
         </Td>
         <Td>
-          <span className={`px-2 py-1 rounded-full text-xs font-medium ${stockStatus.bg} ${stockStatus.color}`}>
-            {stockStatus.text} ({product.stock} шт.)
-          </span>
+          {product.isKit ? (
+            <span className="px-2 py-1 rounded-full text-xs font-medium bg-violet-100 text-violet-700" title="Комплект не числится отдельной единицей на складе">
+              Виртуальный комплект
+            </span>
+          ) : (
+            <span className={`px-2 py-1 rounded-full text-xs font-medium ${stockStatus.bg} ${stockStatus.color}`}>
+              {stockStatus.text} ({product.stock} шт.)
+            </span>
+          )}
         </Td>
         <Td>{renderCharacteristicsCell()}</Td>
         <Td onClick={(e) => e.stopPropagation()}>
           <div className="flex gap-2">
+            <button
+              onClick={() => onTogglePublication(product)}
+              className={`p-1 rounded-lg transition-colors ${product.isPublished ? 'text-green-600 hover:bg-green-50' : 'text-gray-500 hover:bg-gray-100'}`}
+              title={product.isPublished ? 'Не отображать на сайте' : 'Отображать на сайте'}
+            >
+              {product.isPublished ? <Eye size={18} /> : <EyeOff size={18} />}
+            </button>
             <button
               onClick={() => onEdit(product)}
               className="p-1 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
@@ -703,6 +720,18 @@ export const Products: React.FC = () => {
     }
   }, [loadProducts]);
 
+  const handleTogglePublication = useCallback(async (product: Product) => {
+    const nextValue = !product.isPublished;
+    try {
+      await productsApi.setPublication(product.id, nextValue);
+      toast.success(nextValue ? 'Товар отображается на сайте' : 'Товар скрыт с сайта');
+      await loadProducts();
+    } catch (error) {
+      console.error('Error updating publication:', error);
+      toast.error('Не удалось изменить отображение товара на сайте');
+    }
+  }, [loadProducts]);
+
   const toggleRowExpand = useCallback((productId: number) => {
     setExpandedRows(prev => ({ ...prev, [productId]: !prev[productId] }));
   }, []);
@@ -943,6 +972,7 @@ export const Products: React.FC = () => {
                     onToggleExpand={toggleRowExpand}
                     onEdit={handleOpenModal}
                     onDelete={handleDelete}
+                    onTogglePublication={handleTogglePublication}
                     onDoubleClick={() => handleRowDoubleClick(product.id)} // 👈 ДОБАВЛЕНО
                   />
                 ))}

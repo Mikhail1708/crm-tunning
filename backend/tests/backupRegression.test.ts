@@ -7,9 +7,9 @@ const models: Record<string, string> = {
   users: 'user', categories: 'category', categoryFields: 'categoryField', products: 'product', productCategories: 'productCategory',
   productCharacteristics: 'productCharacteristic', clients: 'client', saleDocuments: 'saleDocument', saleDocumentItems: 'saleDocumentItem',
   sales: 'sale', expenses: 'expense', productImages: 'productImage', priceHistory: 'priceHistory', inventoryReservations: 'inventoryReservation',
-  inventoryReservationItems: 'inventoryReservationItem', crmStatusOutboxEvents: 'crmStatusOutboxEvent',
+  inventoryReservationItems: 'inventoryReservationItem', crmStatusOutboxEvents: 'crmStatusOutboxEvent', invoiceAllocations: 'invoiceAllocation',
 };
-const runtime = ['productImages', 'priceHistory', 'inventoryReservations', 'inventoryReservationItems', 'crmStatusOutboxEvents'];
+const runtime = ['productImages', 'priceHistory', 'inventoryReservations', 'inventoryReservationItems', 'crmStatusOutboxEvents', 'invoiceAllocations'];
 const emptyDump = (version = '4.0'): any => ({ version, data: Object.fromEntries(Object.keys(models).filter(key => version === '4.0' || !runtime.includes(key)).map(key => [key, []])) });
 
 function memoryDb(initial: Record<string, any[]> = {}, failModel?: string) {
@@ -86,7 +86,7 @@ test('v4 export uses one repeatable-read snapshot and roundtrips runtime BigInt/
   const source = memoryDb(fixture);
   const dump = await exportDatabaseBackup(source.db);
   assert.equal(source.options[0].isolationLevel, Prisma.TransactionIsolationLevel.RepeatableRead);
-  assert.equal(Object.keys(dump.data).length, 16);
+  assert.equal(Object.keys(dump.data).length, 17);
   assert.equal(dump.data.saleDocuments[0].paidAmountMinor, '9007199254740993');
   assert.equal(dump.data.productImages[0].data, 'AP8KgA==');
   const target = memoryDb();
@@ -192,7 +192,7 @@ test('preserved admin credentials remain unchanged and restored foreign keys rem
   assert.equal(store.state().saleDocument[0].createdBy, 42);
   assert.equal(store.state().priceHistory[0].changedBy, 42);
 });
-for (const model of ['inventoryReservation', 'crmStatusOutboxEvent']) test(`history purge refuses ${model}`, async () => {
+for (const model of ['inventoryReservation', 'crmStatusOutboxEvent', 'invoiceAllocation']) test(`history purge refuses ${model}`, async () => {
   const store = memoryDb({ [model]: [{ id: 'x' }] });
   await assert.rejects(assertSalesHistoryCanBeCleared(store.tx), (error: any) => error instanceof BackupError && error.status === 409);
   assert.ok(!store.events.some(value => value.startsWith('delete:')));
@@ -212,4 +212,20 @@ test('broken restored reservation FK aborts replacement and preserves old datase
   await assert.rejects(restoreDatabaseBackup(store.db, dump));
   assert.deepEqual(store.state().saleDocument, [{ id: 99 }]);
   assert.deepEqual(store.state().inventoryReservation, [{ id: 'old', saleDocumentId: 99 }]);
+});
+
+test('invoice allocations and release tombstones survive backup; older dumps cannot discard them', async () => {
+  const source = memoryDb({ invoiceAllocation: [{ id: 'held', amountMinor: 123n, payload: { itemsSnapshot: [] } }, { id: 'released', amountMinor: null, payload: null }] });
+  const dump = await exportDatabaseBackup(source.db);
+  assert.equal(dump.version, '4.0');
+  assert.equal(dump.data.invoiceAllocations[0].amountMinor, '123');
+  const target = memoryDb(); const creates: any[] = [];
+  target.tx.invoiceAllocation.create = async ({ data }: any) => { creates.push(data); return data; };
+  await restoreDatabaseBackup(target.db, JSON.parse(JSON.stringify(dump)));
+  assert.equal(creates[0].amountMinor, 123n);
+  assert.equal(creates[1].payload, Prisma.DbNull);
+  const old = emptyDump('4.0'); delete old.data.invoiceAllocations;
+  await assert.rejects(restoreDatabaseBackup(source.db, old), (error: any) => error.status === 409);
+  assert.ok(!source.events.some(e => e.startsWith('delete:')));
+  await restoreDatabaseBackup(memoryDb().db, old);
 });

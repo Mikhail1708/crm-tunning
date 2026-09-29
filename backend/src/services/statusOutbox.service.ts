@@ -19,6 +19,8 @@ type StatusProjectionDocument = {
   documentNumber: string;
   orderStatus: string;
   statusVersion: number;
+  paymentMethod?: string | null;
+  paymentStatus?: string;
 };
 
 type ClaimedOutboxEvent = {
@@ -65,6 +67,13 @@ export const enqueueOrderStatusProjection = async (
   document: StatusProjectionDocument,
 ): Promise<void> => {
   const payload = buildOrderStatusWebhookPayload(document);
+  if (document.paymentMethod === 'bank_invoice') {
+    const allocation = await tx.invoiceAllocation.findUniqueOrThrow({ where: { saleDocumentId: document.id } });
+    Object.assign(payload, { paymentMethod: 'bank_invoice', paymentStatus: document.paymentStatus,
+      invoiceId: allocation.invoiceId, invoiceNumber: allocation.invoiceNumber,
+      amountMinor: allocation.amountMinor!.toString(), currency: allocation.currency,
+      paidAt: allocation.confirmedAt?.toISOString() ?? null, paymentConfirmationId: allocation.confirmationId });
+  }
   await (tx as any).crmStatusOutboxEvent.upsert({
     where: { id: payload.eventId },
     create: {

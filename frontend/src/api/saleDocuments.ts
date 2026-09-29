@@ -98,6 +98,7 @@ export const saleDocumentsApi = {
 
   // Отметить как оплаченный (алиас)
   markAsPaid: (id: number) => api.put(`/sale-documents/${id}/payment`, { paymentStatus: 'paid' }),
+  confirmInvoicePayment: (id: number) => api.post(`/sale-documents/${id}/invoice-payment-confirmation`, {}),
   
   // Получить чек
   getReceipt: (id: number) => api.get(`/sale-documents/${id}/receipt`, { responseType: 'blob' }),

@@ -4,6 +4,7 @@ import { ProductPagination } from '../components/ui/ProductPagination';
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { productsApi } from '../api/products';
+import { productKitsApi, ProductKit } from '../api/productKits';
 import { categoriesApi } from '../api/categories';
 import { saleDocumentsApi } from '../api/saleDocuments';
 import { clientsApi } from '../api/clients';
@@ -51,6 +52,12 @@ interface CartItem {
   selling_price: number;
   quantity: number;
   stock: number;
+}
+
+interface KitSelectionItem {
+  productId: number;
+  selected: boolean;
+  quantity: number;
 }
 
 interface Totals {
@@ -414,11 +421,12 @@ const ProductRow: React.FC<ProductRowProps> = ({ product, isInCart, onAddToCart 
 
   const validateQuantity = (value: number): string => {
     if (isNaN(value) || value < 1) return 'Количество > 0';
-    if (value > product.stock) return `Доступно ${product.stock} шт.`;
+    if (!product.isKit && value > product.stock) return `Доступно ${product.stock} шт.`;
     return '';
   };
 
   const validatePrice = (value: number): string => {
+    if (product.isKit) return '';
     if (isNaN(value) || value <= 0) return 'Цена > 0';
     if (value < product.cost_price) return `Не ниже ${formatPrice(product.cost_price)}`;
     return '';
@@ -479,9 +487,13 @@ const ProductRow: React.FC<ProductRowProps> = ({ product, isInCart, onAddToCart 
           <div className="flex items-center gap-3 mt-1 text-xs text-gray-500">
             <span>Арт: {product.article}</span>
             <span>Маржа: {margin.toFixed(0)}%</span>
-            <span className={`font-medium ${product.stock <= product.min_stock ? 'text-yellow-600' : 'text-green-600'}`}>
-              Остаток: {product.stock} шт.
-            </span>
+            {product.isKit ? (
+              <span className="font-medium text-blue-600">Виртуальный комплект</span>
+            ) : (
+              <span className={`font-medium ${product.stock <= product.min_stock ? 'text-yellow-600' : 'text-green-600'}`}>
+                Остаток: {product.stock} шт.
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-3 mt-1 text-xs">
             <span>Себест: {formatPrice(product.cost_price)}</span>
@@ -490,35 +502,45 @@ const ProductRow: React.FC<ProductRowProps> = ({ product, isInCart, onAddToCart 
         </div>
         
         {!isInCart ? (
-          <div className="flex flex-col items-end gap-2">
-            <div className="flex items-center gap-2">
-              <input
-                type="number"
-                value={quantity}
-                onChange={handleQuantityChange}
-                className="w-14 px-2 py-1 text-sm rounded border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-500"
-                min={1}
-                max={product.stock}
-              />
-              <input
-                type="number"
-                value={price}
-                onChange={handlePriceChange}
-                className="w-24 px-2 py-1 text-sm rounded border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-500"
-                step="0.01"
-              />
-              <button
-                onClick={handleAdd}
-                disabled={!!quantityError || !!priceError || product.stock === 0}
-                className="p-1.5 text-primary-600 hover:bg-primary-50 rounded transition-colors disabled:opacity-50"
-              >
-                <Plus size={18} />
-              </button>
+          product.isKit ? (
+            <button
+              onClick={handleAdd}
+              className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-primary-700 bg-primary-50 hover:bg-primary-100 rounded-lg transition-colors"
+            >
+              <Plus size={18} />
+              Выбрать состав
+            </button>
+          ) : (
+            <div className="flex flex-col items-end gap-2">
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  value={quantity}
+                  onChange={handleQuantityChange}
+                  className="w-14 px-2 py-1 text-sm rounded border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  min={1}
+                  max={product.stock}
+                />
+                <input
+                  type="number"
+                  value={price}
+                  onChange={handlePriceChange}
+                  className="w-24 px-2 py-1 text-sm rounded border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  step="0.01"
+                />
+                <button
+                  onClick={handleAdd}
+                  disabled={!!quantityError || !!priceError || product.stock === 0}
+                  className="p-1.5 text-primary-600 hover:bg-primary-50 rounded transition-colors disabled:opacity-50"
+                >
+                  <Plus size={18} />
+                </button>
+              </div>
+              {(quantityError || priceError) && (
+                <div className="text-xs text-red-500">{quantityError || priceError}</div>
+              )}
             </div>
-            {(quantityError || priceError) && (
-              <div className="text-xs text-red-500">{quantityError || priceError}</div>
-            )}
-          </div>
+          )
         ) : (
           <div className="text-sm text-green-600 font-medium px-3 py-2 bg-green-100 rounded-lg">
             В корзине
@@ -642,6 +664,10 @@ export const NewOrder: React.FC = () => {
   const [showFilters, setShowFilters] = useState<boolean>(false);
   
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
+  const [productKits, setProductKits] = useState<ProductKit[]>([]);
+  const [kitSelectionOpen, setKitSelectionOpen] = useState(false);
+  const [kitForSelection, setKitForSelection] = useState<ProductKit | null>(null);
+  const [kitSelectionItems, setKitSelectionItems] = useState<KitSelectionItem[]>([]);
   
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
   const [clientDiscount, setClientDiscount] = useState<number>(0);
@@ -697,6 +723,7 @@ export const NewOrder: React.FC = () => {
   // Загрузка данных
   useEffect(() => {
     loadCategories();
+    void loadProductKits();
   }, []);
 
   // Загрузка клиента если есть clientId в URL или state
@@ -705,6 +732,15 @@ export const NewOrder: React.FC = () => {
       loadClientById(clientId);
     }
   }, [clientId]);
+
+  const loadProductKits = async (): Promise<void> => {
+    try {
+      const response = await productKitsApi.getAll();
+      setProductKits(response.data);
+    } catch (error) {
+      console.error('Error loading product kits:', error);
+    }
+  };
 
   const loadCategories = async (): Promise<void> => {
     try {
@@ -960,7 +996,18 @@ export const NewOrder: React.FC = () => {
 
   const totals = calculateTotals();
 
-  const addToCart = (product: Product, quantity: number, price: number): void => {
+  const addToCart = async (product: Product, quantity: number, price: number): Promise<void> => {
+    if (product.isKit) {
+      try {
+        const loadedKit = productKits.find(item => item.productId === product.id)
+          ?? (await productKitsApi.getByProductId(product.id)).data;
+        openKitSelection(loadedKit);
+      } catch (error) {
+        console.error('Error loading kit composition:', error);
+        toast.error('Не удалось загрузить состав комплекта');
+      }
+      return;
+    }
     if (quantity < 1) {
       toast.error('Количество должно быть больше 0');
       return;
@@ -1008,6 +1055,78 @@ export const NewOrder: React.FC = () => {
     }]);
     
     toast.success(`${product.name} добавлен в заказ`);
+  };
+
+  const openKitSelection = (kit: ProductKit): void => {
+    if (!kit.items.length) {
+      toast.error('В комплекте нет товаров');
+      return;
+    }
+
+    setKitForSelection(kit);
+    setKitSelectionItems(kit.items.map(item => ({
+      productId: item.product.id,
+      selected: true,
+      quantity: item.quantity
+    })));
+    setKitSelectionOpen(true);
+  };
+
+  const closeKitSelection = (): void => {
+    setKitSelectionOpen(false);
+    setKitForSelection(null);
+    setKitSelectionItems([]);
+  };
+
+  const confirmKitSelection = (): void => {
+    if (!kitForSelection) return;
+
+    const selected = kitSelectionItems.filter(item => item.selected && item.quantity > 0);
+    if (!selected.length) {
+      toast.error('Выберите хотя бы одну позицию из комплекта');
+      return;
+    }
+
+    const shortages = selected.filter(selection => {
+      const kitItem = kitForSelection.items.find(item => item.product.id === selection.productId);
+      if (!kitItem) return false;
+      const alreadyInCart = cartItems.find(item => item.id === selection.productId)?.quantity || 0;
+      return alreadyInCart + selection.quantity > kitItem.product.stock;
+    });
+
+    if (shortages.length > 0) {
+      toast.error(`Не хватает на складе: ${shortages.map(selection => {
+        const item = kitForSelection.items.find(kitItem => kitItem.product.id === selection.productId)!;
+        return item.product.name;
+      }).join(', ')}. Уберите позиции или уменьшите количество.`);
+      return;
+    }
+
+    setCartItems(current => {
+      const next = [...current];
+      for (const selection of selected) {
+        const kitItem = kitForSelection.items.find(item => item.product.id === selection.productId);
+        if (!kitItem) continue;
+        const index = next.findIndex(item => item.id === selection.productId);
+        if (index >= 0) {
+          next[index] = { ...next[index], quantity: next[index].quantity + selection.quantity };
+        } else {
+          next.push({
+            id: kitItem.product.id,
+            name: kitItem.product.name,
+            article: kitItem.product.article,
+            cost_price: kitItem.product.cost_price,
+            selling_price: kitItem.product.retail_price,
+            quantity: selection.quantity,
+            stock: kitItem.product.stock
+          });
+        }
+      }
+      return next;
+    });
+
+    toast.success(`Из комплекта «${kitForSelection.product.name}» добавлено ${selected.length} поз.`);
+    closeKitSelection();
   };
 
   const updateCartQuantity = (itemId: number, newQuantity: number): void => {
@@ -1451,6 +1570,110 @@ export const NewOrder: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {kitSelectionOpen && kitForSelection && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-3xl max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between p-5 border-b border-gray-200">
+              <div>
+                <h2 className="text-xl font-bold text-gray-900">{kitForSelection.product.name}</h2>
+                <p className="text-sm text-gray-500 mt-1">Выберите состав для этого заказа. Сам шаблон комплекта не изменится.</p>
+              </div>
+              <button type="button" onClick={closeKitSelection} className="p-2 rounded-lg text-gray-500 hover:bg-gray-100">
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="overflow-y-auto p-5 space-y-3">
+              {kitForSelection.items.map(kitItem => {
+                const selection = kitSelectionItems.find(item => item.productId === kitItem.product.id);
+                if (!selection) return null;
+                const alreadyInCart = cartItems.find(item => item.id === kitItem.product.id)?.quantity || 0;
+                const availableForKit = Math.max(0, kitItem.product.stock - alreadyInCart);
+                const shortage = selection.selected && selection.quantity > availableForKit;
+
+                return (
+                  <div key={kitItem.id} className={`rounded-lg border p-4 ${shortage ? 'border-red-300 bg-red-50' : 'border-gray-200'}`}>
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                      <label className="flex items-center gap-3 flex-1 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={selection.selected}
+                          onChange={(e) => setKitSelectionItems(current => current.map(item =>
+                            item.productId === kitItem.product.id ? { ...item, selected: e.target.checked } : item
+                          ))}
+                          className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                        />
+                        <div>
+                          <div className="font-medium text-gray-900">{kitItem.product.name}</div>
+                          <div className="text-xs text-gray-500">Арт. {kitItem.product.article}</div>
+                        </div>
+                      </label>
+
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          disabled={!selection.selected || selection.quantity <= 1}
+                          onClick={() => setKitSelectionItems(current => current.map(item =>
+                            item.productId === kitItem.product.id ? { ...item, quantity: Math.max(1, item.quantity - 1) } : item
+                          ))}
+                          className="p-1.5 rounded border border-gray-200 hover:bg-gray-50 disabled:opacity-40"
+                        >
+                          <Minus size={16} />
+                        </button>
+                        <input
+                          type="number"
+                          min={1}
+                          value={selection.quantity}
+                          disabled={!selection.selected}
+                          onChange={(e) => {
+                            const value = Math.max(1, Number(e.target.value) || 1);
+                            setKitSelectionItems(current => current.map(item =>
+                              item.productId === kitItem.product.id ? { ...item, quantity: value } : item
+                            ));
+                          }}
+                          className="w-16 px-2 py-1.5 text-center rounded border border-gray-200 disabled:bg-gray-100"
+                        />
+                        <button
+                          type="button"
+                          disabled={!selection.selected}
+                          onClick={() => setKitSelectionItems(current => current.map(item =>
+                            item.productId === kitItem.product.id ? { ...item, quantity: item.quantity + 1 } : item
+                          ))}
+                          className="p-1.5 rounded border border-gray-200 hover:bg-gray-50 disabled:opacity-40"
+                        >
+                          <Plus size={16} />
+                        </button>
+                      </div>
+
+                      <div className={`text-sm sm:w-36 sm:text-right ${availableForKit === 0 ? 'text-red-600 font-medium' : shortage ? 'text-red-600 font-medium' : 'text-gray-600'}`}>
+                        {availableForKit === 0 ? 'Нет в наличии' : `Доступно: ${availableForKit}`}
+                      </div>
+                    </div>
+                    {shortage && (
+                      <div className="mt-2 text-xs text-red-600">Уменьшите количество или снимите галочку с этой позиции.</div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="flex items-center justify-between gap-3 p-5 border-t border-gray-200">
+              <div className="text-sm text-gray-500">
+                Выбрано: {kitSelectionItems.filter(item => item.selected).length} из {kitSelectionItems.length} поз.
+              </div>
+              <div className="flex gap-2">
+                <button type="button" onClick={closeKitSelection} className="px-4 py-2 rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50">
+                  Отмена
+                </button>
+                <button type="button" onClick={confirmKitSelection} className="px-4 py-2 rounded-lg bg-primary-600 text-white hover:bg-primary-700">
+                  Добавить выбранное
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
