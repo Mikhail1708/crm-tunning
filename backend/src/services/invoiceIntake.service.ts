@@ -32,10 +32,12 @@ export function parseBankInvoiceIntake(value: any) {
   for (const i of p.itemsSnapshot) {
     if (!keys(i, ['productId','name','sku','quantity','unitPriceMinor','totalMinor'])
       || !text(i.productId) || !/^[1-9]\d*$/.test(i.productId) || Number(i.productId) > 2147483647
-      || ids.has(i.productId) || !text(i.name, 1000) || (i.sku !== null && !text(i.sku))
+      || ids.has(i.productId) || !text(i.name, 1000)
+      || (i.sku !== null && (typeof i.sku !== 'string' || !i.sku.trim() || i.sku.trim().length > 255))
       || !Number.isInteger(i.quantity) || i.quantity <= 0 || i.quantity > 2147483647
       || !minor(i.unitPriceMinor) || !minor(i.totalMinor)
       || BigInt(i.unitPriceMinor) * BigInt(i.quantity) !== BigInt(i.totalMinor)) invalid();
+    if (typeof i.sku === 'string') i.sku = i.sku.trim();
     ids.add(i.productId); sum += BigInt(i.totalMinor);
   }
   if (sum !== BigInt(p.amountMinor)) invalid();

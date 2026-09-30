@@ -40,3 +40,9 @@ test('late release cannot cancel shipped CRM order even when SITE state is stale
   const db: any = { $transaction: (run: Function) => run(tx) };
   await assert.rejects(releaseBankInvoice(db, 'o1', { invoiceId: 'i1', requestId: 'bank-invoice-release:i1', reason: 'cancel' }), (e: any) => e.code === 'INVOICE_RELEASE_FORBIDDEN');
 });
+test('SKU trims before hashing and rejects blank or oversized values', () => {
+  const withSku = (sku: unknown) => ({ ...payload(), itemsSnapshot: [{ ...payload().itemsSnapshot[0], sku }] });
+  assert.equal(parseBankInvoiceIntake(withSku(' ABC-123 ')).itemsSnapshot[0].sku, 'ABC-123');
+  assert.equal(parseBankInvoiceIntake(withSku(null)).itemsSnapshot[0].sku, null);
+  for (const sku of ['', '   ', 123, 'x'.repeat(256)]) assert.throws(() => parseBankInvoiceIntake(withSku(sku)), (e: any) => e.status === 400);
+});
