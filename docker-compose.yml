@@ -45,7 +45,6 @@ services:
       db:
         condition: service_healthy
     volumes:
-      - ./backend:/app
       - backend_uploads:/app/uploads
     networks:
       - crm-network
