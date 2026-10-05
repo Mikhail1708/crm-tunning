@@ -742,12 +742,6 @@ export const restoreDatabase = async (
       res.status(500).json({
         message:
           'Ошибка восстановления базы данных',
-
-        error:
-          process.env.NODE_ENV ===
-          'development'
-            ? `Prisma ${error.code}: ${error.message}`
-            : undefined,
       });
 
       return;
@@ -765,12 +759,6 @@ export const restoreDatabase = async (
       res.status(500).json({
         message:
           'Ошибка восстановления базы данных',
-
-        error:
-          process.env.NODE_ENV ===
-          'development'
-            ? error.message
-            : undefined,
       });
 
       return;
@@ -795,12 +783,6 @@ export const restoreDatabase = async (
       res.status(500).json({
         message:
           'Ошибка восстановления базы данных',
-
-        error:
-          process.env.NODE_ENV ===
-          'development'
-            ? error.message
-            : undefined,
       });
 
       return;

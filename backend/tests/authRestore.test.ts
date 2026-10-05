@@ -29,7 +29,7 @@ const tx: any = {
   $executeRaw: async () => 0,
   $queryRaw: async () => [{ next: 10 }],
 };
-for (const name of ['saleDocumentItem', 'sale', 'productCharacteristic', 'productCategory', 'saleDocument', 'expense', 'client', 'product', 'categoryField', 'category', 'inventoryReservation', 'inventoryReservationItem', 'crmStatusOutboxEvent', 'productImage', 'priceHistory', 'invoiceAllocation']) tx[name] = emptyDelegate;
+for (const name of ['saleDocumentItem', 'sale', 'productCharacteristic', 'productCategory', 'saleDocument', 'expense', 'client', 'product', 'categoryField', 'category', 'inventoryReservation', 'inventoryReservationItem', 'crmStatusOutboxEvent', 'productImage', 'priceHistory', 'invoiceAllocation', 'productKit', 'productKitItem']) tx[name] = emptyDelegate;
 const db = { ...tx, $transaction: async (callback: Function) => callback(tx) };
 Module._load = function(id: string, ...args: any[]) {
   if (id === '@prisma/client') return { Prisma, PrismaClient: function() { return db; } };

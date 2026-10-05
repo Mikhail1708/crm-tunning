@@ -275,6 +275,12 @@ export async function restoreDatabaseBackup(
 
   const legacy = dump.version === '3.0';
 
+  // Запоминаем отсутствие таблиц до нормализации старого v4.
+  const missingV4Tables = !legacy
+    ? (['invoiceAllocations', 'productKits', 'productKitItems'] as const)
+        .filter(key => dump.data[key] === undefined)
+    : [];
+
   /**
    * Старые backup v4 могли быть созданы ДО появления
    * InvoiceAllocation.
@@ -434,6 +440,17 @@ export async function restoreDatabaseBackup(
        * Сначала блокируем всё состояние.
        */
       await lockBackupTables(tx);
+
+      // Нельзя удалять данные, которых не было в старом дампе.
+      // Проверяем под блокировкой и до первой операции удаления.
+      for (const key of missingV4Tables) {
+        if (await (tx[tables[key]] as any).count() > 0) {
+          throw new BackupError(
+            409,
+            `Восстановление запрещено: дамп не содержит ${key}, но текущая база содержит данные. Сначала нужен полный backup v4`
+          );
+        }
+      }
 
       /**
        * Защита legacy v3.

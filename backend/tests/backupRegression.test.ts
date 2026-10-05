@@ -7,7 +7,7 @@ const models: Record<string, string> = {
   users: 'user', categories: 'category', categoryFields: 'categoryField', products: 'product', productCategories: 'productCategory',
   productCharacteristics: 'productCharacteristic', clients: 'client', saleDocuments: 'saleDocument', saleDocumentItems: 'saleDocumentItem',
   sales: 'sale', expenses: 'expense', productImages: 'productImage', priceHistory: 'priceHistory', inventoryReservations: 'inventoryReservation',
-  inventoryReservationItems: 'inventoryReservationItem', crmStatusOutboxEvents: 'crmStatusOutboxEvent', invoiceAllocations: 'invoiceAllocation',
+  inventoryReservationItems: 'inventoryReservationItem', crmStatusOutboxEvents: 'crmStatusOutboxEvent', invoiceAllocations: 'invoiceAllocation', productKits: 'productKit', productKitItems: 'productKitItem',
 };
 const runtime = ['productImages', 'priceHistory', 'inventoryReservations', 'inventoryReservationItems', 'crmStatusOutboxEvents', 'invoiceAllocations'];
 const emptyDump = (version = '4.0'): any => ({ version, data: Object.fromEntries(Object.keys(models).filter(key => version === '4.0' || !runtime.includes(key)).map(key => [key, []])) });
@@ -55,8 +55,15 @@ function memoryDb(initial: Record<string, any[]> = {}, failModel?: string) {
     },
   };
   tx.$executeRaw = async (sql: any) => {
-    events.push(Array.isArray(sql) ? 'lock' : sql.sql);
-    const match = sql.sql?.match(/^ALTER SEQUENCE "(.+)_id_seq" RESTART WITH (\d+)$/);
+    const query = Array.isArray(sql)
+      ? 'lock'
+      : sql.sql
+        ? sql.sql.replace(/\s+/g, ' ').trim()
+        : 'lock';
+    const values = Array.isArray(sql?.values) ? sql.values : [];
+    const rendered = query.replace(/\$(\d+)/g, (_: string, index: string) => String(values[Number(index) - 1]));
+    events.push(rendered);
+    const match = rendered.match(/^ALTER SEQUENCE "(.+)_id_seq" RESTART WITH (\d+)$/);
     if (match) {
       if (failModel === 'sequence' && match[1] === 'Category') throw new Error('FICTIONAL_SEQUENCE_FAILURE');
       sequences[match[1]] = Number(match[2]);
@@ -86,7 +93,7 @@ test('v4 export uses one repeatable-read snapshot and roundtrips runtime BigInt/
   const source = memoryDb(fixture);
   const dump = await exportDatabaseBackup(source.db);
   assert.equal(source.options[0].isolationLevel, Prisma.TransactionIsolationLevel.RepeatableRead);
-  assert.equal(Object.keys(dump.data).length, 17);
+  assert.equal(Object.keys(dump.data).length, 19);
   assert.equal(dump.data.saleDocuments[0].paidAmountMinor, '9007199254740993');
   assert.equal(dump.data.productImages[0].data, 'AP8KgA==');
   const target = memoryDb();
@@ -100,7 +107,7 @@ test('v4 export uses one repeatable-read snapshot and roundtrips runtime BigInt/
   assert.equal(target.state().crmStatusOutboxEvent[0].deliveryStatus, 'pending');
   assert.equal(target.state().crmStatusOutboxEvent[0].lockedAt, null);
   assert.equal(target.state().crmStatusOutboxEvent[0].id, 'event');
-  assert.equal(target.events.filter(value => value.startsWith('ALTER SEQUENCE')).length, 12);
+  assert.equal(target.events.filter(value => value.startsWith('ALTER SEQUENCE')).length, 14);
   assert.ok(target.events.every(value => !value.includes('setval')));
 });
 
