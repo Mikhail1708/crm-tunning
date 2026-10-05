@@ -1,293 +1,528 @@
-Fullstack-разработчик | DevOps | React + Node.js + Docker
+# SalesCore CRM
 
-Разработал и запустил в продакшен CRM-систему для тюнинг-ателье с нуля один человек.
+### Full-stack CRM-платформа для управления продажами, складом и автомобильным бизнесом
 
-Стек: TypeScript, React, Node.js, Prisma, PostgreSQL, Docker, Nginx, Prometheus, Grafana.
+[![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![React](https://img.shields.io/badge/React-19-149ECA?style=flat-square&logo=react&logoColor=white)](https://react.dev/)
+[![Node.js](https://img.shields.io/badge/Node.js-20-339933?style=flat-square&logo=nodedotjs&logoColor=white)](https://nodejs.org/)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15-4169E1?style=flat-square&logo=postgresql&logoColor=white)](https://www.postgresql.org/)
+[![Prisma](https://img.shields.io/badge/Prisma-5-2D3748?style=flat-square&logo=prisma&logoColor=white)](https://www.prisma.io/)
+[![Docker](https://img.shields.io/badge/Docker-2496ED?style=flat-square&logo=docker&logoColor=white)](https://www.docker.com/)
 
-Что сделал:
-- Спроектировал БД (10+ моделей, миграции)
-- Написал backend (8 API-роутов, JWT в HttpOnly cookie, аудит)
-- Написал frontend (12 страниц, корзина, печать чеков, аналитика)
-- Настроил VPS (Ubuntu, Nginx, SSL, Docker Compose)
-- Настроил CI/CD (GitHub Actions, автодеплой)
-- Настроил мониторинг (Prometheus + Grafana + Telegram-алерты)
-- Настроил автоматические бэкапы (cron, ежедневно, ротация 30 дней)
-- Написал скрипты восстановления и диагностики (crm-doctor, crm-restore)
+**[Архитектура](ARCHITECTURE.md)** · **[Резервное копирование](BACKUP_RESTORE.md)** · **[SWAPSERVICE38](https://swap38.ru)** · **[Исходный код](https://github.com/Mikhail1708/crm-tunning)**
 
-Результат: система работает 24/7, менеджеры оформляют заказы, бэкапы создаются автоматически.
+---
 
-SalesCore CRM - Система управления продажами
+## О проекте
 
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Docker](https://img.shields.io/badge/docker-compose-blue.svg)](https://www.docker.com)
-[![Node.js](https://img.shields.io/badge/Node.js-20.x-green.svg)](https://nodejs.org)
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15-blue.svg)](https://www.postgresql.org)
+**SalesCore CRM** — действующая коммерческая CRM-система, разработанная с нуля для автоматизации работы автомобильного сервиса и тюнинг-ателье **SWAPSERVICE38**.
 
- О проекте
+Проект объединяет складской учёт, управление товарами, продажи, клиентскую базу, аналитику, финансовые показатели и интеграцию с отдельным интернет-магазином.
 
-SalesCore CRM - это современная система управления взаимоотношениями с клиентами (CRM), разработанная для малого и среднего бизнеса. Система предоставляет полный набор инструментов для управления продажами, клиентской базой и аналитикой.
+Система создавалась одним разработчиком: от проектирования базы данных и бизнес-логики до интерфейса, API, контейнеризации и серверной инфраструктуры.
 
- Основные возможности
+> **Статус:** Production — используется в реальном бизнесе.
+>
+> **Назначение:** внутренняя система управления автомобильным сервисом.
+>
+> **Архитектура:** React SPA + Express REST API + PostgreSQL.
+>
+> **Интеграция:** двусторонний обмен данными со SWAPSERVICE38.
 
-- Управление клиентами - полная история взаимодействия
-- Воронка продаж - отслеживание сделок на всех этапах
-- Аналитика и отчеты - дашборды с ключевыми метриками
-- Управление задачами - назначение и контроль выполнения
-- Интеграция с email - автоматическая рассылка
-- Мониторинг - Prometheus + Grafana
-- Резервное копирование - автоматическое и ручное
+В отличие от универсальных CRM, SalesCore учитывает специфику автомобильного бизнеса: собственное производство комплектующих, себестоимость изготовления, складские остатки, товарные комплекты и обработку заказов с внешнего сайта.
 
-Технологический стек
+## Интерфейс системы
 
-Backend
-- Node.js 20 - среда выполнения
-- Express.js - веб-фреймворк
-- Prisma ORM - работа с базой данных
-- PostgreSQL 15 - основная БД
-- JWT - аутентификация
-- Helmet.js - безопасность
+Интерфейс выполнен в минималистичном стиле: светлая рабочая область, тёмная навигация, аналитические карточки, таблицы, фильтры и интерактивные графики.
 
-Frontend
-- React 18 - библиотека UI
-- Vite - сборщик
-- Axios - HTTP клиент
-- React Router - маршрутизация
+### Главная панель — Dashboard
 
-DevOps & Мониторинг
-- Docker & Docker Compose - контейнеризация
-- Nginx - веб-сервер и прокси
-- Prometheus - сбор метрик
-- Grafana - визуализация
-- Node Exporter - метрики хоста
+![SalesCore CRM Dashboard](docs/screenshots/dashboard.webp)
 
-Требования к системе
+Главная страница объединяет ключевые показатели бизнеса: продажи, выручку, чистую прибыль, количество клиентов, складские остатки и средний чек.
 
-- Docker >= 20.10.0
-- Docker Compose >= 1.29.0
-- Node.js >= 20.x (для разработки)
-- PostgreSQL >= 15 (для разработки)
-- RAM: минимум 2GB
-- CPU: 2 ядра
-- Диск: 20GB свободного места
+Отдельные блоки показывают популярные товары и позиции, требующие пополнения запасов.
 
-Быстрый старт
+### Аналитика и отчётность
 
-Клонирование репозитория
+![SalesCore CRM Analytics](docs/screenshots/analytics.webp)
 
-bash
-git clone https://github.com/yourusername/salescore-crm.git
-cd salescore-crm
+Аналитический модуль позволяет оценивать эффективность продаж по выбранному периоду.
 
+Реализованы:
 
-Настройка окружения
+- Выручка, себестоимость и прибыль.
+- Средний чек и маржинальность.
+- Динамика продаж.
+- Анализ товаров и покупателей.
+- Фильтрация по городам.
+- Произвольные временные интервалы.
+- Линейные и столбчатые графики.
+- Экспорт отчётов в Excel.
 
-bash
-# Копируем пример конфигурации
-cp .env.example .env
+### Управление товарами и складом
 
-# Редактируем .env файл
-nano .env
+![SalesCore CRM Products](docs/screenshots/products.webp)
 
+Складской модуль объединяет товары, категории, артикулы, цены, себестоимость и остатки.
 
-Пример `.env` файла:
-env
-# Database
-POSTGRES_USER=postgres
-POSTGRES_PASSWORD=your_secure_password
-POSTGRES_DB=crm_db
-DATABASE_URL=postgresql://postgres:your_secure_password@postgres:5432/crm_db?schema=public
+Система позволяет искать товары по названию, артикулу и характеристикам, контролировать минимальные остатки и отслеживать маржинальность.
 
-# JWT
-JWT_SECRET=your_jwt_secret_key_here
+### Карточка товара
 
-# Monitoring
-GRAFANA_PASSWORD=your_grafana_password
+![SalesCore CRM Product Details](docs/screenshots/product-details.webp)
 
-# Email (опционально)
-SMTP_HOST=smtp.gmail.com
-SMTP_PORT=587
-SMTP_USER=your_email@gmail.com
-SMTP_PASS=your_app_password
+Карточка товара содержит подробную информацию о продукции.
 
+Поддерживаются фотографии, категории, характеристики, история цен и расчёт себестоимости по отдельным статьям затрат.
 
-Запуск с Docker Compose
+Также предусмотрено управление отображением продукции в интернет-магазине.
 
-bash
-# Сборка и запуск всех сервисов
-docker-compose up -d --build
+### Категории и характеристики
 
-# Проверка статуса
-docker-compose ps
+![SalesCore CRM Categories](docs/screenshots/categories.webp)
 
-# Просмотр логов
-docker-compose logs -f
+Категории используются для структурирования ассортимента и настройки характеристик товаров.
 
+Это позволяет управлять специализированными автомобильными компонентами, включая комплекты для свапов, элементы подвески, защиты и тюнинга.
 
-Инициализация базы данных
-bash
-# Запуск миграций
-docker exec crm-backend npx prisma migrate deploy
+### Клиентская база
 
-# Создание администратора
-docker exec crm-backend npm run seed
+![SalesCore CRM Clients](docs/screenshots/clients.webp)
 
-Структура проекта
-salescore-crm/
-├── backend/                 # Backend приложение
+Раздел клиентов предоставляет поиск, сортировку, добавление новых записей и просмотр сводной статистики.
+
+CRM учитывает историю взаимодействий, покупки и связанные с клиентами данные.
+
+### Навигация
+
+<img src="docs/screenshots/navigation.webp" alt="SalesCore CRM Navigation" width="260">
+
+Боковая навигация обеспечивает быстрый переход между основными рабочими разделами системы.
+
+*Скриншоты отражают интерфейс рабочей версии CRM. Данные и оформление могут изменяться по мере развития проекта.*
+
+## Основные возможности
+
+### 01. Складской учёт
+
+- Создание, редактирование и удаление товаров.
+- Управление артикулами.
+- Учёт себестоимости и розничных цен.
+- Расчёт маржинальности.
+- Контроль складских остатков.
+- Уведомления о низком остатке.
+- История изменения цен.
+- Работа с изображениями.
+- Категории и характеристики товаров.
+
+### 02. Комплекты товаров
+
+CRM поддерживает составные товарные комплекты, состоящие из нескольких компонентов.
+
+Для комплектов предусмотрены управление составом, количеством компонентов и связями с основным каталогом.
+
+Этот механизм используется для автомобильных решений, включающих несколько деталей и узлов.
+
+### 03. Продажи и заказы
+
+- Создание заказов.
+- Добавление товаров и управление позициями.
+- Работа со скидками.
+- Учёт оплаты.
+- Изменение статусов.
+- Отмена заказов.
+- Контроль и резервирование остатков.
+- Формирование печатных документов.
+- Учёт выручки и прибыли.
+- Синхронизация с интернет-магазином.
+
+### 04. Клиенты
+
+- Ведение клиентской базы.
+- Контактные данные.
+- Информация об автомобилях.
+- История покупок.
+- Индивидуальные скидки.
+- Общая сумма покупок.
+- Поиск и сортировка клиентов.
+
+### 05. Аналитика
+
+- Финансовые показатели.
+- Динамика продаж.
+- Статистика по товарам.
+- Аналитика покупателей.
+- Географическая статистика.
+- Учёт себестоимости.
+- Маржинальность.
+- Экспорт XLSX.
+
+### 06. Администрирование
+
+- Роли `admin` и `manager`.
+- Разграничение прав доступа.
+- Журнал аудита.
+- Административные операции.
+- Управление справочниками.
+- Резервное копирование.
+- Восстановление данных.
+
+## Технологический стек
+
+| Уровень | Технологии |
+|---|---|
+| Frontend | React 19, TypeScript |
+| Сборка | Vite 8 |
+| UI | Tailwind CSS, Lucide React |
+| Routing | React Router 7 |
+| HTTP | Axios |
+| Графики | Recharts |
+| Экспорт | XLSX |
+| Backend | Node.js 20, Express 4 |
+| Язык backend | TypeScript |
+| ORM | Prisma 5 |
+| Database | PostgreSQL 15 |
+| Auth | JWT, HttpOnly cookies |
+| Validation | Express Validator |
+| Security | Helmet, CORS, Rate Limiting |
+| Images | Multer, Sharp |
+| Infrastructure | Docker, Docker Compose, nginx |
+| CI/CD | GitHub Actions |
+| Monitoring | Prometheus, Grafana, Node Exporter |
+| Integration | REST API, Webhooks |
+
+## Архитектура
+
+SalesCore CRM представляет собой модульный монолит с отдельными frontend и backend.
+
+Frontend отвечает за пользовательский интерфейс, backend — за бизнес-логику, авторизацию, управление данными и интеграции.
+
+PostgreSQL используется для хранения информации о товарах, клиентах, заказах, финансовых операциях, резервировании и событиях синхронизации.
+
+```mermaid
+flowchart TD
+    User["Менеджер / Администратор"]
+
+    subgraph Application["SalesCore CRM"]
+        Frontend["React 19 + Vite 8"]
+        Backend["Node.js + Express REST API"]
+        DB[("PostgreSQL 15")]
+        Reservation["Обработка резервов"]
+        Outbox["Status Outbox Worker"]
+    end
+
+    subgraph External["Внешняя платформа"]
+        Site["SWAPSERVICE38"]
+    end
+
+    subgraph Monitoring["Мониторинг"]
+        Prometheus["Prometheus"]
+        Grafana["Grafana"]
+        Exporter["Node Exporter"]
+    end
+
+    User --> Frontend
+    Frontend --> Backend
+
+    Backend --> DB
+    Backend --> Reservation
+    Reservation --> DB
+
+    Backend --> Outbox
+    Outbox --> DB
+
+    Site <-->|"Каталог / Заказы / Резервы"| Backend
+    Outbox -->|"Подписанные события"| Site
+
+    Grafana --> Prometheus
+    Prometheus --> Exporter
+```
+
+### Основные архитектурные принципы
+
+- Разделение пользовательского интерфейса и серверной логики.
+- Централизованная работа с данными через Prisma.
+- Транзакционная обработка складских операций.
+- Контроль повторных запросов.
+- Ролевое разграничение доступа.
+- Асинхронная доставка интеграционных событий.
+- Отдельные процедуры резервного копирования и восстановления.
+
+**Подробности:** [ARCHITECTURE.md](ARCHITECTURE.md).
+
+## Интеграция со SWAPSERVICE38
+
+CRM взаимодействует с отдельной платформой интернет-магазина:
+
+**[SWAPSERVICE38 Website](https://github.com/Mikhail1708/swapservice38-website)**
+
+Системы решают разные задачи.
+
+| SWAPSERVICE38 | SalesCore CRM |
+|---|---|
+| Публичный каталог | Управление каталогом |
+| Корзина | Складские остатки |
+| Оформление заказа | Резервирование товаров |
+| Онлайн-оплата | Обработка бизнес-статусов |
+| Личный кабинет | Внутренние операции |
+| Уведомления покупателям | Учёт продаж |
+
+### Сценарий обработки заказа
+
+```mermaid
+sequenceDiagram
+    participant C as Покупатель
+    participant W as SWAPSERVICE38
+    participant R as SalesCore CRM
+    participant DB as PostgreSQL
+
+    C->>W: Оформление заказа
+    W->>R: Запрос резервирования
+    R->>DB: Проверка и запись резерва
+    R-->>W: Результат резервирования
+    W->>W: Обработка оплаты
+    W->>R: Подтверждение или отмена
+    R->>DB: Изменение состояния
+    R->>DB: Сохранение события
+    R-->>W: Доставка статуса через outbox
+```
+
+Диаграмма отражает общую логику взаимодействия, а не все промежуточные состояния и исключительные сценарии.
+
+### Transactional Outbox
+
+Для синхронизации статусов используется долговременная очередь событий на базе PostgreSQL.
+
+События сохраняются в базе и обрабатываются фоновым процессом.
+
+Механизм предусматривает повторные попытки доставки и сохранение состояния обработки при временной недоступности внешней платформы.
+
+### Резервирование остатков
+
+CRM поддерживает резервирование товаров для внешних заказов.
+
+При обработке учитываются доступность товара, количество, идентификаторы заказов и состояние резерва.
+
+Механизм позволяет координировать складские операции между CRM и интернет-магазином.
+
+## База данных
+
+Основные группы сущностей:
+
+| Область | Модели |
+|---|---|
+| Пользователи | `User` |
+| Каталог | `Product`, `Category`, `ProductCategory` |
+| Характеристики | `CategoryField`, `ProductCharacteristic` |
+| Комплекты | `ProductKit`, `ProductKitItem` |
+| Клиенты | `Client` |
+| Продажи | `Sale`, `SaleDocument`, `SaleDocumentItem` |
+| Финансы | `Expense`, `InvoiceAllocation` |
+| Медиа | `ProductImage` |
+| История цен | `PriceHistory` |
+| Резервы | `InventoryReservation`, `InventoryReservationItem` |
+| Синхронизация | `CrmStatusOutboxEvent` |
+
+Prisma используется для доступа к данным и управления схемой базы.
+
+## Инфраструктура и DevOps
+
+CRM развёрнута как набор сервисов, работающих в Docker-окружении.
+
+### Docker Compose
+
+Основные сервисы:
+
+```text
+SalesCore CRM
+│
+├── Frontend
+│   └── React / nginx
+│
+├── Backend
+│   └── Node.js / Express
+│
+├── Database
+│   └── PostgreSQL 15
+│
+└── Monitoring
+    ├── Prometheus
+    ├── Grafana
+    └── Node Exporter
+```
+
+### CI/CD
+
+В репозитории предусмотрен workflow GitHub Actions для автоматизации развёртывания.
+
+Конфигурация использует SSH/SCP для передачи файлов и выполнения команд на сервере.
+
+### Мониторинг
+
+Для наблюдения за инфраструктурой используются:
+
+- **Prometheus** — сбор метрик.
+- **Grafana** — визуализация.
+- **Node Exporter** — показатели серверных ресурсов.
+
+### Резервное копирование
+
+В проекте предусмотрены механизмы создания и восстановления резервных копий.
+
+Документирован формат прикладных JSON-бэкапов v4, учитывающий связанные бизнес-сущности, складские резервы и события синхронизации.
+
+Восстановление выполняется как отдельная административная процедура, требующая контроля состояния интеграций.
+
+**Подробнее:** [BACKUP_RESTORE.md](BACKUP_RESTORE.md).
+
+## Структура проекта
+
+```text
+crm-tunning/
+├── .github/
+│   └── workflows/
+│
+├── backend/
+│   ├── prisma/
 │   ├── src/
-│   │   ├── controllers/    # Контроллеры
-│   │   ├── middleware/     # Middleware
-│   │   ├── routes/         # Маршруты
-│   │   ├── utils/          # Утилиты
-│   │   └── server.js       # Точка входа
-│   ├── prisma/             # Prisma схемы
-│   ├── package.json
-│   └── Dockerfile
-├── frontend/               # Frontend приложение
+│   │   ├── config/
+│   │   ├── controllers/
+│   │   ├── domain/
+│   │   ├── middleware/
+│   │   ├── routes/
+│   │   ├── services/
+│   │   └── server.ts
+│   ├── tests/
+│   └── package.json
+│
+├── frontend/
 │   ├── src/
-│   │   ├── components/     # React компоненты
-│   │   ├── pages/          # Страницы
-│   │   ├── services/       # API сервисы
-│   │   └── App.jsx
-│   ├── package.json
-│   └── Dockerfile
-├── prometheus/             # Конфигурация Prometheus
-│   └── prometheus.yml
-├── nginx/                  # Конфигурация Nginx
-│   └── swapcrm38.conf
-├── scripts/                # Вспомогательные скрипты
-│   ├── crm-backup.sh      # Резервное копирование
-│   ├── crm-restore.sh     # Восстановление
-│   └── crm-doctor.sh      # Диагностика
+│   │   ├── api/
+│   │   ├── components/
+│   │   ├── pages/
+│   │   └── App.tsx
+│   └── package.json
+│
+├── prometheus/
+├── scripts/
+│
+├── docs/
+│   └── screenshots/
+│       ├── dashboard.webp
+│       ├── analytics.webp
+│       ├── products.webp
+│       ├── product-details.webp
+│       ├── categories.webp
+│       ├── clients.webp
+│       └── navigation.webp
+│
 ├── docker-compose.yml
 ├── .env.example
+├── ARCHITECTURE.md
+├── BACKUP_RESTORE.md
 └── README.md
+```
 
+## Разработка
 
-Управление проектом
+Frontend и backend имеют независимые зависимости и команды запуска.
 
-### Основные команды
+### Backend
 
-bash
-# Запуск всех сервисов
-docker-compose up -d
-
-# Остановка всех сервисов
-docker-compose down
-
-# Перезапуск конкретного сервиса
-docker-compose restart backend
-
-# Просмотр логов
-docker-compose logs -f backend
-docker-compose logs -f frontend
-
-# Вход в контейнер
-docker exec -it crm-backend sh
-docker exec -it crm-db psql -U postgres -d crm_db
-
-Резервное копирование
-
-bash
-# Ручное создание бэкапа
-sudo crm-backup
-
-# Просмотр бэкапов
-ls -lh /var/backups/crm_db/ 
-
-# Восстановление из бэкапа
-sudo crm-restore crm_backup_YYYYMMDD_HHMMSS.sql.gz
-Диагностика
-
-bash
-# Запуск полной диагностики
-sudo crm-doctor
-
-# Проверка статуса контейнеров
-docker-compose ps
-
-# Проверка здоровья БД
-docker exec crm-db pg_isready -U postgres
-
- Разработка
-
-Локальная разработка (без Docker)
-
-Backend
-bash
+```bash
 cd backend
-npm install
-cp .env.example .env
-# Настройте DATABASE_URL для локальной БД
-npm run dev
+npm ci
+npm run build
+npm start
+```
 
+### Frontend
 
-Frontend
-bash
+```bash
 cd frontend
-npm install
-cp .env.example .env
-# Настройте VITE_API_URL
+npm ci
 npm run dev
+```
 
+Для запуска необходимо подготовить PostgreSQL и обязательные переменные окружения.
 
-Добавление новых зависимостей
+**Важно:** текущая публичная конфигурация репозитория не является полностью автономным установочным комплектом. Docker Compose ссылается на `backend/Dockerfile`, который отсутствовал при последней проверке. Конфигурация production и внешние интеграции требуют отдельной настройки.
 
-bash
-# Backend
-docker exec crm-backend npm install package-name
+## Тестирование
 
-# Frontend
-docker exec crm-frontend npm install package-name
+Backend:
 
-# Пересборка контейнера
-docker-compose build backend
-docker-compose up -d backend
+```bash
+cd backend
+npm test
+npm run build
+```
 
-Безопасность
+Frontend:
 
-Реализованные меры
+```bash
+cd frontend
+npm run lint
+npm run build
+```
 
-- HTTPS - шифрование трафика (Let's Encrypt)
-- Helmet.js - защита HTTP заголовков
-- CORS - ограничение доступа к API
-- JWT - токен-базированная аутентификация
-- HttpOnly Cookies - защита от XSS
-- Rate Limiting - защита от DDoS
-- SQL Injection - защита через Prisma ORM
+Наличие тестов не означает полного покрытия всех бизнес-сценариев.
 
-Мониторинг
+## Безопасность
 
-Prometheus метрики
-- Запросы в секунду (RPS)
-- Время ответа API
-- Использование памяти/CPU
-- Активные соединения с БД
+В системе предусмотрены:
 
-Grafana дашборды
-- Общая статистика системы
-- Аналитика продаж
-- Ошибки и логи
-- Производительность
+- JWT-аутентификация.
+- HttpOnly cookies.
+- Роли `admin` и `manager`.
+- Разграничение доступа к операциям.
+- CORS и HTTP security headers.
+- CSRF-проверки для изменяющих запросов.
+- Rate limiting.
+- Внутренние API-ключи.
+- Проверка подписей интеграционных webhook-сообщений.
+- Журнал аудита действий.
 
+Пароли, ключи API, JWT-секреты и реальные данные клиентов не предназначены для публикации.
 
-Масштабирование
+## Документация
 
-Горизонтальное масштабирование
+| Документ | Назначение |
+|---|---|
+| [ARCHITECTURE.md](ARCHITECTURE.md) | Архитектура и устройство CRM |
+| [BACKUP_RESTORE.md](BACKUP_RESTORE.md) | Резервное копирование и восстановление |
 
-yaml
-# docker-compose.prod.yml
-backend:
-  deploy:
-    replicas: 3
-    resources:
-      limits:
-        cpus: '1'
-        memory: 1G
-Оптимизация производительности
+## Статус проекта
 
-- Кэширование - Redis для сессий и запросов
-- CDN - для статических файлов
-- Балансировщик - Nginx как load balancer
-- Read replicas - для PostgreSQL
+**Production — действующая коммерческая система.**
 
+SalesCore CRM используется для управления внутренними процессами SWAPSERVICE38.
+
+Проект развивается совместно с интернет-магазином и производственной инфраструктурой автомобильного бизнеса.
+
+## Автор
+
+**[Mikhail1708](https://github.com/Mikhail1708)**
+
+Full-stack TypeScript Developer / DevOps
+
+- Проектирование архитектуры.
+- Разработка frontend и backend.
+- REST API и интеграции.
+- PostgreSQL и Prisma.
+- Реализация складской и финансовой бизнес-логики.
+- Docker и серверная инфраструктура.
+- CI/CD, мониторинг и резервное копирование.
+
+### Связанные проекты
+
+**[SWAPSERVICE38 Website](https://github.com/Mikhail1708/swapservice38-website)** — интернет-магазин и публичная платформа автомобильного сервиса, интегрированная с SalesCore CRM.
+
+---
+
+<p align="center">
+  <strong>SalesCore CRM</strong>
+
+  Business Operations × Software Engineering
+</p>
